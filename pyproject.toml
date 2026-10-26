@@ -12,6 +12,7 @@ license = { text = "MIT" }
 dependencies = [
     "httpx>=0.27",
     "openai>=1.60",
+    "meta-sam-parser>=0.1.0",
     "pillow>=10.4",
     "numpy>=1.26",
     "pyyaml>=6.0",
