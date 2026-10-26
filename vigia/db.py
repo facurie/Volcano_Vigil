@@ -32,6 +32,20 @@ CREATE TABLE IF NOT EXISTS camera_state (
     etag                  TEXT,
     last_modified         TEXT      -- raw Last-Modified header, sent back as If-Modified-Since
 );
+
+CREATE TABLE IF NOT EXISTS api_calls (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    called_at     TEXT    NOT NULL,  -- UTC
+    model         TEXT    NOT NULL,
+    purpose       TEXT    NOT NULL,  -- what the call was for, e.g. 'segment', 'bulletin'
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    cost_usd      REAL    NOT NULL,
+    latency_ms    INTEGER,
+    ok            INTEGER NOT NULL,
+    error         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_api_calls_time ON api_calls (called_at);
 """
 
 
