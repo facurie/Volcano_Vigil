@@ -1,1 +1,1 @@
-﻿"""Webcam ingestion: download, timestamp, de-duplicate, store."""
+"""Webcam ingestion: download, timestamp, de-duplicate, store."""
