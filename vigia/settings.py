@@ -17,6 +17,7 @@ class Settings:
     db_path: Path
     sources_path: Path
     user_agent: str
+    daily_budget_usd: float
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -27,4 +28,5 @@ class Settings:
             db_path=Path(os.getenv("DB_PATH", str(data_dir / "vigia.sqlite"))),
             sources_path=Path(os.getenv("SOURCES_PATH", "config/sources.yaml")),
             user_agent=os.getenv("HTTP_USER_AGENT", DEFAULT_USER_AGENT),
+            daily_budget_usd=float(os.getenv("DAILY_BUDGET_USD", "5.00")),
         )
