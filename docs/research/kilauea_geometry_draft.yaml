@@ -1,0 +1,118 @@
+# Vigia Andino - Kilauea camera geometry (DRAFT, 2026-10-27)
+# Labels: "published (<url>)" = stated by USGS; "estimated (<method>, +/- unc)" = derived here.
+# Distances/bearings: haversine, R = 6371008.8 m, from camera to target vent (deg true, clockwise from N).
+# Ground elevations "EPQS" = USGS 3DEP point query (https://epqs.nationalmap.gov/v1/json), checked against
+# two published GPS points (agreement within ~3 m).
+# Vent elevations are as of the 2026-06-30 DEM (episode 50); the floor/cone grow with each episode.
+# Full write-up and source list: docs/research/kilauea_webcams.md
+
+vents:
+  north_vent: {lat: 19.40496, lon: -155.29022, elev_m: 1075,
+               source: "published coords (Patrick & Adams 2026 data release metadata, https://data.usgs.gov/datacatalog/metadata/USGS.691cfaedd4be021d1d89b467.xml); elev published (https://www.usgs.gov/maps/july-10-2026-kilauea-summit-eruption-lava-thickness-through-episode-50)"}
+  south_vent: {lat: 19.40412, lon: -155.29043, elev_m: 1075,
+               source: "published (same two sources)"}
+  west_vent:  {lat: 19.40443, lon: -155.29080, elev_m: null,
+               source: "estimated (third vent circle on HVO 2026-09-23 map scaled to the published N/S vents; +/- 20 m) https://www.usgs.gov/media/images/september-23-2026-new-kilauea-summit-vents-and-lava-flows-september-14-16"}
+  crater_rim_at_vents_elev_m: 1140    # derived: published 'vent level below crater rim: 65 m' + vent 1075 m
+  tephra_cone_peak_elev_m: 1185       # published (ep.50 map); location not published (W/SW of vents on caldera rim)
+  avg_crater_floor_lava_elev_m: 1007  # published (ep.50 map)
+  episode55_plume_top_m_asl: 7600     # published (~25,000 ft) https://www.usgs.gov/observatories/hvo/news/photo-video-chronology-kilauea-summit-episode-55-0
+
+cameras:
+
+  KPcam:   # PRIORITY 1 - wide plume camera
+    url: https://volcanoes.usgs.gov/cams/KPcam/images/M.jpg
+    camera:
+      lat: 19.492709
+      lon: -155.385281
+      elev_m: 2034
+      source: "estimated (published: 'south flank of Mauna Loa, ~2,000 m (6,700 ft)', mast ~2 m, serviced 'along the Mauna Loa trail' - https://www.usgs.gov/observatories/hvo/news/photo-and-video-chronology-webcam-upgrade-kilauea-summit-and-southwest-rift ; placed at OSM 'Mauna Loa Lookout' node 5061563731; ground 2032 m from EPQS + 2 m mast)"
+      uncertainty_m: 500          # horizontal; vertical +/- 40 m
+    target_vent: {name: north_vent, lat: 19.40496, lon: -155.29022, elev_m: 1075, source: "published (see vents)"}
+    distance_m: 13948             # +/- ~500 (+/- 4 %)
+    bearing_deg: 134.4
+    reference_points:
+      - {name: south_vent, lat: 19.40412, lon: -155.29043, elev_m: 1075, notes: "13998 m @ 134.7 deg; dual fountains ~50 m apart in azimuth -> ~0.2 deg"}
+      - {name: crater_rim_near_vents, lat: null, lon: null, elev_m: 1140, notes: "derived; skyline just above fountain base"}
+      - {name: tephra_cone_peak, lat: null, lon: null, elev_m: 1185, notes: "published elev; W/SW of vents"}
+      - {name: uekahuna_overlook, lat: 19.419387, lon: -155.289021, elev_m: 1241, notes: "OSM node 582340071 + EPQS; ~10.5 km, north of vents"}
+      - {name: sea_horizon, lat: null, lon: null, elev_m: 0, notes: "geometric dip ~1.4 deg below horizontal from 2034 m; use for roll/tilt"}
+    image_size: [3840, 2160]
+    hfov_deg: null                # not published ("slightly wider field of view" after 2024-06-25 upgrade); calibrate
+    notes: >
+      Fixed view, 10-min public cadence (internal 5 min; ep.55 timelapse). Vent at about -3.9 deg elevation
+      angle, 7.6 km asl plume top at about +21.8 deg: use angles, h = d*(tan(top) - tan(base)), not a linear
+      m/px value. Earth curvature over 14 km is about 15 m (13 m with refraction). Whole ep.55 column was
+      in frame (06:00 HST). Often clouded (fully clouded 2026-10-26 14:10 HST).
+
+  K2cam:   # PRIORITY 2 - mid-range fountain + lower plume
+    url: https://volcanoes.usgs.gov/cams/K2cam/images/M.jpg
+    camera:
+      lat: 19.4200
+      lon: -155.2889
+      elev_m: 1245
+      source: "estimated ('on the bluff at Uekahuna' https://www.usgs.gov/media/webcams/k2cam-live-image-kaluapele-kilauea-caldera-uekahuna-bluff ; 'former HVO building' in Patrick et al. 2026 Fig.1B https://doi.org/10.1186/s13617-026-00170-x ; image shows the Uekahuna overlook platform (OSM 19.419387,-155.289021) in the foreground looking S, so the camera is placed ~70 m N of it; ground 1243 m EPQS + ~2 m)"
+      uncertainty_m: 75
+    target_vent: {name: north_vent, lat: 19.40496, lon: -155.29022, elev_m: 1075, source: "published (see vents)"}
+    distance_m: 1678              # +/- 75 (+/- 4.5 %)
+    bearing_deg: 184.7
+    reference_points:
+      - {name: south_vent, lat: 19.40412, lon: -155.29043, elev_m: 1075, notes: "1773 m @ 185.2 deg"}
+      - {name: west_vent_est, lat: 19.40443, lon: -155.29080, elev_m: null, notes: "1743 m @ 186.6 deg"}
+      - {name: tephra_cone_peak, lat: null, lon: null, elev_m: 1185, notes: "the dark cone at image centre on 2026-10-26; 45 m above crater rim"}
+      - {name: crater_rim_near_vents, lat: null, lon: null, elev_m: 1140, notes: derived}
+      - {name: uekahuna_overlook_platform, lat: 19.419387, lon: -155.289021, elev_m: 1241, notes: "foreground; people for scale"}
+    image_size: [3840, 2160]
+    hfov_deg: null                # PTZ (probably Axis Q6318, inferred from Patrick et al. 2026); zoom/framing can change
+    notes: >
+      PTZ, so re-derive the scale per episode (cone height or vent spacing). Fountain base at about -5.8 deg;
+      1 km above the vent is at about +26 deg, so fountains and the lower plume fit but the full 7 km column
+      does not. 10-min public cadence (batch sync ~hh:m0:05-:20 UTC); internal 2 min.
+
+  F1cam:   # PRIORITY 3 - thermal helper (activity on/off, sees through fog); NOT for height
+    url: https://volcanoes.usgs.gov/cams/F1cam/images/M.jpg
+    camera:
+      lat: 19.407494
+      lon: -155.291750
+      elev_m: 1142.2
+      source: "published 2019-2022 (Trimble GPS +/-0.2 m, ground 1141.16 m, camera 1.0 m above ground) https://data.usgs.gov/datacatalog/metadata/USGS.61fc8cd2d34e622189cc1624.xml ; assumed unchanged after 2023-12-20 upgrade (KWcam co-located per https://volcanoes.usgs.gov/vsc/file_mngr/file-234/2019%2011-07_HVO_webcam_news_update_PDF.pdf)"
+      uncertainty_m: 30
+    target_vent: {name: north_vent, lat: 19.40496, lon: -155.29022, elev_m: 1075, source: "published (see vents)"}
+    distance_m: 324
+    bearing_deg: 150.3
+    reference_points:
+      - {name: south_vent, lat: 19.40412, lon: -155.29043, elev_m: 1075, notes: "400 m @ 159.7 deg"}
+      - {name: west_vent_est, lat: 19.40443, lon: -155.29080, elev_m: null, notes: "355 m @ 163.7 deg"}
+      - {name: b1cam_site_far_east_rim, lat: 19.402379, lon: -155.267539, elev_m: 1106.5, notes: "published; ~2.6 km @ ~103 deg (in FOV)"}
+      - {name: crater_floor_avg, lat: null, lon: null, elev_m: 1007, notes: published}
+    image_size: [1200, 900]       # includes a ~100 px degC colorbar on the right
+    hfov_deg: null                # current unit "wider" (FLIR A65 per 2026 paper); 2019-22 unit: 45 deg, az 93 deg, dip 23.7 deg
+    notes: >
+      Fountain appears saturated at the right image edge (ep.55); the colorbar range is auto-scaled, so read
+      temperatures from the colorbar per frame. New image ~hh:m9:02 UTC every 10 min.
+
+  B1cam:   # ALTERNATE - fixed 4K fisheye, published site
+    url: https://volcanoes.usgs.gov/cams/B1cam/images/M.jpg
+    camera:
+      lat: 19.402379
+      lon: -155.267539
+      elev_m: 1106.5
+      source: "published for 'Camera C: South rim - B1cam site' (Trimble +/-0.3 m) in https://data.usgs.gov/datacatalog/metadata/USGS.691cfaedd4be021d1d89b467.xml ; B1cam assumed at the same site"
+      uncertainty_m: 20
+    target_vent: {name: north_vent, lat: 19.40496, lon: -155.29022, elev_m: 1075, source: "published (see vents)"}
+    distance_m: 2396
+    bearing_deg: 276.9
+    reference_points:
+      - {name: south_vent, lat: 19.40412, lon: -155.29043, elev_m: 1075, notes: "2409 m @ 274.6 deg"}
+      - {name: uekahuna_bluff, lat: 19.419387, lon: -155.289021, elev_m: 1241, notes: "right-hand skyline (caldera NW wall)"}
+      - {name: kwcam_f1cam_station, lat: 19.407494, lon: -155.291750, elev_m: 1141.2, notes: "published; far west rim near the vents"}
+    image_size: [3840, 2160]
+    hfov_deg: null                # wide-angle (fisheye look, probably Axis P1378); vents at the far LEFT edge, so undistort first
+    notes: >
+      HVO's own fountain-height Camera C (Reconyx, HFOV 38.3 deg, 2048x1440, 0.8204 m/px) sat at this site, so its
+      published heights for ep.26-43 are direct ground truth for this viewpoint. 10-min cadence.
+
+alternates_low_confidence:   # PTZ livestream cameras; positions only roughly known
+  V1cam: {lat: 19.4085, lon: -155.2912, elev_m: 1130, uncertainty_m: 150, source: "estimated (NW-rim cluster, Patrick et al. 2026 Fig.1B; EPQS ground)", north_vent_distance_m: 407, bearing_deg: 165.4, image_size: [1920, 1080]}
+  V3cam: {lat: 19.4002, lon: -155.2830, elev_m: 1118, uncertainty_m: 250, source: "estimated ('south rim ... a safer distance to the east' of the destroyed unit that was 630 m from the vent; EPQS ground)", north_vent_distance_m: 924, bearing_deg: 305.0, image_size: [1920, 1080]}
+  V2cam: {lat: 19.428712, lon: -155.258324, elev_m: 1208, uncertainty_m: 50, source: "estimated ('at the Volcano House hotel', OSM node; EPQS ground)", north_vent_distance_m: 4262, bearing_deg: 231.7, image_size: [3840, 2160]}
