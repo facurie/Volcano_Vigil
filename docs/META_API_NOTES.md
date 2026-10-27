@@ -349,6 +349,7 @@ record ::= OBJECT_ID "<|box;x1=..;y1=..;x2=..;y2=..;w=<frameW>;h=<frameH>[;c=<co
 **Masks:**
 - `data=H,W,…` gives the raster's **height, width**. `x=0;y=0` is a literal [sam-read].
 - The mask raster covers the object's **box**: the normalized mask "carries the same half-open box as its bounds" [gh-protocol][pypi-parser]. So H = y2−y1+1 and W = x2−x1+1, which every docs example confirms. To build a full-frame mask, paste the raster at (x1, y1). dev.meta.ai itself says only "smaller than the frame".
+  - **Correction, measured 2026-10-27:** that holds only for small boxes. Large masks come at reduced resolution: a 1081×680 box on a 2048×1152 image came with a 1024×644 raster (long side 1024, aspect kept). The parser keeps the raster's own size, so scale it to the box before pasting; `vigia/meta/sam.py` does (nearest neighbour). Mask edges of large objects are therefore only accurate to about box/raster pixels.
 - The payload is **base85, not base64**, with a custom 85-character alphabet and an arithmetic-coded body. It is not COCO RLE, PNG or polygons [sam-read][gh-protocol].
 - Decode it with `decode_mask_to_raster` (row-major 0/1), `decode_mask_to_rle` (COCO compressed RLE, `size=[h,w]`, column-major) or `decode_mask_to_svg_path` [sam-libs][pypi-parser].
 

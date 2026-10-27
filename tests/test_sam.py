@@ -10,6 +10,10 @@ OBJ_0 = ("0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334;c=0.96|>"
 OBJ_1 = ("1<|box;x1=155;y1=228;x2=202;y2=254;w=320;h=334;c=0.5|>"
          "<|mask;x=0;y=0;c=0.5;data=27,48,~!!!!J!0c[q=Pj_zs=*4C4(/./x#:/`S_GnD`=o3?X{emCgO$y@|>")
 IMAGE_OUTPUT = f"<0f>{OBJ_0},{OBJ_1}"
+# OBJ_0's 27x60 raster on a box twice its size. SAM sends large masks at reduced
+# resolution: on 2026-10-27 a 1081x680 px box came with a 1024x644 raster.
+OBJ_0_ON_2X_BOX = ("0<|box;x1=100;y1=100;x2=219;y2=153;w=640;h=668;c=0.96|>"
+                   "<|mask;x=0;y=0;c=0.96;data=27,60,~!!!!M!0c[0o91w?q1!pIH4pPRVp2B3'7`e.ioeAf6-k/#Xd8%dX9x(|>")
 
 
 def test_image_output_yields_one_object_per_match_with_half_open_boxes():
@@ -37,6 +41,14 @@ def test_full_mask_places_the_raster_at_its_box():
     assert full.shape == (334, 320)
     assert full.sum() == obj.area_px
     assert np.array_equal(full[228:255, 211:271], obj.mask)
+
+
+def test_a_raster_smaller_than_its_box_is_scaled_up_to_the_box():
+    [obj] = parse_output(f"<0f>{OBJ_0_ON_2X_BOX}")
+
+    assert obj.mask.shape == (54, 120)
+    assert obj.area_px == 4 * 1539
+    assert obj.full_mask(width=640, height=668).sum() == 4 * 1539
 
 
 def test_empty_output_means_no_matches():

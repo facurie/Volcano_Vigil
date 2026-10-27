@@ -1,8 +1,9 @@
 """SAM 3.1 output parsing.
 
-SAM answers with special-token text, one line per frame, and box-sized
-base85 masks. Meta's `meta_sam_parser` decodes the protocol; this module turns
-its records into `SamObject`s with boolean numpy masks.
+SAM answers with special-token text, one line per frame, and base85 masks
+covering each object's box. Meta's `meta_sam_parser` decodes the protocol;
+this module turns its records into `SamObject`s with boolean numpy masks
+scaled to their box.
 """
 
 from __future__ import annotations
@@ -57,12 +58,25 @@ def parse_output(text: str, *, video: bool = False) -> list[SamObject]:
         if record.kind != "mask":  # the box record repeats the mask's bounds
             continue
         bounds, mask = record.bounds, record.mask
-        raster = np.frombuffer(decode_mask_to_raster(mask), dtype=np.uint8)
+        raster = np.frombuffer(decode_mask_to_raster(mask), dtype=np.uint8).reshape(mask.height, mask.width)
         objects.append(SamObject(
             object_id=record.object_id,
             frame_index=record.frame.frame_index if record.frame else None,
             box=(bounds.left, bounds.top, bounds.right, bounds.bottom),
             score=record.confidence,
-            mask=raster.reshape(mask.height, mask.width).astype(bool),
+            mask=_fit_to_box(raster.astype(bool), bounds.bottom - bounds.top, bounds.right - bounds.left),
         ))
     return objects
+
+
+def _fit_to_box(raster: np.ndarray, height: int, width: int) -> np.ndarray:
+    """Scale a mask raster to its box size, nearest neighbour.
+
+    SAM sends large masks at reduced resolution (a 1081x680 px box came with a
+    1024x644 raster), so the raster is not always box-sized.
+    """
+    if raster.shape == (height, width):
+        return raster
+    rows = ((np.arange(height) + 0.5) * raster.shape[0] / height).astype(int)
+    cols = ((np.arange(width) + 0.5) * raster.shape[1] / width).astype(int)
+    return raster[np.ix_(rows, cols)]
