@@ -1,0 +1,135 @@
+# Camera sources for Vigía Andino.
+#
+# Every camera declares its license and attribution. A camera is fetched only
+# when `enabled: true`; sources without permission stay configured but disabled.
+# See DATA_SOURCES.md for the full record of each source and its terms.
+
+volcanoes:
+  kilauea:
+    name: Kīlauea
+    country: United States (Hawaiʻi)
+    official_agency: USGS Hawaiian Volcano Observatory (HVO)
+    official_url: https://www.usgs.gov/volcanoes/kilauea
+  nevado-del-ruiz:
+    name: Nevado del Ruiz
+    country: Colombia
+    official_agency: Servicio Geológico Colombiano (SGC)
+    official_url: https://www.sgc.gov.co
+
+cameras:
+  # --- USGS HVO, Kīlauea summit. Public domain; credit "U.S. Geological Survey". ---
+  - id: kilauea-v1
+    name: V1cam (Halemaʻumaʻu vents, PTZ)
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/V1cam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+    enabled: true
+    poll_minutes: 5
+    notes: PTZ camera; pan/tilt/zoom and an HST timestamp are burned into the frame.
+  - id: kilauea-k2
+    name: K2cam (Kīlauea summit)
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/K2cam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+    enabled: true
+    poll_minutes: 5
+  - id: kilauea-v2
+    name: V2cam
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/V2cam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+  - id: kilauea-v3
+    name: V3cam
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/V3cam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+  - id: kilauea-kw
+    name: KWcam
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/KWcam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+  - id: kilauea-b1
+    name: B1cam
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/B1cam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+  - id: kilauea-kp
+    name: KPcam
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/KPcam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+  - id: kilauea-f1
+    name: F1cam (thermal)
+    volcano: kilauea
+    url: https://volcanoes.usgs.gov/cams/F1cam/images/M.jpg
+    page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
+    license: Public Domain (U.S. Geological Survey)
+    attribution: U.S. Geological Survey
+    kind: thermal
+
+  # --- SGC, Nevado del Ruiz. DISABLED: the SGC site terms grant no license to
+  # reproduce these images; permission has been requested and is pending. ---
+  - id: ruiz-azufrado
+    name: Azufrado (vnr04)
+    volcano: nevado-del-ruiz
+    url: http://amenazas.sgc.gov.co/ovsm/camip-azufrado/vnr04-2.jpg
+    license: All rights reserved by SGC; permission requested, pending
+    attribution: Servicio Geológico Colombiano
+    enabled: false
+  - id: ruiz-balcones
+    name: Balcones (vnr05)
+    volcano: nevado-del-ruiz
+    url: http://amenazas.sgc.gov.co/ovsm/camip-balcones/vnr05-2.jpg
+    license: All rights reserved by SGC; permission requested, pending
+    attribution: Servicio Geológico Colombiano
+    enabled: false
+  - id: ruiz-guali
+    name: Gualí (vnr01)
+    volcano: nevado-del-ruiz
+    url: http://amenazas.sgc.gov.co/ovsm/camip-guali/vnr01-2.jpg
+    license: All rights reserved by SGC; permission requested, pending
+    attribution: Servicio Geológico Colombiano
+    enabled: false
+  - id: ruiz-ovsm
+    name: OVSM (vnr03)
+    volcano: nevado-del-ruiz
+    url: http://amenazas.sgc.gov.co/ovsm/camip-ovsm/vnr03-2.jpg
+    license: All rights reserved by SGC; permission requested, pending
+    attribution: Servicio Geológico Colombiano
+    enabled: false
+  - id: ruiz-pirana
+    name: Piraña (vnr02)
+    volcano: nevado-del-ruiz
+    url: http://amenazas.sgc.gov.co/ovsm/camip-pirana/vnr02-2.jpg
+    license: All rights reserved by SGC; permission requested, pending
+    attribution: Servicio Geológico Colombiano
+    enabled: false
+  - id: ruiz-pitayo
+    name: Pitayó (vnr06)
+    volcano: nevado-del-ruiz
+    url: http://amenazas.sgc.gov.co/ovsm/camip-pitayo/vnr06-2.jpg
+    license: All rights reserved by SGC; permission requested, pending
+    attribution: Servicio Geológico Colombiano
+    enabled: false
+  - id: ruiz-rio-guali
+    name: Río Gualí (vnr07)
+    volcano: nevado-del-ruiz
+    url: http://amenazas.sgc.gov.co/ovsm/camip-rio_guali/vnr07-2.jpg
+    license: All rights reserved by SGC; permission requested, pending
+    attribution: Servicio Geológico Colombiano
+    enabled: false
+    notes: Points at the Gualí river; candidate for the river/lahar module.
