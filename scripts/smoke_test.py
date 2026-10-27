@@ -44,7 +44,7 @@ TRACK_COLORS = [(255, 120, 0), (0, 200, 255), (190, 0, 255), (0, 220, 120), (255
 MAX_SIDE_PX = 2048  # larger photos are downscaled before upload; masks refer to the sent image
 
 EP55 = Path("data/raw/usgs_ep55")
-DEFAULT_EP55_FRAME = EP55 / "20261017060105M_V1.jpg"
+DEFAULT_EP55_FRAME = EP55 / "ashcam" / "kilauea-v1-cam" / "kilauea-v1-cam-1792256342.jpg"  # 06:59 HST
 DEFAULT_EP55_VIDEO = EP55 / "vlc-record-2026-10-19-14h15m07s-V1cam20261017M.avi-.mp4"
 
 ASSESS_INSTRUCTIONS = (
@@ -122,7 +122,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--camera", default="kilauea-v1", help="enabled camera id from the sources file")
     parser.add_argument("--ep55-frame", type=Path, default=DEFAULT_EP55_FRAME)
     parser.add_argument("--ep55-video", type=Path, default=DEFAULT_EP55_VIDEO)
-    parser.add_argument("--clip-start", type=float, default=0.0, help="seconds into the timelapse")
+    parser.add_argument("--clip-start", type=float, default=14.0,
+                        help="seconds into the timelapse (14 s: daylight fountain and plume)")
     parser.add_argument("--clip-seconds", type=float, default=10.0)
     parser.add_argument("--clip-fps", type=float, default=10.0, help="SAM bills per frame")
     parser.add_argument("--clip-height", type=int, default=720)
