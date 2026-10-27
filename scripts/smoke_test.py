@@ -18,17 +18,17 @@ Results go to data/smoke/<UTC timestamp>/ with a summary.md.
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import shutil
 from collections import defaultdict
 from pathlib import Path
 
 import httpx
-from PIL import Image, ImageOps
+from PIL import Image
 
 from vigia import db
 from vigia.config import load_sources
+from vigia.imaging import load_for_upload
 from vigia.ingest.fetch import Ingestor
 from vigia.ingest.store import FrameStore
 from vigia.meta.client import MetaClient
@@ -42,7 +42,6 @@ from vigia.video import assemble, cut_clip, extract_frames, probe
 
 PHRASES = {"lava fountain": (255, 120, 0), "volcanic plume": (0, 200, 255), "steam": (190, 0, 255)}
 TRACK_COLORS = [(255, 120, 0), (0, 200, 255), (190, 0, 255), (0, 220, 120), (255, 60, 60), (255, 230, 0)]
-MAX_SIDE_PX = 2048  # larger photos are downscaled before upload; masks refer to the sent image
 
 EP55 = Path("data/raw/usgs_ep55")
 DEFAULT_EP55_FRAME = EP55 / "ashcam" / "kilauea-v1-cam" / "kilauea-v1-cam-1792256342.jpg"  # 06:59 HST
@@ -147,15 +146,6 @@ def fetch_live_frame(settings: Settings, conn, camera_id: str) -> tuple[Path, di
     if row is None:
         raise SystemExit(f"no frame available for {camera_id}")
     return settings.data_dir / row["path"], dict(row)
-
-
-def load_for_upload(path: Path) -> tuple[Image.Image, bytes]:
-    """Apply EXIF rotation (SAM reports pixels as displayed) and cap the size."""
-    image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
-    image.thumbnail((MAX_SIDE_PX, MAX_SIDE_PX))
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=92)
-    return image, buffer.getvalue()
 
 
 def analyze_image(client: MetaClient | None, path: Path, out: Path) -> list[str]:
