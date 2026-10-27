@@ -3,7 +3,7 @@ from datetime import timedelta
 from conftest import NOW
 from vigia.config import Camera
 from vigia.ingest.store import IngestResult
-from vigia.ingest.worker import Worker
+from vigia.ingest.worker import SourceRouter, Worker
 
 
 def cam(camera_id, enabled=True, poll_minutes=5):
@@ -70,3 +70,13 @@ def test_seconds_until_next_due_reflects_the_soonest_camera():
     worker.run_once(NOW)
 
     assert worker.seconds_until_next_due(NOW + timedelta(seconds=30)) == 90
+
+
+def test_router_sends_each_camera_to_the_ingestor_of_its_live_source():
+    by_url, by_ashcam = RecordingIngestor(), RecordingIngestor()
+    router = SourceRouter({"url": by_url, "ashcam": by_ashcam})
+
+    router.ingest(cam("a"))
+    router.ingest(cam("b").model_copy(update={"live_source": "ashcam"}))
+
+    assert (by_url.calls, by_ashcam.calls) == (["a"], ["b"])

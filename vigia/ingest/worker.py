@@ -1,4 +1,4 @@
-"""Polling loop: fetch each enabled camera on its own interval.
+"""Polling loop: fetch each enabled camera on its own interval, from its live source.
 
 Run it standalone with `vigia-ingest` (or `python -m vigia.ingest.worker`);
 `--once` polls every enabled camera a single time and exits.
@@ -17,6 +17,7 @@ import httpx
 
 from vigia import db
 from vigia.config import Camera, load_sources
+from vigia.ingest.ashcam import AshcamClient, AshcamIngestor
 from vigia.ingest.fetch import Ingestor
 from vigia.ingest.store import FrameStore, IngestResult
 from vigia.settings import Settings
@@ -30,6 +31,16 @@ _MAX_WAIT_SECONDS = 5.0
 
 class SupportsIngest(Protocol):
     def ingest(self, camera: Camera) -> IngestResult: ...
+
+
+class SourceRouter:
+    """Send each camera to the ingestor of its `live_source`."""
+
+    def __init__(self, ingestors: dict[str, SupportsIngest]):
+        self._ingestors = ingestors
+
+    def ingest(self, camera: Camera) -> IngestResult:
+        return self._ingestors[camera.live_source].ingest(camera)
 
 
 class Worker:
@@ -79,7 +90,9 @@ def main(argv: list[str] | None = None) -> None:
     conn = db.connect(settings.db_path)
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as http:
-        worker = Worker(Ingestor(FrameStore(conn, settings.data_dir), http), sources.cameras)
+        store = FrameStore(conn, settings.data_dir)
+        router = SourceRouter({"url": Ingestor(store, http), "ashcam": AshcamIngestor(AshcamClient(http), store)})
+        worker = Worker(router, sources.cameras)
         if args.once:
             for result in worker.run_once():
                 print(f"{result.camera_id}: {result.status}" + (f" ({result.error})" if result.error else ""))

@@ -81,6 +81,18 @@ def test_ashcam_code_is_optional(tmp_path):
     assert sources.cameras[1].ashcam_code is None
 
 
+def test_live_source_defaults_to_the_image_url(tmp_path):
+    assert load_sources(write(tmp_path, VALID)).cameras[0].live_source == "url"
+
+
+def test_live_polling_through_ashcam_needs_an_ashcam_code(tmp_path):
+    text = VALID.replace("    enabled: true\n    poll_minutes: 5",
+                         "    enabled: true\n    poll_minutes: 5\n    live_source: ashcam")
+
+    with pytest.raises(ConfigError, match="ashcam_code"):
+        load_sources(write(tmp_path, text))
+
+
 def test_committed_sources_keep_sgc_disabled_and_name_every_usgs_archive():
     sources = load_sources(REPO / "config" / "sources.yaml")
 

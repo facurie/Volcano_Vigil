@@ -40,8 +40,15 @@ class Camera(BaseModel):
     poll_minutes: float = Field(default=5, gt=0)
     kind: CameraKind = "visible"
     ashcam_code: str | None = None  # USGS AshCam archive code, e.g. kilauea-kp-cam
+    live_source: Literal["url", "ashcam"] = "url"  # where the live poller gets new frames
     page_url: str | None = None
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def _ashcam_needs_a_code(self) -> Camera:
+        if self.live_source == "ashcam" and not self.ashcam_code:
+            raise ValueError(f"camera {self.id} polls AshCam live but has no ashcam_code")
+        return self
 
 
 class Sources(BaseModel):

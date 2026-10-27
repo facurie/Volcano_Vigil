@@ -4,6 +4,8 @@
 # when `enabled: true`; sources without permission stay configured but disabled.
 # `ashcam_code` names the camera in the USGS AshCam archive (about 31 days of
 # frames with exact capture times); `vigia-backfill` downloads from it.
+# `live_source: ashcam` polls the archive instead of M.jpg: every 2-min (KPcam
+# 5-min) frame with its exact capture time (docs/research/ashcam_latency.md).
 # See DATA_SOURCES.md for the full record of each source and its terms.
 
 volcanoes:
@@ -28,6 +30,7 @@ cameras:
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
     ashcam_code: kilauea-v1-cam
+    live_source: ashcam
     enabled: false
     poll_minutes: 2
     notes: PTZ camera; pan/tilt/zoom and an HST timestamp are burned into the frame.
@@ -39,6 +42,7 @@ cameras:
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
     ashcam_code: kilauea-k2-cam
+    live_source: ashcam
     enabled: true
     poll_minutes: 2
   - id: kilauea-v2
@@ -81,6 +85,7 @@ cameras:
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
     ashcam_code: kilauea-kp-cam
+    live_source: ashcam
     enabled: true
     poll_minutes: 2
   - id: kilauea-f1

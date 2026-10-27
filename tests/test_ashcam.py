@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -8,7 +8,7 @@ import pytest
 
 from conftest import make_jpeg
 from vigia.config import Camera
-from vigia.ingest.ashcam import AshcamClient, ChecksumMismatch, backfill, main
+from vigia.ingest.ashcam import AshcamClient, AshcamIngestor, ChecksumMismatch, backfill, main
 from vigia.ingest.store import FrameStore
 
 INDEX = Path(__file__).parent / "fixtures" / "ashcam_index_kp.json"
@@ -158,6 +158,55 @@ def test_backfill_needs_an_ashcam_code(client, store):
 
     with pytest.raises(ValueError, match="ashcam_code"):
         backfill(client, store, camera, START, END)
+
+
+LIVE_NOW = datetime(2026, 10, 17, 15, 1, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def live(client, store):
+    return AshcamIngestor(client, store, now=lambda: LIVE_NOW, lookback=timedelta(minutes=15))
+
+
+def camera_state(conn):
+    return conn.execute("SELECT * FROM camera_state WHERE camera_id = 'kilauea-kp'").fetchone()
+
+
+def test_first_live_poll_stores_the_lookback_window(live, archive, conn):
+    result = live.ingest(kp_camera())
+
+    [listing] = archive.list_requests()
+    assert listing.url.params["startTimestamp"] == str(int((LIVE_NOW - timedelta(minutes=15)).timestamp()))
+    assert listing.url.params["endTimestamp"] == str(int(LIVE_NOW.timestamp()))
+    newest = conn.execute("SELECT id FROM frames ORDER BY captured_at DESC LIMIT 1").fetchone()
+    assert (result.status, result.frame_id) == ("new", newest["id"])
+    assert camera_state(conn)["last_status"] == "new"
+
+
+def test_later_live_polls_start_after_the_newest_stored_frame(live, archive):
+    live.ingest(kp_camera())
+
+    live.ingest(kp_camera())
+
+    assert archive.list_requests()[-1].url.params["startTimestamp"] == str(1792249205 + 1)
+
+
+def test_live_poll_without_new_frames_is_not_modified(live, conn):
+    live.ingest(kp_camera())
+
+    result = live.ingest(kp_camera())
+
+    assert result.status == "not_modified"
+    assert camera_state(conn)["consecutive_unchanged"] == 1
+
+
+def test_live_poll_records_an_archive_outage_as_an_error(live, archive, conn):
+    archive.list_status = 503
+
+    result = live.ingest(kp_camera())
+
+    assert result.status == "error" and "503" in result.error
+    assert camera_state(conn)["consecutive_errors"] == 1
 
 
 SOURCES = """

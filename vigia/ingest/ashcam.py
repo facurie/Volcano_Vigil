@@ -16,7 +16,7 @@ import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -24,7 +24,7 @@ import httpx
 from vigia import db
 from vigia.config import Camera, load_sources
 from vigia.ingest.fetch import describe_error
-from vigia.ingest.store import FrameStore
+from vigia.ingest.store import FrameStore, IngestResult
 from vigia.settings import Settings
 from vigia.timeutil import parse_utc, utcnow
 
@@ -130,6 +130,43 @@ def backfill(
             report.new += 1
             report.frame_ids.append(frame_id)
     return report
+
+
+class AshcamIngestor:
+    """Live polling through AshCam: store every frame archived since the newest one stored.
+
+    A poll reaches back at most `lookback`: the first poll stores that window,
+    and a longer gap (after downtime) is left to `vigia-backfill`.
+    """
+
+    def __init__(
+        self,
+        client: AshcamClient,
+        store: FrameStore,
+        now: Callable[[], datetime] = utcnow,
+        lookback: timedelta = timedelta(hours=1),
+    ):
+        self._client = client
+        self._store = store
+        self._now = now
+        self._lookback = lookback
+
+    def ingest(self, camera: Camera) -> IngestResult:
+        checked_at = self._now()
+        start = checked_at - self._lookback
+        latest = self._store.latest_capture(camera.id, "ashcam")
+        if latest:
+            start = max(start, latest + timedelta(seconds=1))
+        try:
+            report = backfill(self._client, self._store, camera, start, checked_at, now=self._now)
+        except (httpx.HTTPError, ValueError) as exc:
+            log.warning("camera %s: %s", camera.id, describe_error(exc))
+            return self._store.record_check(camera.id, checked_at, "error", error=describe_error(exc))
+        if report.frame_ids:
+            return self._store.record_check(camera.id, checked_at, "new", frame_id=report.frame_ids[-1])
+        if report.errors:
+            return self._store.record_check(camera.id, checked_at, "error", error=report.errors[-1])
+        return self._store.record_check(camera.id, checked_at, "not_modified")
 
 
 def main(argv: list[str] | None = None) -> None:
