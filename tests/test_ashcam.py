@@ -7,7 +7,9 @@ import httpx
 import pytest
 
 from conftest import make_jpeg
-from vigia.ingest.ashcam import AshcamClient, ChecksumMismatch
+from vigia.config import Camera
+from vigia.ingest.ashcam import AshcamClient, ChecksumMismatch, backfill
+from vigia.ingest.store import FrameStore
 
 INDEX = Path(__file__).parent / "fixtures" / "ashcam_index_kp.json"
 START = datetime(2026, 10, 17, 14, 50, tzinfo=timezone.utc)  # 04:50 HST
@@ -94,3 +96,65 @@ def test_fetch_rejects_an_image_whose_md5_does_not_match(client, archive):
 
     with pytest.raises(ChecksumMismatch, match="MD5"):
         client.fetch(image)
+
+
+@pytest.fixture
+def store(conn, tmp_path):
+    return FrameStore(conn, tmp_path)
+
+
+def kp_camera():
+    return Camera(id="kilauea-kp", name="KPcam", volcano="kilauea", url="https://example.org/KPcam/images/M.jpg",
+                  license="Public Domain", attribution="U.S. Geological Survey", ashcam_code="kilauea-kp-cam")
+
+
+def stored(conn):
+    return conn.execute("SELECT * FROM frames ORDER BY captured_at").fetchall()
+
+
+def test_backfill_stores_each_frame_with_its_exact_ashcam_time(client, store, archive, conn, tmp_path):
+    report = backfill(client, store, kp_camera(), START, END)
+
+    rows = stored(conn)
+    assert (report.listed, report.new) == (3, 3)
+    assert [r["captured_at"] for r in rows] == ["2026-10-17T14:50:05Z", "2026-10-17T14:55:05Z", "2026-10-17T15:00:05Z"]
+    assert {r["timestamp_source"] for r in rows} == {"ashcam"}
+    assert {(tmp_path / r["path"]).read_bytes() for r in rows} == set(archive.bodies.values())
+    assert report.frame_ids == [r["id"] for r in rows]
+
+
+def test_backfill_skips_frames_it_already_stored_without_downloading_them(client, store, archive):
+    backfill(client, store, kp_camera(), START, END)
+    downloads = len(archive.image_requests())
+
+    report = backfill(client, store, kp_camera(), START, END)
+
+    assert (report.new, report.skipped) == (0, 3)
+    assert len(archive.image_requests()) == downloads
+
+
+def test_backfill_keeps_going_after_a_bad_download(client, store, archive):
+    oldest = archive.index["images"][2]["imageUrl"]
+    archive.bodies[oldest] = b"truncated"
+
+    report = backfill(client, store, kp_camera(), START, END)
+
+    assert report.new == 2
+    assert len(report.errors) == 1 and "MD5" in report.errors[0]
+
+
+def test_backfill_counts_repeated_bytes_as_duplicates(client, store, archive):
+    newest, middle = archive.index["images"][:2]
+    archive.bodies[middle["imageUrl"]] = archive.bodies[newest["imageUrl"]]
+    middle["md5"] = newest["md5"]
+
+    report = backfill(client, store, kp_camera(), START, END)
+
+    assert (report.new, report.duplicate) == (2, 1)
+
+
+def test_backfill_needs_an_ashcam_code(client, store):
+    camera = kp_camera().model_copy(update={"ashcam_code": None})
+
+    with pytest.raises(ValueError, match="ashcam_code"):
+        backfill(client, store, camera, START, END)
