@@ -7,7 +7,7 @@ Volcano observatories publish webcam images every few minutes, but nobody can lo
 It is built for Andean volcanoes such as **Nevado del Ruiz** (Colombia), the volcano of the 1985 Armero tragedy, and works with any camera. It is developed and validated on **Kīlauea** (Hawaiʻi), whose USGS webcams are public domain and whose official reports give reference values to check the agent against.
 
 > [!IMPORTANT]
-> **Vigía Andino does not replace official volcano alerts.** It is an experimental monitoring aid. Always follow the official agency for each volcano: [USGS Hawaiian Volcano Observatory](https://www.usgs.gov/observatories/hvo) for Kīlauea, [Servicio Geológico Colombiano](https://www.sgc.gov.co) for Nevado del Ruiz. Every bulletin links to the official source.
+> **Vigía Andino does not replace official volcano alerts.** It is an experimental monitoring aid. Always follow the official agency for each volcano: [USGS Hawaiian Volcano Observatory](https://www.usgs.gov/observatories/hvo) for Kīlauea, [Servicio Geológico Colombiano](https://www2.sgc.gov.co/Noticias/Paginas/Boletines-semanales.aspx) for Nevado del Ruiz. Every bulletin links to the official source.
 
 ## What makes it more than an image analyzer
 

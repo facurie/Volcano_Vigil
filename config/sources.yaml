@@ -14,7 +14,7 @@ volcanoes:
     name: Nevado del Ruiz
     country: Colombia
     official_agency: Servicio Geológico Colombiano (SGC)
-    official_url: https://www.sgc.gov.co
+    official_url: https://www2.sgc.gov.co/Noticias/Paginas/Boletines-semanales.aspx
 
 cameras:
   # --- USGS HVO, Kīlauea summit. Public domain; credit "U.S. Geological Survey". ---
