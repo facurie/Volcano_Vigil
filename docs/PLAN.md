@@ -17,7 +17,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest` (98 passing at the end of Phase 1, session 2).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest` (105 passing at the end of Phase 1, session 2).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -58,6 +58,7 @@
 - **Live source** ([ashcam_latency.md](research/ashcam_latency.md)):
   - AshCam publishes each frame within 0.2–0.4 min (median) at 2-min cadence (KP 5 min). `M.jpg` publishes one capture every 10 min, 1–3.5 min after it was taken.
   - KPcam and K2cam (and V1cam if enabled) poll AshCam live (`live_source: ashcam`). F1cam keeps `M.jpg`, because AshCam archives it only every ~20 min.
+  - If AshCam fails (HTTP error, timeout, unexpected index format), those cameras fall back to `M.jpg` in the same poll. While that lasts, their timestamps are approximate.
 - **SAM phrases** ([prompt_tuning.md](research/prompt_tuning.md)):
   - Visible cameras: plume `steam` (the whole column from 14 km at night to 1 km by day), fountain `lava fountain`, incandescence `glow`.
   - Thermal cameras: incandescence `glowing lava` (the hot lava field).
@@ -194,7 +195,14 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
   - `Dockerfile` from `python:3.12-slim` with ffmpeg.
   - The ingest worker runs in-process with the web app.
   - Secrets are Space secrets. Set `DAILY_BUDGET_USD=3`.
-- [ ] **On startup:** backfill the last days of live history and the episode-55 frames from AshCam, until about Nov 17. Optionally mirror the episode-55 frames (public domain) to a public HF dataset so the replay survives AshCam expiry. Images never go into the git repo.
+- [ ] **Episode 55 data that does not depend on AshCam (required):**
+  - Mirror the episode-55 frames (public domain) to a public HF dataset, and on startup load the replay from that mirror.
+  - Why it is required:
+    - AshCam's API is undocumented and can change without notice.
+    - Its Oct 17 frames expire around Nov 17.
+    - A Space without paid persistent storage loses its disk on every restart (confirm this here).
+  - On startup, backfill only the last days of live history from AshCam.
+  - Images never go into the git repo.
 
 **Acceptance:** a public URL is live, with ingest running and the replay working.
 
@@ -232,6 +240,7 @@ Spent so far: $0.20 (smoke test $0.05, SAM prompt tuning $0.15). Estimate: about
 | SAM prompts for gas plumes are ambiguous | Phase 1 tuning; let Muse Spark suggest phrases |
 | Camera positions and fields of view unpublished | `calibration.yaml` + reference points; validate on B1 and F1/KW, whose positions are published |
 | PTZ cameras change framing | Read P/T/Z from the frame and calibrate per preset; skip unknown presets |
-| AshCam keeps about 31 days | Keep local copies; optional HF dataset mirror |
+| AshCam keeps about 31 days, and its API is undocumented | Live: automatic fallback to `M.jpg` per camera (done in Phase 1). Replay: local copies plus the required HF dataset mirror, loaded at startup (Phase 7) |
 | Volcano quiet during judging | The replay is the centerpiece; live mode shows the quality gate and camera status |
+| Episode 56 (HVO forecast: Oct 31 – Nov 6) erupts during the hackathon, but AshCam cannot be backfilled later | Keep `vigia-ingest` running locally from Oct 31, so frames are stored as they arrive |
 | Session quota runs out mid-task | This file plus the memory notes; commit often |

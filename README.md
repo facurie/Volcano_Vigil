@@ -46,7 +46,7 @@ Every Meta Model API call goes through a cost ledger with a configurable daily b
 Work in progress during the hackathon. Implemented so far:
 
 - [x] Camera sources config with mandatory license and opt-in `enabled` flag
-- [x] Ingest worker: per-camera polling of the public image (conditional GET) or of the USGS AshCam archive (every frame, exact capture times), image validation, SHA-256 de-duplication, SQLite + disk storage, camera health state
+- [x] Ingest worker: per-camera polling of the public image (conditional GET) or of the USGS AshCam archive (every frame, exact capture times, automatic fallback to the public image), image validation, SHA-256 de-duplication, SQLite + disk storage, camera health state
 - [x] AshCam archive backfill with exact capture times (`vigia-backfill`)
 - [x] SAM 3.1 phrases tuned per target on episode 55 frames ([evidence](docs/research/prompt_tuning.md))
 - [x] API cost ledger with daily budget cap

@@ -42,10 +42,14 @@ An earlier spot check at 16:48 UTC agrees. The newest AshCam frame was 1–3 min
 | V1cam | yes (0.3) | yes (2.0 ≤ 10.0) | **AshCam** (the camera stays disabled for live polling; the setting applies if it is enabled) |
 | F1cam | no (6.3) | no (20.0 > 10.2) | **M.jpg** (AshCam archives F1 sparsely) |
 
-`config/sources.yaml` sets `live_source: ashcam` on KPcam, K2cam and V1cam. The worker sends those cameras to `AshcamIngestor`, which stores every frame archived since the newest stored one, reaching back at most one hour. Longer gaps are filled with `vigia-backfill`. F1cam keeps the conditional-GET `M.jpg` poller.
+`config/sources.yaml` sets `live_source: ashcam` on KPcam, K2cam and V1cam. The worker sends those cameras to `AshcamIngestor`, which stores every frame archived since the newest stored one, reaching back at most one hour. Longer gaps are filled with `vigia-backfill`. If AshCam fails, those cameras fall back to `M.jpg` automatically (see Caveats). F1cam keeps the conditional-GET `M.jpg` poller.
 
 ## Caveats
 
 - **One short window.** The measurement covers 40 min on one morning (HST) during a quiet period. Re-check the latency if the archive seems to lag during an eruption.
-- **Undocumented API.** AshCam's API can change without notice. If it fails, the affected cameras record `error` in `camera_state`. Setting `live_source: url` on them restores `M.jpg` polling with no code change.
+- **Undocumented API.** AshCam's API can change without notice. When it fails for a camera, the worker falls back to that camera's `M.jpg` in the same poll, so frames keep coming every 10 min. This covers an HTTP error, a timeout, an index in an unexpected format, or any exception from the AshCam ingestor; it is checked against the real servers with a broken API URL.
+  - AshCam's error is logged, and `camera_state` shows the `M.jpg` outcome.
+  - Frames from the fallback carry `timestamp_source = 'http_last_modified'`, so on KP and K2 their times are approximate (Last-Modified trails the capture by up to ~10 min).
+  - When AshCam recovers, its next poll fills the last hour at the full cadence. Frames already stored from `M.jpg` de-duplicate and keep their approximate time.
+  - Setting `live_source: url` on a camera turns AshCam off for it entirely.
 - **Live source only.** The archive keeps about 31 days, and the episode 55 replay depends on frames already stored locally, not on this setting.
