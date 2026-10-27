@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> None:
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="prepare everything but skip Meta API calls")
-    parser.add_argument("--camera", default="kilauea-v1", help="enabled camera id from the sources file")
+    parser.add_argument("--camera", default="kilauea-k2", help="enabled camera id from the sources file")
     parser.add_argument("--ep55-frame", type=Path, default=DEFAULT_EP55_FRAME)
     parser.add_argument("--ep55-video", type=Path, default=DEFAULT_EP55_VIDEO)
     parser.add_argument("--clip-start", type=float, default=14.0,

@@ -18,6 +18,7 @@ Every source Vigía Andino reads, its license, and how it is used. Cameras are d
 | Source | What we will use | License / terms | Credit |
 |---|---|---|---|
 | [Open-Meteo](https://open-meteo.com) | Forecast winds at pressure levels over each volcano, to compare with the observed plume drift. No API key. | CC BY 4.0, free for non-commercial use | Weather data by Open-Meteo.com |
+| [USGS Kīlauea fountain-height dataset](https://doi.org/10.5066/P14MLKCX) | Per-minute fountain heights for episodes 1–50, as extra ground truth for validating height estimates. The download host blocks scripts, so it is fetched manually. | CC0 1.0 | U.S. Geological Survey |
 
 ## Configured but disabled (no permission)
 

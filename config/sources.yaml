@@ -25,18 +25,18 @@ cameras:
     page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
-    enabled: true
-    poll_minutes: 5
+    enabled: false
+    poll_minutes: 2
     notes: PTZ camera; pan/tilt/zoom and an HST timestamp are burned into the frame.
   - id: kilauea-k2
-    name: K2cam (Kīlauea summit)
+    name: K2cam (summit, fountain and lower plume, PTZ)
     volcano: kilauea
     url: https://volcanoes.usgs.gov/cams/K2cam/images/M.jpg
     page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
     enabled: true
-    poll_minutes: 5
+    poll_minutes: 2
   - id: kilauea-v2
     name: V2cam
     volcano: kilauea
@@ -66,12 +66,14 @@ cameras:
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
   - id: kilauea-kp
-    name: KPcam
+    name: KPcam (wide view, plume height)
     volcano: kilauea
     url: https://volcanoes.usgs.gov/cams/KPcam/images/M.jpg
     page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
+    enabled: true
+    poll_minutes: 2
   - id: kilauea-f1
     name: F1cam (thermal)
     volcano: kilauea
@@ -79,6 +81,8 @@ cameras:
     page_url: https://www.usgs.gov/volcanoes/kilauea/multimedia/webcams
     license: Public Domain (U.S. Geological Survey)
     attribution: U.S. Geological Survey
+    enabled: true
+    poll_minutes: 2
     kind: thermal
 
   # --- SGC, Nevado del Ruiz. DISABLED: the SGC site terms grant no license to
