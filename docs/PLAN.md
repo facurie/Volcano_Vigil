@@ -17,7 +17,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest` (53 passing at the end of session 1).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest` (98 passing at the end of Phase 1, session 2).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -54,14 +54,26 @@
   - Onset 03:19 HST, end 09:03 HST. Drift to the SW (wind from the NNE). Vent elevation ~1,075–1,080 m.
 - **Geometry:** vent coordinates are published (north vent 19.40496 N, 155.29022 W). B1cam and F1/KWcam positions are published; KP, K2 and V1–V3 are estimates.
 - **Extra ground truth:** USGS fountain-height dataset, CC0, doi:10.5066/P14MLKCX (episodes 1–50; manual download).
+- **AshCam frames are byte-identical to the live `M.jpg`** (same SHA-256 and MD5), and their epoch equals the capture time in the camera's `js.js`, so SHA-256 de-duplication works across both sources. Episode 55 KP (78), K2 (195) and V1 (195) frames are in `data/frames/` with `timestamp_source='ashcam'`.
+- **Live source** ([ashcam_latency.md](research/ashcam_latency.md)):
+  - AshCam publishes each frame within 0.2–0.4 min (median) at 2-min cadence (KP 5 min). `M.jpg` publishes one capture every 10 min, 1–3.5 min after it was taken.
+  - KPcam and K2cam (and V1cam if enabled) poll AshCam live (`live_source: ashcam`). F1cam keeps `M.jpg`, because AshCam archives it only every ~20 min.
+- **SAM phrases** ([prompt_tuning.md](research/prompt_tuning.md)):
+  - Visible cameras: plume `steam` (the whole column from 14 km at night to 1 km by day), fountain `lava fountain`, incandescence `glow`.
+  - Thermal cameras: incandescence `glowing lava` (the hot lava field).
+  - Every phrase with "volcanic" in it returns the fountain on close cameras.
+  - Large masks come at reduced raster resolution (long side 1024 px); `vigia/meta/sam.py` scales them to their box.
 
 ## Target module map
 
 ```
 vigia/
   config.py settings.py db.py timeutil.py overlay.py video.py   (exist)
+  imaging.py              frame preprocessing for upload        (exists, phase 1)
+  prompts.py              SAM phrases per target and camera kind (exists, phase 1)
   ingest/fetch.py ingest/worker.py                              (exist)
-  ingest/ashcam.py        AshCam archive client and backfill    (phase 1)
+  ingest/store.py         shared frame storage + camera state   (exists, phase 1)
+  ingest/ashcam.py        AshCam archive client and backfill    (exists, phase 1)
   meta/client.py sam.py pricing.py ledger.py                    (exist)
   quality.py              local checks + Muse Spark gate         (phase 2)
   tracking.py             timelapse build + SAM video tracks     (phase 2)
@@ -71,7 +83,7 @@ vigia/
   agent/tools.py loop.py bulletin.py                             (phases 4–5)
   replay.py               episode replay on a simulated clock    (phase 5)
   web/app.py web/static/  FastAPI + dashboard                    (phase 6)
-config/prompts.yaml       SAM phrases per target/camera kind     (phase 1)
+config/prompts.yaml       SAM phrases per target/camera kind     (exists, phase 1)
 config/calibration.yaml   per camera and PTZ preset              (phase 3)
 ```
 
@@ -79,19 +91,19 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 
 ## Phase 1: Tue Oct 27. AshCam, prompt tuning, overlay legend
 
-- [ ] **AshCam client** in `vigia/ingest/ashcam.py`.
+- [x] **AshCam client** in `vigia/ingest/ashcam.py`.
   - `list_images(webcam_code, start, end) -> list[AshcamImage]`, where `AshcamImage` has timestamp, url and md5.
   - `download(image)` verifies the MD5 and stores the frame through the same `frames` table, with `timestamp_source='ashcam'`.
   - Add an `ashcam_code` field to cameras in `sources.yaml`, e.g. `kilauea-kp-cam`.
   - CLI: `vigia-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z`.
   - Test against a trimmed copy of a real index JSON served by `httpx.MockTransport`.
-- [ ] **Live source decision:** measure AshCam latency against `M.jpg`. If AshCam publishes within about 5 min, use it for live polling too: 2-min cadence and exact timestamps.
-- [ ] **SAM prompt tuning** in `scripts/tune_prompts.py`. Use frames from KP at the 04:50–05:10 peak, K2, V1 at 06:59 and F1.
+- [x] **Live source decision:** measure AshCam latency against `M.jpg`. If AshCam publishes within about 5 min, use it for live polling too: 2-min cadence and exact timestamps.
+- [x] **SAM prompt tuning** in `scripts/tune_prompts.py`. Use frames from KP at the 04:50–05:10 peak, K2, V1 at 06:59 and F1.
   - Plume candidates: `steam plume`, `white plume`, `eruption column`, `gas plume`, `volcanic gas plume`, `ash cloud`.
   - Fountain candidates: `lava fountain`, `fountain of lava`, `glowing lava`.
   - Night candidates: `incandescent lava`, `glow`.
   - Write the chosen phrases to `config/prompts.yaml` (per target and camera kind) and the evidence table to `docs/research/prompt_tuning.md`. Budget about $0.15.
-- [ ] **Overlay legend:** draw the legend in a strip below the image so it never hides burned-in text or the plume. Update `tests/test_overlay.py`.
+- [x] **Overlay legend:** draw the legend in a strip below the image so it never hides burned-in text or the plume. Update `tests/test_overlay.py`.
 
 **Acceptance:** episode 55 KP/K2/V1 frames backfilled from AshCam with exact timestamps; `prompts.yaml` committed; tests green.
 
@@ -211,7 +223,7 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 
 ## Budget
 
-Spent so far: $0.05 (smoke test). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $0.20 (smoke test $0.05, SAM prompt tuning $0.15). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 

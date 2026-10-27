@@ -24,7 +24,7 @@ flowchart LR
         usgs["USGS HVO Kīlauea cams<br/>public domain"]
         sgc["SGC Nevado del Ruiz cams<br/>disabled until permission"]
     end
-    usgs --> ingest["Ingest worker<br/>conditional GET, SHA-256 de-dup"]
+    usgs --> ingest["Ingest worker<br/>M.jpg or AshCam archive, SHA-256 de-dup"]
     sgc -. "enabled: false" .-> ingest
     ingest --> store[("SQLite + data/frames")]
     replay["Replay: episode 55<br/>USGS media"] --> quality
@@ -46,9 +46,11 @@ Every Meta Model API call goes through a cost ledger with a configurable daily b
 Work in progress during the hackathon. Implemented so far:
 
 - [x] Camera sources config with mandatory license and opt-in `enabled` flag
-- [x] Ingest worker: per-camera polling, conditional GET, image validation, SHA-256 de-duplication, SQLite + disk storage, camera health state
+- [x] Ingest worker: per-camera polling of the public image (conditional GET) or of the USGS AshCam archive (every frame, exact capture times), image validation, SHA-256 de-duplication, SQLite + disk storage, camera health state
+- [x] AshCam archive backfill with exact capture times (`vigia-backfill`)
+- [x] SAM 3.1 phrases tuned per target on episode 55 frames ([evidence](docs/research/prompt_tuning.md))
 - [x] API cost ledger with daily budget cap
-- [x] Mask overlay renderer
+- [x] Mask overlay renderer with a legend strip below the frame
 - [ ] Quality gate, SAM 3.1 segmentation and tracking, metrics, wind comparison
 - [ ] Muse Spark agent and bulletins
 - [ ] Episode 55 replay and validation
@@ -66,6 +68,8 @@ cp .env.example .env               # then set MODEL_API_KEY
 
 vigia-ingest --once                # poll every enabled camera once
 vigia-ingest                       # keep polling on each camera's interval
+vigia-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+                                   # download archived frames (USGS AshCam keeps ~31 days)
 pytest                             # run the test suite
 ```
 

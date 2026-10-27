@@ -56,7 +56,7 @@ Run every test command from the repo root. Commit messages follow the repo style
 - Modify: `vigia/timeutil.py`
 - Create: `tests/test_timeutil.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 from datetime import datetime, timezone
@@ -88,12 +88,12 @@ def test_parse_utc_rejects_a_time_without_offset():
         parse_utc("2026-10-17T13:00")
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_timeutil.py -v`
 Expected: FAIL with `ImportError: cannot import name 'parse_utc'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `vigia/timeutil.py`:
 
@@ -106,12 +106,12 @@ def parse_utc(value: str) -> datetime:
     return dt.astimezone(timezone.utc)
 ```
 
-- [ ] **Step 4: Run them to see them pass**
+- [x] **Step 4: Run them to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_timeutil.py -v`
 Expected: 4 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add vigia/timeutil.py tests/test_timeutil.py
@@ -128,7 +128,7 @@ The live poller and the AshCam client must store frames identically. Move valida
 - Create: `vigia/ingest/store.py`, `tests/test_store.py`
 - Modify: `vigia/ingest/fetch.py`, `vigia/ingest/worker.py`, `scripts/smoke_test.py`, `tests/test_ingest.py`, `tests/test_worker.py`
 
-- [ ] **Step 1: Write the failing store tests** (`tests/test_store.py`)
+- [x] **Step 1: Write the failing store tests** (`tests/test_store.py`)
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -189,12 +189,12 @@ def test_latest_capture_is_the_newest_frame_from_that_source(store):
     assert store.latest_capture("kilauea-k2", "ashcam") is None
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_store.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.ingest.store'`
 
-- [ ] **Step 3: Create `vigia/ingest/store.py`**
+- [x] **Step 3: Create `vigia/ingest/store.py`**
 
 ```python
 """Ingest persistence shared by every frame source.
@@ -356,12 +356,12 @@ def _decode_image(body: bytes) -> tuple[str, int, int]:
     return _EXTENSIONS[image_format], width, height
 ```
 
-- [ ] **Step 4: Run the store tests to see them pass**
+- [x] **Step 4: Run the store tests to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_store.py -v`
 Expected: 5 passed
 
-- [ ] **Step 5: Point the ingest tests at the new constructor**
+- [x] **Step 5: Point the ingest tests at the new constructor**
 
 In `tests/test_ingest.py` replace the import line and fixture:
 
@@ -381,7 +381,7 @@ In `tests/test_worker.py` replace `from vigia.ingest.fetch import IngestResult` 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ingest.py -v`
 Expected: FAIL (`Ingestor.__init__()` takes a store now in the tests but not yet in the code)
 
-- [ ] **Step 6: Rewrite `vigia/ingest/fetch.py` on top of `FrameStore`**
+- [x] **Step 6: Rewrite `vigia/ingest/fetch.py` on top of `FrameStore`**
 
 ```python
 """Download one camera image, timestamp it, drop duplicates, and store it.
@@ -447,7 +447,7 @@ def describe_error(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 ```
 
-- [ ] **Step 7: Update the two other `Ingestor` callers**
+- [x] **Step 7: Update the two other `Ingestor` callers**
 
 `vigia/ingest/worker.py`: replace the import `from vigia.ingest.fetch import IngestResult, Ingestor` with
 
@@ -464,12 +464,12 @@ and in `main()` replace `worker = Worker(Ingestor(conn, settings.data_dir, http)
 
 `scripts/smoke_test.py`: add `from vigia.ingest.store import FrameStore` after the `vigia.ingest.fetch` import, and in `fetch_live_frame` replace `Ingestor(conn, settings.data_dir, http)` with `Ingestor(FrameStore(conn, settings.data_dir), http)`.
 
-- [ ] **Step 8: Run the whole suite**
+- [x] **Step 8: Run the whole suite**
 
 Run: `.venv/Scripts/python.exe -m pytest`
 Expected: 62 passed (53 before + 4 timeutil + 5 store)
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add vigia/ingest/store.py vigia/ingest/fetch.py vigia/ingest/worker.py scripts/smoke_test.py tests/test_store.py tests/test_ingest.py tests/test_worker.py
@@ -483,7 +483,7 @@ git commit -m "Extract FrameStore so every frame source stores frames the same w
 **Files:**
 - Modify: `vigia/config.py`, `config/sources.yaml`, `tests/test_config.py`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_config.py`; add `from pathlib import Path` to its imports)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_config.py`; add `from pathlib import Path` to its imports)
 
 ```python
 REPO = Path(__file__).resolve().parent.parent
@@ -506,12 +506,12 @@ def test_committed_sources_keep_sgc_disabled_and_name_every_usgs_archive():
     assert [c.id for c in sources.cameras if c.volcano == "kilauea" and not c.ashcam_code] == []
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_config.py -v`
 Expected: FAIL: `ashcam_code` is not a field (`AttributeError`), and the committed file lists Kīlauea cameras without one
 
-- [ ] **Step 3: Add the field**
+- [x] **Step 3: Add the field**
 
 In `vigia/config.py`, add after `kind`:
 
@@ -531,7 +531,7 @@ archive (`ashcam_code`), from which `vigia-backfill` downloads past frames.
 """
 ```
 
-- [ ] **Step 4: Name the archive of every USGS camera in `config/sources.yaml`**
+- [x] **Step 4: Name the archive of every USGS camera in `config/sources.yaml`**
 
 Add one line after each Kīlauea camera's `attribution:` line:
 
@@ -553,12 +553,12 @@ and add to the header comment:
 # frames with exact capture times); `vigia-backfill` downloads from it.
 ```
 
-- [ ] **Step 5: Run the tests to see them pass**
+- [x] **Step 5: Run the tests to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_config.py -v`
 Expected: 7 passed
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vigia/config.py config/sources.yaml tests/test_config.py
@@ -572,7 +572,7 @@ git commit -m "Name each USGS camera's AshCam archive in the sources config"
 **Files:**
 - Create: `tests/fixtures/ashcam_index_kp.json`, `tests/test_ashcam.py`, `vigia/ingest/ashcam.py`
 
-- [ ] **Step 1: Save the trimmed real index** as `tests/fixtures/ashcam_index_kp.json` (3 KP frames from the real episode 55 index, newest first as the API returns them; `webcam` trimmed to its main fields; `meta` adjusted to the 3 frames):
+- [x] **Step 1: Save the trimmed real index** as `tests/fixtures/ashcam_index_kp.json` (3 KP frames from the real episode 55 index, newest first as the API returns them; `webcam` trimmed to its main fields; `meta` adjusted to the 3 frames):
 
 ```json
 {
@@ -640,7 +640,7 @@ git commit -m "Name each USGS camera's AshCam archive in the sources config"
 
 The tests replace each `md5` with the MD5 of a generated JPEG: no real image enters the repo.
 
-- [ ] **Step 2: Write the failing tests** (`tests/test_ashcam.py`)
+- [x] **Step 2: Write the failing tests** (`tests/test_ashcam.py`)
 
 ```python
 import hashlib
@@ -741,12 +741,12 @@ def test_fetch_rejects_an_image_whose_md5_does_not_match(client, archive):
         client.fetch(image)
 ```
 
-- [ ] **Step 3: Run them to see them fail**
+- [x] **Step 3: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.ingest.ashcam'`
 
-- [ ] **Step 4: Create `vigia/ingest/ashcam.py`**
+- [x] **Step 4: Create `vigia/ingest/ashcam.py`**
 
 ```python
 """USGS AshCam archive: list a webcam's archived frames and store them.
@@ -820,12 +820,12 @@ def _parse_image(item: dict[str, Any]) -> AshcamImage:
     )
 ```
 
-- [ ] **Step 5: Run them to see them pass**
+- [x] **Step 5: Run them to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v`
 Expected: 5 passed
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vigia/ingest/ashcam.py tests/test_ashcam.py tests/fixtures/ashcam_index_kp.json
@@ -839,7 +839,7 @@ git commit -m "Add AshCam client that lists archived frames and checks their MD5
 **Files:**
 - Modify: `vigia/ingest/ashcam.py`, `tests/test_ashcam.py`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_ashcam.py`; extend its imports with `from vigia.config import Camera`, `from vigia.ingest.ashcam import backfill` and `from vigia.ingest.store import FrameStore`)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_ashcam.py`; extend its imports with `from vigia.config import Camera`, `from vigia.ingest.ashcam import backfill` and `from vigia.ingest.store import FrameStore`)
 
 ```python
 @pytest.fixture
@@ -904,12 +904,12 @@ def test_backfill_needs_an_ashcam_code(client, store):
         backfill(client, store, camera, START, END)
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v`
 Expected: FAIL with `ImportError: cannot import name 'backfill'`
 
-- [ ] **Step 3: Implement** — in `vigia/ingest/ashcam.py` replace the imports with:
+- [x] **Step 3: Implement** — in `vigia/ingest/ashcam.py` replace the imports with:
 
 ```python
 from __future__ import annotations
@@ -985,12 +985,12 @@ def backfill(
     return report
 ```
 
-- [ ] **Step 4: Run them to see them pass**
+- [x] **Step 4: Run them to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v`
 Expected: 10 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add vigia/ingest/ashcam.py tests/test_ashcam.py
@@ -1004,7 +1004,7 @@ git commit -m "Backfill a camera's archived AshCam frames with exact timestamps"
 **Files:**
 - Modify: `vigia/ingest/ashcam.py`, `pyproject.toml`, `tests/test_ashcam.py`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_ashcam.py`; add `from vigia.ingest.ashcam import main`)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_ashcam.py`; add `from vigia.ingest.ashcam import main`)
 
 ```python
 SOURCES = """
@@ -1067,12 +1067,12 @@ def test_cli_refuses_an_empty_window(cli_env, capsys):
     assert "before" in capsys.readouterr().err
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v`
 Expected: FAIL with `ImportError: cannot import name 'main'`
 
-- [ ] **Step 3: Implement** — in `vigia/ingest/ashcam.py` add the imports `import argparse` and
+- [x] **Step 3: Implement** — in `vigia/ingest/ashcam.py` add the imports `import argparse` and
 
 ```python
 from vigia import db
@@ -1125,17 +1125,17 @@ In `pyproject.toml` `[project.scripts]` add:
 vigia-backfill = "vigia.ingest.ashcam:main"
 ```
 
-- [ ] **Step 4: Run them to see them pass, then the suite**
+- [x] **Step 4: Run them to see them pass, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v` → 14 passed
 Run: `.venv/Scripts/python.exe -m pytest` → 78 passed
 
-- [ ] **Step 5: Register the console script**
+- [x] **Step 5: Register the console script**
 
 Run: `.venv/Scripts/python.exe -m pip install -e ".[dev]" -q` then `.venv/Scripts/vigia-backfill.exe --help`
 Expected: usage text listing `--camera`, `--start`, `--end`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vigia/ingest/ashcam.py pyproject.toml tests/test_ashcam.py
@@ -1148,7 +1148,7 @@ git commit -m "Add vigia-backfill CLI to download archived frames for a time win
 
 Live network run, ~241 MB (78 + 195 + 195 frames). Run it in the background.
 
-- [ ] **Step 1: Run the backfill**
+- [x] **Step 1: Run the backfill**
 
 Run: `.venv/Scripts/vigia-backfill.exe --camera kilauea-kp --camera kilauea-k2 --camera kilauea-v1 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z`
 Expected last lines:
@@ -1159,7 +1159,7 @@ kilauea-k2: 195 listed, 195 new, 0 already stored, 0 duplicate, 0 failed
 kilauea-v1: 195 listed, 195 new, 0 already stored, 0 duplicate, 0 failed
 ```
 
-- [ ] **Step 2: Verify timestamps and bytes**
+- [x] **Step 2: Verify timestamps and bytes**
 
 Run:
 
@@ -1176,7 +1176,7 @@ print('KP 04:50:05 HST matches the raw copy:', sha == raw)
 
 Expected: `('kilauea-k2', 195, '2026-10-17T13:00:02Z', '2026-10-17T19:28:02Z')`, `('kilauea-kp', 78, '2026-10-17T13:00:06Z', '2026-10-17T19:25:09Z')`, `('kilauea-v1', 195, '2026-10-17T13:01:04Z', '2026-10-17T19:29:02Z')` and `... matches the raw copy: True`.
 
-- [ ] **Step 3: Re-run to prove it is idempotent**
+- [x] **Step 3: Re-run to prove it is idempotent**
 
 Run the Step 1 command again.
 Expected: `78 listed, 0 new, 78 already stored, ...` (and 195/195 for the others), with no image downloads.
@@ -1190,7 +1190,7 @@ Nothing to commit (data is git-ignored).
 **Files:**
 - Create: `scripts/measure_ashcam_latency.py`
 
-- [ ] **Step 1: Write the script**
+- [x] **Step 1: Write the script**
 
 ```python
 """Measure how fresh the USGS AshCam archive is next to the public M.jpg images.
@@ -1305,16 +1305,16 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Check it with a short run**
+- [x] **Step 2: Check it with a short run**
 
 Run: `.venv/Scripts/python.exe scripts/measure_ashcam_latency.py --minutes 1 --interval 20`
 Expected: no tracebacks; a table with one row per camera and source (counts may be 0 in one minute).
 
-- [ ] **Step 3: Start the full measurement in the background** (it finishes while Tasks 9–12 run)
+- [x] **Step 3: Start the full measurement in the background** (it finishes while Tasks 9–12 run)
 
 Run (background): `.venv/Scripts/python.exe scripts/measure_ashcam_latency.py --minutes 40 > data/latency/run.log 2>&1` (create `data/latency/` first).
 
-- [ ] **Step 4: Commit the script**
+- [x] **Step 4: Commit the script**
 
 ```bash
 git add scripts/measure_ashcam_latency.py
@@ -1332,7 +1332,7 @@ The smoke-test overlays showed the corner legend hiding the burned-in HST timest
 **Files:**
 - Modify: `vigia/overlay.py`, `tests/test_overlay.py`, `scripts/smoke_test.py`
 
-- [ ] **Step 1: Rewrite `tests/test_overlay.py`**
+- [x] **Step 1: Rewrite `tests/test_overlay.py`**
 
 ```python
 import numpy as np
@@ -1416,12 +1416,12 @@ def test_mask_with_a_different_shape_than_the_image_is_rejected():
         draw_layers(gray_image(), [layer(shape=(10, 10), top=0, left=0, size=3)])
 ```
 
-- [ ] **Step 2: Run them to see the new ones fail**
+- [x] **Step 2: Run them to see the new ones fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_overlay.py -v`
 Expected: `test_legend_goes_in_a_strip...`, `test_legend_shows_each_layer_color` and `test_min_legend_rows...` FAIL (corner legend; no strip; unexpected keyword `min_legend_rows`); the other 5 pass.
 
-- [ ] **Step 3: Implement** — replace `draw_layers` and `_draw_legend` in `vigia/overlay.py`, keeping `Layer` and `_edge` as they are:
+- [x] **Step 3: Implement** — replace `draw_layers` and `_draw_legend` in `vigia/overlay.py`, keeping `Layer` and `_edge` as they are:
 
 ```python
 """Draw segmentation masks, outlines and boxes on a frame, with a legend strip below it."""
@@ -1489,18 +1489,18 @@ def _add_legend(frame: Image.Image, layers: Sequence[Layer], rows: int) -> Image
     return out
 ```
 
-- [ ] **Step 4: Run them to see them pass**
+- [x] **Step 4: Run them to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_overlay.py -v`
 Expected: 8 passed
 
-- [ ] **Step 5: Keep the smoke test's video frames one size** — in `scripts/smoke_test.py` `track_video`, replace `draw_layers(frame, layers).save(target, quality=90)` with
+- [x] **Step 5: Keep the smoke test's video frames one size** — in `scripts/smoke_test.py` `track_video`, replace `draw_layers(frame, layers).save(target, quality=90)` with
 
 ```python
         draw_layers(frame, layers, min_legend_rows=len(ids)).save(target, quality=90)
 ```
 
-- [ ] **Step 6: Check visually on a real frame**
+- [x] **Step 6: Check visually on a real frame**
 
 Run:
 
@@ -1517,7 +1517,7 @@ draw_layers(img, [Layer(m, (255, 120, 0), 'lava fountain #0 0.89'), Layer(m, (0,
 
 Open `data/legend_check.jpg`: the `2026-10-17 06:59:01 HST` stamp (top left) and the `P: 29, T: +0.00, Z: 29 1.0` readout (bottom right) are fully visible; the two-row legend sits below the frame.
 
-- [ ] **Step 7: Run the suite and commit**
+- [x] **Step 7: Run the suite and commit**
 
 Run: `.venv/Scripts/python.exe -m pytest` → 81 passed
 
@@ -1536,7 +1536,7 @@ Prompt tuning (and the Phase 2 quality gate) send frames the way the smoke test 
 - Create: `vigia/imaging.py`, `tests/test_imaging.py`
 - Modify: `scripts/smoke_test.py`
 
-- [ ] **Step 1: Write the failing tests** (`tests/test_imaging.py`)
+- [x] **Step 1: Write the failing tests** (`tests/test_imaging.py`)
 
 ```python
 import io
@@ -1577,12 +1577,12 @@ def test_load_for_upload_applies_the_exif_rotation(tmp_path):
     assert image.size == (300, 400)
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_imaging.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.imaging'`
 
-- [ ] **Step 3: Create `vigia/imaging.py`**
+- [x] **Step 3: Create `vigia/imaging.py`**
 
 ```python
 """Prepare frames for the Meta Model API."""
@@ -1610,17 +1610,17 @@ def load_for_upload(path: str | Path, max_side: int = MAX_SIDE_PX) -> tuple[Imag
     return image, buffer.getvalue()
 ```
 
-- [ ] **Step 4: Run them to see them pass**
+- [x] **Step 4: Run them to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_imaging.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Use it in the smoke test** — in `scripts/smoke_test.py` delete `MAX_SIDE_PX` and the `load_for_upload` function, drop `import io` and change `from PIL import Image, ImageOps` to `from PIL import Image`, and add `from vigia.imaging import load_for_upload`.
+- [x] **Step 5: Use it in the smoke test** — in `scripts/smoke_test.py` delete `MAX_SIDE_PX` and the `load_for_upload` function, drop `import io` and change `from PIL import Image, ImageOps` to `from PIL import Image`, and add `from vigia.imaging import load_for_upload`.
 
 Run: `.venv/Scripts/python.exe scripts/smoke_test.py --dry-run --skip-video`
 Expected: `Results in data/smoke/<timestamp>` with no traceback (it polls the live camera once).
 
-- [ ] **Step 6: Run the suite and commit**
+- [x] **Step 6: Run the suite and commit**
 
 Run: `.venv/Scripts/python.exe -m pytest` → 84 passed
 
@@ -1637,7 +1637,7 @@ git commit -m "Move upload preprocessing into vigia.imaging"
 - Create: `vigia/prompts.py`, `tests/test_prompts.py`
 - Modify: `vigia/config.py`
 
-- [ ] **Step 1: Write the failing tests** (`tests/test_prompts.py`)
+- [x] **Step 1: Write the failing tests** (`tests/test_prompts.py`)
 
 ```python
 import textwrap
@@ -1692,12 +1692,12 @@ def test_empty_phrase_is_rejected(tmp_path):
         load_prompts(write(tmp_path, VALID.replace("[lava fountain]", "['']")))
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_prompts.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.prompts'`
 
-- [ ] **Step 3: Name the camera kinds in `vigia/config.py`** — after `class ConfigError` add
+- [x] **Step 3: Name the camera kinds in `vigia/config.py`** — after `class ConfigError` add
 
 ```python
 CameraKind = Literal["visible", "thermal"]
@@ -1705,7 +1705,7 @@ CameraKind = Literal["visible", "thermal"]
 
 and change `Camera.kind` to `kind: CameraKind = "visible"`.
 
-- [ ] **Step 4: Create `vigia/prompts.py`**
+- [x] **Step 4: Create `vigia/prompts.py`**
 
 ```python
 """SAM 3.1 phrases per target and camera kind, from config/prompts.yaml.
@@ -1749,12 +1749,12 @@ def load_prompts(path: str | Path) -> Prompts:
         raise ConfigError(str(exc)) from exc
 ```
 
-- [ ] **Step 5: Run them to see them pass, then the suite**
+- [x] **Step 5: Run them to see them pass, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_prompts.py -v` → 5 passed
 Run: `.venv/Scripts/python.exe -m pytest` → 89 passed
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vigia/prompts.py vigia/config.py tests/test_prompts.py
@@ -1782,7 +1782,7 @@ Candidates: plume = `steam` (smoke-test winner), `volcanic plume` (smoke-test ba
 - Create: `scripts/tune_prompts.py`, `docs/research/prompt_tuning.md`, `config/prompts.yaml`
 - Modify: `tests/test_prompts.py`
 
-- [ ] **Step 1: Write the script**
+- [x] **Step 1: Write the script**
 
 ```python
 """Choose SAM 3.1 phrases for volcanic plumes, lava fountains and incandescence.
@@ -1937,38 +1937,38 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Dry run**
+- [x] **Step 2: Dry run**
 
 Run: `.venv/Scripts/python.exe scripts/tune_prompts.py --dry-run`
 Expected: `57 SAM image calls on 6 frames, estimated $0.1425` and 57 lines, all `[ok]`.
 
-- [ ] **Step 3: Commit the script**
+- [x] **Step 3: Commit the script**
 
 ```bash
 git add scripts/tune_prompts.py
 git commit -m "Add SAM prompt tuning script over episode 55 frames"
 ```
 
-- [ ] **Step 4: Live run**
+- [x] **Step 4: Live run**
 
 Run: `.venv/Scripts/python.exe scripts/tune_prompts.py`
 Expected: `Results in data/tuning/<timestamp>`, cost line ≈ $0.14 in `summary.md`.
 
-- [ ] **Step 5: Judge the contact sheets** — open `data/tuning/<timestamp>/<frame>/contact_sheet.jpg` for all 6 frames. For each (frame, phrase) write a verdict:
+- [x] **Step 5: Judge the contact sheets** — open `data/tuning/<timestamp>/<frame>/contact_sheet.jpg` for all 6 frames. For each (frame, phrase) write a verdict:
   - **✓** the mask is the intended target (plume: the gas/ash column above the vent including its top; fountain: the lava jet; incandescence: glowing lava);
   - **~** the target plus something else, or only part of it (state which);
   - **✗** the wrong object (state which: e.g. the fountain for a plume phrase, meteorological cloud);
   - **–** nothing found.
 
-- [ ] **Step 6: Choose phrases** with this rule, per target and camera kind:
+- [x] **Step 6: Choose phrases** with this rule, per target and camera kind:
   1. Rank phrases by the number of ✓ over the frames where the target is visible, then by the lowest best score among those ✓.
   2. Keep the top phrase. Add a second phrase only if it gets ✓ on a frame where the first does not (for example, night versus day).
   3. A phrase that ever returns the fountain for `plume` (or the plume for `fountain`) is not chosen.
   4. A target and kind with no ✓ gets no phrases (an empty list is valid).
 
-- [ ] **Step 7: Write `docs/research/prompt_tuning.md`** with these sections: *Method* (frames table above, candidates, cost from `summary.md`, run directory); *Results* (one table per target: phrase × frame cells with verdict and score, e.g. `✓ 0.82`); *Choice* (the phrases per target and kind and why, per the Step 6 rule); *Caveats* (single frames per condition; SAM results vary slightly between runs; what Phase 2 should watch for).
+- [x] **Step 7: Write `docs/research/prompt_tuning.md`** with these sections: *Method* (frames table above, candidates, cost from `summary.md`, run directory); *Results* (one table per target: phrase × frame cells with verdict and score, e.g. `✓ 0.82`); *Choice* (the phrases per target and kind and why, per the Step 6 rule); *Caveats* (single frames per condition; SAM results vary slightly between runs; what Phase 2 should watch for).
 
-- [ ] **Step 8: Write `config/prompts.yaml`** in this format, with the phrases chosen in Step 6:
+- [x] **Step 8: Write `config/prompts.yaml`** in this format, with the phrases chosen in Step 6:
 
 ```yaml
 # SAM 3.1 noun phrases per target and camera kind, best first. SAM takes one
@@ -1986,7 +1986,7 @@ incandescence:
   thermal: [<phrases>]
 ```
 
-- [ ] **Step 9: Guard the committed file** — append to `tests/test_prompts.py` (add `from pathlib import Path`):
+- [x] **Step 9: Guard the committed file** — append to `tests/test_prompts.py` (add `from pathlib import Path`):
 
 ```python
 REPO = Path(__file__).resolve().parent.parent
@@ -2001,7 +2001,7 @@ def test_committed_prompts_cover_plumes_and_fountains_on_visible_cameras():
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_prompts.py -v` → 6 passed
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add config/prompts.yaml docs/research/prompt_tuning.md tests/test_prompts.py
@@ -2012,11 +2012,11 @@ git commit -m "Choose SAM phrases per target from episode 55 tuning"
 
 ### Task 13: Live source decision, and AshCam live polling if it wins
 
-- [ ] **Step 1: Read the measurement** — `data/latency/run.log` from Task 8.
+- [x] **Step 1: Read the measurement** — `data/latency/run.log` from Task 8.
 
-- [ ] **Step 2: Write `docs/research/ashcam_latency.md`**: when and how it was measured; the results table; the byte-identity and timestamp facts from the top of this plan; and the decision per camera with this rule: **a camera polls AshCam live when its median AshCam latency is ≤ 5 min and AshCam's spacing is no longer than `M.jpg`'s; otherwise it keeps `M.jpg`.**
+- [x] **Step 2: Write `docs/research/ashcam_latency.md`**: when and how it was measured; the results table; the byte-identity and timestamp facts from the top of this plan; and the decision per camera with this rule: **a camera polls AshCam live when its median AshCam latency is ≤ 5 min and AshCam's spacing is no longer than `M.jpg`'s; otherwise it keeps `M.jpg`.**
 
-- [ ] **Step 3: Commit the decision**
+- [x] **Step 3: Commit the decision**
 
 ```bash
 git add docs/research/ashcam_latency.md
@@ -2025,7 +2025,7 @@ git commit -m "Record AshCam latency measurement and the live source decision"
 
 If no camera qualifies, stop this task here. Otherwise continue.
 
-- [ ] **Step 4: Write the failing config tests** (append to `tests/test_config.py`)
+- [x] **Step 4: Write the failing config tests** (append to `tests/test_config.py`)
 
 ```python
 def test_live_source_defaults_to_the_image_url(tmp_path):
@@ -2043,7 +2043,7 @@ def test_live_polling_through_ashcam_needs_an_ashcam_code(tmp_path):
 Run: `.venv/Scripts/python.exe -m pytest tests/test_config.py -v`
 Expected: the two new tests FAIL (`live_source` unknown)
 
-- [ ] **Step 5: Add `live_source` to `Camera`** in `vigia/config.py`, after `ashcam_code`:
+- [x] **Step 5: Add `live_source` to `Camera`** in `vigia/config.py`, after `ashcam_code`:
 
 ```python
     live_source: Literal["url", "ashcam"] = "url"  # where the live poller gets new frames
@@ -2057,7 +2057,7 @@ Expected: the two new tests FAIL (`live_source` unknown)
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_config.py -v` → all pass
 
-- [ ] **Step 6: Write the failing live-ingestor tests** (append to `tests/test_ashcam.py`; import `AshcamIngestor` and `timedelta`)
+- [x] **Step 6: Write the failing live-ingestor tests** (append to `tests/test_ashcam.py`; import `AshcamIngestor` and `timedelta`)
 
 ```python
 LIVE_NOW = datetime(2026, 10, 17, 15, 1, tzinfo=timezone.utc)
@@ -2112,7 +2112,7 @@ def test_live_poll_records_an_archive_outage_as_an_error(live, archive, conn):
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v`
 Expected: FAIL with `ImportError: cannot import name 'AshcamIngestor'`
 
-- [ ] **Step 7: Implement `AshcamIngestor`** in `vigia/ingest/ashcam.py`: add `timedelta` to the `datetime` import, `IngestResult` to the `vigia.ingest.store` import, and after `backfill()`:
+- [x] **Step 7: Implement `AshcamIngestor`** in `vigia/ingest/ashcam.py`: add `timedelta` to the `datetime` import, `IngestResult` to the `vigia.ingest.store` import, and after `backfill()`:
 
 ```python
 class AshcamIngestor:
@@ -2154,7 +2154,7 @@ class AshcamIngestor:
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_ashcam.py -v` → all pass
 
-- [ ] **Step 8: Write the failing router test** (append to `tests/test_worker.py`; import `SourceRouter` from `vigia.ingest.worker`)
+- [x] **Step 8: Write the failing router test** (append to `tests/test_worker.py`; import `SourceRouter` from `vigia.ingest.worker`)
 
 ```python
 def test_router_sends_each_camera_to_the_ingestor_of_its_live_source():
@@ -2170,7 +2170,7 @@ def test_router_sends_each_camera_to_the_ingestor_of_its_live_source():
 Run: `.venv/Scripts/python.exe -m pytest tests/test_worker.py -v`
 Expected: FAIL with `ImportError: cannot import name 'SourceRouter'`
 
-- [ ] **Step 9: Implement the router and wire it** — in `vigia/ingest/worker.py` add after `SupportsIngest`:
+- [x] **Step 9: Implement the router and wire it** — in `vigia/ingest/worker.py` add after `SupportsIngest`:
 
 ```python
 class SourceRouter:
@@ -2193,15 +2193,15 @@ import `from vigia.ingest.ashcam import AshcamClient, AshcamIngestor`, and in `m
 
 Update the module docstring's first line to: `"""Polling loop: fetch each enabled camera on its own interval, from its live source."""`
 
-- [ ] **Step 10: Switch the qualifying cameras** — in `config/sources.yaml` add `    live_source: ashcam` to each camera the Step 2 decision selected, and extend the header comment: `# \`live_source: ashcam\` polls the archive instead of M.jpg: 2-min frames with exact capture times.`
+- [x] **Step 10: Switch the qualifying cameras** — in `config/sources.yaml` add `    live_source: ashcam` to each camera the Step 2 decision selected, and extend the header comment: `# \`live_source: ashcam\` polls the archive instead of M.jpg: 2-min frames with exact capture times.`
 
-- [ ] **Step 11: Run the suite and one live poll**
+- [x] **Step 11: Run the suite and one live poll**
 
 Run: `.venv/Scripts/python.exe -m pytest` → all pass
 Run: `.venv/Scripts/vigia-ingest.exe --once`
 Expected: one line per enabled camera; AshCam cameras report `new` (first poll stores the last hour) without errors.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add vigia/config.py vigia/ingest/ashcam.py vigia/ingest/worker.py config/sources.yaml tests/test_config.py tests/test_ashcam.py tests/test_worker.py
@@ -2215,7 +2215,7 @@ git commit -m "Poll AshCam live for cameras where it is fresher than M.jpg"
 **Files:**
 - Modify: `README.md`, `DATA_SOURCES.md`, `docs/PLAN.md`
 
-- [ ] **Step 1: README** — under *Running it* add:
+- [x] **Step 1: README** — under *Running it* add:
 
 ```bash
 vigia-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
@@ -2224,16 +2224,16 @@ vigia-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19
 
 and in *Status* add `- [x] AshCam archive backfill with exact capture times` and `- [x] SAM 3.1 phrases tuned per target on episode 55 frames`; rename the overlay line to `- [x] Mask overlay renderer with a legend strip below the frame`. If Task 13 switched cameras to AshCam, also update the ingest worker line to mention it.
 
-- [ ] **Step 2: DATA_SOURCES.md** — in the AshCam row, state that its files are byte-identical to `M.jpg`, that `vigia-backfill` uses it, and (if Task 13 applied) which cameras poll it live.
+- [x] **Step 2: DATA_SOURCES.md** — in the AshCam row, state that its files are byte-identical to `M.jpg`, that `vigia-backfill` uses it, and (if Task 13 applied) which cameras poll it live.
 
-- [ ] **Step 3: docs/PLAN.md** — tick the four Phase 1 checkboxes; add `store.py`, `imaging.py` and `prompts.py` to the module map as existing; add the AshCam byte-identity/latency and the chosen phrases to *Facts the plan depends on*; update *Spent so far* in *Budget* with the tuning cost.
+- [x] **Step 3: docs/PLAN.md** — tick the four Phase 1 checkboxes; add `store.py`, `imaging.py` and `prompts.py` to the module map as existing; add the AshCam byte-identity/latency and the chosen phrases to *Facts the plan depends on*; update *Spent so far* in *Budget* with the tuning cost.
 
-- [ ] **Step 4: Final verification**
+- [x] **Step 4: Final verification**
 
 Run: `.venv/Scripts/python.exe -m pytest`
 Expected: all pass, 0 failures.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 ```bash
 git add README.md DATA_SOURCES.md docs/PLAN.md
@@ -2241,4 +2241,22 @@ git commit -m "Mark Phase 1 done: AshCam backfill, prompt tuning, legend strip"
 git push origin main
 ```
 
-- [ ] **Step 6: Update the project memory** (`vigia-andino-status`): Phase 1 done, the live-source decision, the chosen phrases, the test count, the spend, and "next: Phase 2 (quality gate, timelapse tracking)".
+- [x] **Step 6: Update the project memory** (`vigia-andino-status`): Phase 1 done, the live-source decision, the chosen phrases, the test count, the spend, and "next: Phase 2 (quality gate, timelapse tracking)".
+
+---
+
+## Execution notes (2026-10-27)
+
+All 14 tasks were executed inline on `main`. The suite went from 53 to 98 tests. Deviations from the steps above:
+
+1. **SAM mask resolution (Task 12, Step 4).** The first live run crashed on its first call: a 1081×680 px plume box came with a 1024×644 mask raster. SAM sends large masks at reduced resolution, and `meta_sam_parser` keeps the raster's own size.
+   - `vigia/meta/sam.py` now scales each raster to its box (nearest neighbour). A failing test came first, reusing the docs' 27×60 raster on a box twice its size.
+   - Documented in META_API_NOTES §4. Commit `4b45ed7`.
+   - The aborted run cost one call.
+2. **Fountain follow-up (Task 12, Steps 5–6).** `lava fountain` and `glowing lava` tied, so the script gained a `--frame` option and a `v1_0459_night` frame with glowing flows all around the fountain. That added 3 calls.
+   - Tuning total: 61 calls, $0.1525.
+   - The rule's tie-break favoured `glowing lava` by 0.01. We chose `lava fountain`; the reasons are in `docs/research/prompt_tuning.md`.
+3. **Module run.** A self-review found that `python -m vigia.ingest.ashcam` raised `NameError`: the `__main__` guard ran before `_parse_image` was defined. The console script was not affected. Fixed in `012d0ed`.
+4. **Task 13 order.** The `live_source`, `AshcamIngestor` and `SourceRouter` steps were written test-first while the 40-minute latency measurement ran. They were committed after the decision (`3aed311`, then `e35b5b9`).
+   - Decision: KPcam, K2cam and V1cam use AshCam; F1cam keeps `M.jpg`.
+   - The first live poll stored the last hour from AshCam: K2 29 frames, KP 12. One K2 capture was skipped as a byte-identical duplicate of an `M.jpg` frame stored earlier the same day.
