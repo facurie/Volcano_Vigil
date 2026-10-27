@@ -25,3 +25,11 @@ def parse_http_date(value: str | None) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def parse_utc(value: str) -> datetime:
+    """Parse an ISO-8601 time that states its offset ('2026-10-17T13:00Z', '...-10:00') into UTC."""
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        raise ValueError(f"time {value!r} has no UTC offset; end it with Z (UTC) or e.g. -10:00 (HST)")
+    return dt.astimezone(timezone.utc)
