@@ -1,8 +1,11 @@
 import textwrap
+from pathlib import Path
 
 import pytest
 
 from vigia.config import ConfigError, load_sources
+
+REPO = Path(__file__).resolve().parent.parent
 
 VALID = """
 volcanoes:
@@ -66,3 +69,20 @@ def test_duplicate_camera_ids_are_rejected(tmp_path):
     text = VALID.replace("id: kilauea-k2", "id: kilauea-v1")
     with pytest.raises(ConfigError, match="kilauea-v1"):
         load_sources(write(tmp_path, text))
+
+
+def test_ashcam_code_is_optional(tmp_path):
+    text = VALID.replace("    enabled: true\n    poll_minutes: 5",
+                         "    enabled: true\n    poll_minutes: 5\n    ashcam_code: kilauea-v1-cam")
+
+    sources = load_sources(write(tmp_path, text))
+
+    assert sources.cameras[0].ashcam_code == "kilauea-v1-cam"
+    assert sources.cameras[1].ashcam_code is None
+
+
+def test_committed_sources_keep_sgc_disabled_and_name_every_usgs_archive():
+    sources = load_sources(REPO / "config" / "sources.yaml")
+
+    assert [c.id for c in sources.cameras if c.volcano == "nevado-del-ruiz" and c.enabled] == []
+    assert [c.id for c in sources.cameras if c.volcano == "kilauea" and not c.ashcam_code] == []

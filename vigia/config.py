@@ -2,7 +2,8 @@
 
 Every camera must declare its license and attribution. Cameras are disabled
 unless explicitly enabled, so a source without permission can live in the
-config without ever being fetched.
+config without ever being fetched. USGS cameras also name their AshCam
+archive (`ashcam_code`), from which `vigia-backfill` downloads past frames.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ class Camera(BaseModel):
     enabled: bool = False
     poll_minutes: float = Field(default=5, gt=0)
     kind: Literal["visible", "thermal"] = "visible"
+    ashcam_code: str | None = None  # USGS AshCam archive code, e.g. kilauea-kp-cam
     page_url: str | None = None
     notes: str | None = None
 
