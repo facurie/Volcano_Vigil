@@ -1,9 +1,12 @@
 from datetime import timedelta
 
-from conftest import NOW
+import httpx
+
+from conftest import NOW, make_jpeg
+from test_ashcam import FakeAshcam, kp_camera
 from vigia.config import Camera
-from vigia.ingest.store import IngestResult
-from vigia.ingest.worker import SourceRouter, Worker
+from vigia.ingest.store import FrameStore, IngestResult
+from vigia.ingest.worker import Fallback, SourceRouter, Worker, build_router
 
 
 def cam(camera_id, enabled=True, poll_minutes=5):
@@ -14,15 +17,16 @@ def cam(camera_id, enabled=True, poll_minutes=5):
 
 
 class RecordingIngestor:
-    def __init__(self, failing=()):
+    def __init__(self, failing=(), status="new"):
         self.calls = []
         self.failing = set(failing)
+        self.status = status
 
     def ingest(self, camera):
         self.calls.append(camera.id)
         if camera.id in self.failing:
             raise RuntimeError("boom")
-        return IngestResult(camera.id, "new")
+        return IngestResult(camera.id, self.status, error="HTTP 503" if self.status == "error" else None)
 
 
 def test_only_enabled_cameras_are_polled():
@@ -80,3 +84,45 @@ def test_router_sends_each_camera_to_the_ingestor_of_its_live_source():
     router.ingest(cam("b").model_copy(update={"live_source": "ashcam"}))
 
     assert (by_url.calls, by_ashcam.calls) == (["a"], ["b"])
+
+
+def test_fallback_keeps_the_primary_result_when_it_works():
+    primary, backup = RecordingIngestor(), RecordingIngestor()
+
+    result = Fallback(primary, backup).ingest(cam("kp"))
+
+    assert result.status == "new"
+    assert (primary.calls, backup.calls) == (["kp"], [])
+
+
+def test_fallback_polls_the_backup_when_the_primary_reports_an_error():
+    primary, backup = RecordingIngestor(status="error"), RecordingIngestor()
+
+    result = Fallback(primary, backup).ingest(cam("kp"))
+
+    assert result.status == "new"
+    assert (primary.calls, backup.calls) == (["kp"], ["kp"])
+
+
+def test_fallback_polls_the_backup_when_the_primary_raises():
+    primary, backup = RecordingIngestor(failing={"kp"}), RecordingIngestor()
+
+    result = Fallback(primary, backup).ingest(cam("kp"))
+
+    assert result.status == "new"
+    assert backup.calls == ["kp"]
+
+
+def test_cameras_on_ashcam_are_fed_from_their_image_url_while_the_archive_is_down(conn, server, tmp_path):
+    archive = FakeAshcam()
+    archive.list_status = 503
+    camera = kp_camera().model_copy(update={"live_source": "ashcam"})
+    server.add(camera.url, body=make_jpeg(), headers={"Last-Modified": "Tue, 27 Oct 2026 18:00:05 GMT"})
+    http = httpx.Client(transport=httpx.MockTransport(
+        lambda request: archive(request) if request.url.host == "volcview.wr.usgs.gov" else server.handle(request)))
+
+    result = build_router(FrameStore(conn, tmp_path), http).ingest(camera)
+
+    assert result.status == "new"
+    [frame] = conn.execute("SELECT timestamp_source FROM frames").fetchall()
+    assert frame["timestamp_source"] == "http_last_modified"

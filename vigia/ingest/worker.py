@@ -1,5 +1,8 @@
 """Polling loop: fetch each enabled camera on its own interval, from its live source.
 
+Cameras on the AshCam archive fall back to their public image URL whenever the
+archive fails, so they keep getting frames (every 10 min instead of 2).
+
 Run it standalone with `vigia-ingest` (or `python -m vigia.ingest.worker`);
 `--once` polls every enabled camera a single time and exits.
 """
@@ -41,6 +44,31 @@ class SourceRouter:
 
     def ingest(self, camera: Camera) -> IngestResult:
         return self._ingestors[camera.live_source].ingest(camera)
+
+
+class Fallback:
+    """Poll a camera through `backup` whenever `primary` fails for it."""
+
+    def __init__(self, primary: SupportsIngest, backup: SupportsIngest):
+        self._primary = primary
+        self._backup = backup
+
+    def ingest(self, camera: Camera) -> IngestResult:
+        try:
+            result = self._primary.ingest(camera)
+        except Exception:  # whatever breaks in the primary source, the camera keeps its frames
+            log.exception("camera %s: primary source failed; using the backup", camera.id)
+        else:
+            if result.status != "error":
+                return result
+            log.warning("camera %s: primary source failed (%s); using the backup", camera.id, result.error)
+        return self._backup.ingest(camera)
+
+
+def build_router(store: FrameStore, http: httpx.Client) -> SourceRouter:
+    """The live ingestor of each source; AshCam cameras fall back to their image URL."""
+    by_url = Ingestor(store, http)
+    return SourceRouter({"url": by_url, "ashcam": Fallback(AshcamIngestor(AshcamClient(http), store), by_url)})
 
 
 class Worker:
@@ -90,9 +118,7 @@ def main(argv: list[str] | None = None) -> None:
     conn = db.connect(settings.db_path)
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as http:
-        store = FrameStore(conn, settings.data_dir)
-        router = SourceRouter({"url": Ingestor(store, http), "ashcam": AshcamIngestor(AshcamClient(http), store)})
-        worker = Worker(router, sources.cameras)
+        worker = Worker(build_router(FrameStore(conn, settings.data_dir), http), sources.cameras)
         if args.once:
             for result in worker.run_once():
                 print(f"{result.camera_id}: {result.status}" + (f" ({result.error})" if result.error else ""))

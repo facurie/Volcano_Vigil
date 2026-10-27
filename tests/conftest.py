@@ -35,7 +35,7 @@ class FakeServer:
     def add(self, url, *, status=200, body=b"", headers=None, exc=None):
         self._queue.setdefault(url, []).append((status, body, headers or {}, exc))
 
-    def _handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         status, body, headers, exc = self._queue[str(request.url)].pop(0)
         if exc is not None:
@@ -43,7 +43,7 @@ class FakeServer:
         return httpx.Response(status, content=body, headers=headers)
 
     def client(self) -> httpx.Client:
-        return httpx.Client(transport=httpx.MockTransport(self._handle))
+        return httpx.Client(transport=httpx.MockTransport(self.handle))
 
 
 @pytest.fixture
