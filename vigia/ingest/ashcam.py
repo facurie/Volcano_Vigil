@@ -11,6 +11,7 @@ was read from the AshCam GUI's JavaScript (docs/research/episode55.md, §6).
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import logging
 from collections.abc import Callable
@@ -20,10 +21,12 @@ from typing import Any
 
 import httpx
 
-from vigia.config import Camera
+from vigia import db
+from vigia.config import Camera, load_sources
 from vigia.ingest.fetch import describe_error
 from vigia.ingest.store import FrameStore
-from vigia.timeutil import utcnow
+from vigia.settings import Settings
+from vigia.timeutil import parse_utc, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +121,41 @@ def backfill(
             report.new += 1
             report.frame_ids.append(frame_id)
     return report
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Download a camera's archived frames from USGS AshCam.")
+    parser.add_argument("--camera", action="append", required=True,
+                        help="camera id from the sources file; repeat it for several cameras")
+    parser.add_argument("--start", type=parse_utc, required=True, help="first capture time, e.g. 2026-10-17T13:00Z")
+    parser.add_argument("--end", type=parse_utc, required=True, help="last capture time, e.g. 2026-10-17T19:30Z")
+    args = parser.parse_args(argv)
+    if args.start >= args.end:
+        parser.error("--start must be before --end")
+
+    settings = Settings.from_env()
+    cameras = {c.id: c for c in load_sources(settings.sources_path).cameras}
+    for camera_id in args.camera:
+        if camera_id not in cameras:
+            parser.error(f"unknown camera {camera_id!r} in {settings.sources_path}")
+        if not cameras[camera_id].ashcam_code:
+            parser.error(f"camera {camera_id!r} has no ashcam_code in {settings.sources_path}")
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    conn = db.connect(settings.db_path)
+    with httpx.Client(timeout=60, follow_redirects=True, headers={"User-Agent": settings.user_agent}) as http:
+        client, store = AshcamClient(http), FrameStore(conn, settings.data_dir)
+        for camera_id in args.camera:
+            try:
+                report = backfill(client, store, cameras[camera_id], args.start, args.end)
+            except (httpx.HTTPError, ValueError) as exc:
+                print(f"{camera_id}: could not list the archive ({describe_error(exc)})")
+                continue
+            print(f"{camera_id}: {report.summary()}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 def _parse_image(item: dict[str, Any]) -> AshcamImage:

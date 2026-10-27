@@ -8,7 +8,7 @@ import pytest
 
 from conftest import make_jpeg
 from vigia.config import Camera
-from vigia.ingest.ashcam import AshcamClient, ChecksumMismatch, backfill
+from vigia.ingest.ashcam import AshcamClient, ChecksumMismatch, backfill, main
 from vigia.ingest.store import FrameStore
 
 INDEX = Path(__file__).parent / "fixtures" / "ashcam_index_kp.json"
@@ -158,3 +158,63 @@ def test_backfill_needs_an_ashcam_code(client, store):
 
     with pytest.raises(ValueError, match="ashcam_code"):
         backfill(client, store, camera, START, END)
+
+
+SOURCES = """
+volcanoes:
+  kilauea:
+    name: Kīlauea
+    country: United States
+    official_agency: USGS Hawaiian Volcano Observatory
+    official_url: https://www.usgs.gov/volcanoes/kilauea
+cameras:
+  - id: kilauea-kp
+    name: KPcam
+    volcano: kilauea
+    url: https://example.org/KPcam/images/M.jpg
+    license: Public Domain
+    attribution: U.S. Geological Survey
+    ashcam_code: kilauea-kp-cam
+  - id: kilauea-s2
+    name: S2cam
+    volcano: kilauea
+    url: https://example.org/S2cam/images/M.jpg
+    license: Public Domain
+    attribution: U.S. Geological Survey
+"""
+WINDOW = ["--start", "2026-10-17T13:00Z", "--end", "2026-10-17T19:30Z"]
+
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(SOURCES, encoding="utf-8")
+    monkeypatch.setenv("SOURCES_PATH", str(sources))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+
+
+def test_cli_refuses_a_camera_without_an_ashcam_code(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--camera", "kilauea-s2", *WINDOW])
+
+    assert "ashcam_code" in capsys.readouterr().err
+
+
+def test_cli_refuses_an_unknown_camera(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--camera", "etna-1", *WINDOW])
+
+    assert "etna-1" in capsys.readouterr().err
+
+
+def test_cli_refuses_times_without_an_offset(cli_env):
+    with pytest.raises(SystemExit):
+        main(["--camera", "kilauea-kp", "--start", "2026-10-17T13:00", "--end", "2026-10-17T19:30Z"])
+
+
+def test_cli_refuses_an_empty_window(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--camera", "kilauea-kp", "--start", "2026-10-17T19:30Z", "--end", "2026-10-17T13:00Z"])
+
+    assert "before" in capsys.readouterr().err
