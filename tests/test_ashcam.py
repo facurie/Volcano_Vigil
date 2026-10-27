@@ -8,7 +8,7 @@ import pytest
 
 from conftest import make_jpeg
 from vigia.config import Camera
-from vigia.ingest.ashcam import AshcamClient, AshcamIngestor, ChecksumMismatch, backfill, main
+from vigia.ingest.ashcam import AshcamClient, AshcamIngestor, ChecksumMismatch, IndexFormatError, backfill, main
 from vigia.ingest.store import FrameStore
 
 INDEX = Path(__file__).parent / "fixtures" / "ashcam_index_kp.json"
@@ -81,6 +81,20 @@ def test_list_images_raises_when_the_archive_fails(client, archive):
     archive.list_status = 503
 
     with pytest.raises(httpx.HTTPStatusError):
+        client.list_images("kilauea-kp-cam", START, END)
+
+
+def test_list_images_reports_an_index_without_the_expected_fields(client, archive):
+    archive.index = {"frames": []}
+
+    with pytest.raises(IndexFormatError, match="KeyError"):
+        client.list_images("kilauea-kp-cam", START, END)
+
+
+def test_list_images_reports_a_field_of_an_unexpected_type(client, archive):
+    archive.index["images"][0]["imageTimestamp"] = "yesterday"
+
+    with pytest.raises(IndexFormatError, match="TypeError"):
         client.list_images("kilauea-kp-cam", START, END)
 
 
@@ -206,6 +220,15 @@ def test_live_poll_records_an_archive_outage_as_an_error(live, archive, conn):
     result = live.ingest(kp_camera())
 
     assert result.status == "error" and "503" in result.error
+    assert camera_state(conn)["consecutive_errors"] == 1
+
+
+def test_live_poll_records_an_unexpected_index_format_as_an_error(live, archive, conn):
+    archive.index = {"frames": []}
+
+    result = live.ingest(kp_camera())
+
+    assert result.status == "error" and "IndexFormatError" in result.error
     assert camera_state(conn)["consecutive_errors"] == 1
 
 

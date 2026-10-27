@@ -37,6 +37,10 @@ class ChecksumMismatch(ValueError):
     """A downloaded AshCam frame does not match the MD5 listed in the index."""
 
 
+class IndexFormatError(ValueError):
+    """The AshCam index is not in the format this client was written for (the API is undocumented)."""
+
+
 @dataclass(frozen=True)
 class AshcamImage:
     webcam_code: str
@@ -60,7 +64,10 @@ class AshcamClient:
             "limit": 0,  # no limit
         })
         response.raise_for_status()
-        images = [_parse_image(item) for item in response.json()["images"]]
+        try:
+            images = [_parse_image(item) for item in response.json()["images"]]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise IndexFormatError(f"unexpected AshCam index format ({type(exc).__name__}: {exc})") from exc
         return sorted(images, key=lambda image: image.timestamp)  # the API answers newest first
 
     def fetch(self, image: AshcamImage) -> bytes:
