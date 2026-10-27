@@ -240,7 +240,7 @@ def track_video(client: MetaClient | None, args: argparse.Namespace, out: Path) 
                   for o in by_frame.get(index, [])]
         target = out / "overlay" / frame_path.name
         target.parent.mkdir(exist_ok=True)
-        draw_layers(frame, layers).save(target, quality=90)
+        draw_layers(frame, layers, min_legend_rows=len(ids)).save(target, quality=90)
         rendered.append(target)
     assemble(rendered, out / "overlay.mp4", fps=info.fps)
     contact_sheet(rendered, out / "contact_sheet.jpg")

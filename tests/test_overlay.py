@@ -20,35 +20,60 @@ def square_mask(shape=(300, 400), top=150, left=200, size=40):
     return mask
 
 
+def layer(color=(255, 0, 0), label="plume", **mask_args):
+    return Layer(mask=square_mask(**mask_args), color=color, label=label)
+
+
 def test_mask_pixels_are_tinted_with_the_layer_color():
-    out = draw_layers(gray_image(), [Layer(mask=square_mask(), color=(255, 0, 0), label="plume")], alpha=0.5)
+    out = draw_layers(gray_image(), [layer()], alpha=0.5)
 
     assert out.getpixel(INSIDE) == RED_ON_GRAY
 
 
 def test_pixels_outside_every_mask_are_unchanged():
-    out = draw_layers(gray_image(), [Layer(mask=square_mask(), color=(255, 0, 0), label="plume")])
+    out = draw_layers(gray_image(), [layer()])
 
     assert out.getpixel(OUTSIDE) == (100, 100, 100)
 
 
-def test_labels_never_cover_the_mask():
-    layer = Layer(mask=square_mask(top=0, left=0), color=(255, 0, 0), label="plume")
+def test_legend_goes_in_a_strip_below_the_image_and_covers_none_of_it():
+    out = draw_layers(gray_image(), [layer(top=0, left=0)], alpha=0.5)
 
-    out = draw_layers(gray_image(), [layer], alpha=0.5)
+    assert out.width == SIZE[0] and out.height > SIZE[1]
+    frame = np.asarray(out)[:SIZE[1]]
+    assert (frame[~square_mask(top=0, left=0)] == 100).all()  # burned-in text in any corner stays visible
+    assert out.getpixel((5, 8)) == RED_ON_GRAY  # where a corner legend used to go
 
-    assert out.getpixel((5, 8)) == RED_ON_GRAY  # where a label anchored at the mask's corner would go
+
+def test_legend_shows_each_layer_color():
+    layers = [layer(color=(255, 0, 0), label="plume"), layer(color=(0, 255, 0), label="fountain", top=20, left=20)]
+
+    out = draw_layers(gray_image(), layers)
+
+    strip = np.asarray(out)[SIZE[1]:].reshape(-1, 3)
+    assert {(255, 0, 0), (0, 255, 0)} <= {tuple(int(v) for v in pixel) for pixel in strip}
 
 
-def test_output_keeps_the_input_size_and_does_not_modify_the_input():
+def test_min_legend_rows_give_every_frame_of_a_video_the_same_size():
+    two_layers = [layer(), layer(color=(0, 255, 0), top=20, left=20)]
+
+    sizes = {draw_layers(gray_image(), layers, min_legend_rows=2).size for layers in ([], [layer()], two_layers)}
+
+    assert len(sizes) == 1
+
+
+def test_without_layers_the_image_keeps_its_size():
+    assert draw_layers(gray_image(), []).size == SIZE
+
+
+def test_input_image_is_not_modified():
     image = gray_image()
 
-    out = draw_layers(image, [Layer(mask=square_mask(), color=(0, 255, 0), label="steam")])
+    draw_layers(image, [layer(color=(0, 255, 0), label="steam")])
 
-    assert out.size == image.size
     assert image.getpixel(INSIDE) == (100, 100, 100)
 
 
 def test_mask_with_a_different_shape_than_the_image_is_rejected():
     with pytest.raises(ValueError, match="shape"):
-        draw_layers(gray_image(), [Layer(mask=square_mask(shape=(10, 10), top=0, left=0, size=3), color=(0, 0, 255), label="x")])
+        draw_layers(gray_image(), [layer(shape=(10, 10), top=0, left=0, size=3)])
