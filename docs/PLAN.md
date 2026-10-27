@@ -23,6 +23,11 @@
    - English code, comments and docs; bulletins in ES and EN.
    - No images in git: everything lives in git-ignored `data/`.
    - Every Meta call goes through `vigia/meta/client.py`.
+   - Subagents live in `.claude/agents/`:
+     - `implementer` (Sonnet) runs one plan task with TDD and commits locally.
+     - `reviewer` (Sonnet) reviews those commits, read-only.
+     - `researcher` (Haiku, or Sonnet when the answer feeds a decision) does read-only research.
+     - The orchestrator verifies the result, ticks the boxes and pushes.
 5. Hard rules:
    - SGC (Ruiz) cameras stay `enabled: false` until SGC grants permission.
    - Every bulletin carries the "does not replace official alerts" disclaimer and a link to the official agency.
