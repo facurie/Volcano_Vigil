@@ -72,6 +72,15 @@ class AshcamClient:
         return response.content
 
 
+def _parse_image(item: dict[str, Any]) -> AshcamImage:
+    return AshcamImage(
+        webcam_code=item["webcamCode"],
+        timestamp=datetime.fromtimestamp(item["imageTimestamp"], timezone.utc),
+        url=item["imageUrl"],
+        md5=item["md5"],
+    )
+
+
 @dataclass
 class BackfillReport:
     listed: int = 0
@@ -156,12 +165,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-
-
-def _parse_image(item: dict[str, Any]) -> AshcamImage:
-    return AshcamImage(
-        webcam_code=item["webcamCode"],
-        timestamp=datetime.fromtimestamp(item["imageTimestamp"], timezone.utc),
-        url=item["imageUrl"],
-        md5=item["md5"],
-    )
