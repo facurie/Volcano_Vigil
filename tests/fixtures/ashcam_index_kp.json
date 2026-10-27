@@ -1,0 +1,61 @@
+{
+  "images": [
+    {
+      "imageId": 49796430,
+      "md5": "fa85ba29afd10c7a4912e3382b9eb4c5",
+      "webcamCode": "kilauea-kp-cam",
+      "newestForWebcam": "N",
+      "imageTimestamp": 1792249205,
+      "imageDate": "Sat, 17 Oct 2026 15:00:05 +0000",
+      "isNighttimeInd": "?",
+      "interestingCode": "U",
+      "imageUrl": "https://volcview.wr.usgs.gov/ashcam-api/images/webcams//kilauea-kp-cam/2026/289/kilauea-kp-cam-1792249205.jpg",
+      "suninfo": null
+    },
+    {
+      "imageId": 49796287,
+      "md5": "17249a1ad6d2ce3330b1d7638d57dac4",
+      "webcamCode": "kilauea-kp-cam",
+      "newestForWebcam": "N",
+      "imageTimestamp": 1792248905,
+      "imageDate": "Sat, 17 Oct 2026 14:55:05 +0000",
+      "isNighttimeInd": "?",
+      "interestingCode": "U",
+      "imageUrl": "https://volcview.wr.usgs.gov/ashcam-api/images/webcams//kilauea-kp-cam/2026/289/kilauea-kp-cam-1792248905.jpg",
+      "suninfo": null
+    },
+    {
+      "imageId": 49796233,
+      "md5": "073fbbd1269772c6595c73bb397057bc",
+      "webcamCode": "kilauea-kp-cam",
+      "newestForWebcam": "N",
+      "imageTimestamp": 1792248605,
+      "imageDate": "Sat, 17 Oct 2026 14:50:05 +0000",
+      "isNighttimeInd": "?",
+      "interestingCode": "U",
+      "imageUrl": "https://volcview.wr.usgs.gov/ashcam-api/images/webcams//kilauea-kp-cam/2026/289/kilauea-kp-cam-1792248605.jpg",
+      "suninfo": null
+    }
+  ],
+  "webcam": {
+    "webcamCode": "kilauea-kp-cam",
+    "webcamName": "kilauea-kp-cam",
+    "latitude": 0,
+    "longitude": 0,
+    "elevationM": 0,
+    "bearingDeg": 0,
+    "hasImages": "Y",
+    "imageTotal": 8438,
+    "firstImageTimestamp": 1790455205,
+    "lastImageTimestamp": 1793046908,
+    "currentImageUrl": "https://volcview.wr.usgs.gov/ashcam-api/images/webcams/kilauea-kp-cam/current.jpg",
+    "timezone": "UTC"
+  },
+  "meta": {
+    "imageTotal": 3,
+    "firstImageTimestamp": 1792248605,
+    "lastImageTimestamp": 1792249205,
+    "apiUrl": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=kilauea-kp-cam&startTimestamp=1792248600&endTimestamp=1792249300&order=ASC&limit=0",
+    "querySec": 0
+  }
+}
