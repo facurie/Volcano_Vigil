@@ -30,6 +30,7 @@ from PIL import Image, ImageOps
 from vigia import db
 from vigia.config import load_sources
 from vigia.ingest.fetch import Ingestor
+from vigia.ingest.store import FrameStore
 from vigia.meta.client import MetaClient
 from vigia.meta.ledger import CostLedger
 from vigia.meta.pricing import cost_usd
@@ -138,7 +139,7 @@ def fetch_live_frame(settings: Settings, conn, camera_id: str) -> tuple[Path, di
     if camera is None or not camera.enabled:
         raise SystemExit(f"camera {camera_id!r} is not an enabled camera in {settings.sources_path}")
     with httpx.Client(timeout=30, follow_redirects=True, headers={"User-Agent": settings.user_agent}) as http:
-        result = Ingestor(conn, settings.data_dir, http).ingest(camera)
+        result = Ingestor(FrameStore(conn, settings.data_dir), http).ingest(camera)
     print(f"[live] {camera_id}: {result.status}" + (f" ({result.error})" if result.error else ""))
     row = conn.execute(
         "SELECT * FROM frames WHERE camera_id = ? ORDER BY captured_at DESC LIMIT 1", (camera_id,)

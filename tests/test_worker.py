@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from conftest import NOW
 from vigia.config import Camera
-from vigia.ingest.fetch import IngestResult
+from vigia.ingest.store import IngestResult
 from vigia.ingest.worker import Worker
 
 

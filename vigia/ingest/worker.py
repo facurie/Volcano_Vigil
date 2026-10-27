@@ -17,7 +17,8 @@ import httpx
 
 from vigia import db
 from vigia.config import Camera, load_sources
-from vigia.ingest.fetch import IngestResult, Ingestor
+from vigia.ingest.fetch import Ingestor
+from vigia.ingest.store import FrameStore, IngestResult
 from vigia.settings import Settings
 from vigia.timeutil import utcnow
 
@@ -78,7 +79,7 @@ def main(argv: list[str] | None = None) -> None:
     conn = db.connect(settings.db_path)
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as http:
-        worker = Worker(Ingestor(conn, settings.data_dir, http), sources.cameras)
+        worker = Worker(Ingestor(FrameStore(conn, settings.data_dir), http), sources.cameras)
         if args.once:
             for result in worker.run_once():
                 print(f"{result.camera_id}: {result.status}" + (f" ({result.error})" if result.error else ""))

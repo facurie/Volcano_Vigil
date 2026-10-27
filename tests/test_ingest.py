@@ -5,13 +5,14 @@ import pytest
 
 from conftest import CAM_URL, NOW, make_jpeg, make_noisy_jpeg
 from vigia.ingest.fetch import Ingestor
+from vigia.ingest.store import FrameStore
 
 LAST_MODIFIED = "Mon, 26 Oct 2026 18:25:00 GMT"
 
 
 @pytest.fixture
 def ingestor(conn, server, tmp_path):
-    return Ingestor(conn, data_dir=tmp_path, http=server.client(), now=lambda: NOW)
+    return Ingestor(FrameStore(conn, tmp_path), http=server.client(), now=lambda: NOW)
 
 
 def frames(conn):
