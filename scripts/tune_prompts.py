@@ -7,8 +7,9 @@ found, the best score, the mask area and how high the mask reaches. Judge the
 contact sheets, record the verdicts in docs/research/prompt_tuning.md and the
 chosen phrases in config/prompts.yaml.
 
-    python scripts/tune_prompts.py --dry-run   # list the calls and their cost
-    python scripts/tune_prompts.py             # 57 SAM image calls, about $0.14
+    python scripts/tune_prompts.py --dry-run                 # list the calls and their cost
+    python scripts/tune_prompts.py                           # 60 SAM image calls, about $0.15
+    python scripts/tune_prompts.py --frame v1_0459_night     # one frame only
 """
 
 from __future__ import annotations
@@ -59,16 +60,21 @@ FRAMES = [
     Frame("k2_0700_day", ASHCAM / "kilauea-k2-cam" / "kilauea-k2-cam-1792256403.jpg", "visible", ("plume", "fountain")),
     Frame("v1_0659_day", ASHCAM / "kilauea-v1-cam" / "kilauea-v1-cam-1792256342.jpg", "visible", ("plume", "fountain")),
     Frame("f1_0601_thermal", EP55 / "20261017060125M_F1.jpg", "thermal", ("fountain", "incandescence")),
+    # Night close-up with glowing flows all over the crater floor: does the fountain phrase take the flows too?
+    Frame("v1_0459_night", ASHCAM / "kilauea-v1-cam" / "kilauea-v1-cam-1792249142.jpg", "visible", ("fountain",)),
 ]
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="list the calls and their cost, call nothing")
+    parser.add_argument("--frame", action="append", choices=[f.name for f in FRAMES],
+                        help="run only this frame; repeat it for several (default: all)")
     args = parser.parse_args(argv)
 
-    calls = [(frame, target, phrase) for frame in FRAMES for target in frame.targets for phrase in CANDIDATES[target]]
-    print(f"{len(calls)} SAM image calls on {len(FRAMES)} frames, "
+    frames = [f for f in FRAMES if not args.frame or f.name in args.frame]
+    calls = [(frame, target, phrase) for frame in frames for target in frame.targets for phrase in CANDIDATES[target]]
+    print(f"{len(calls)} SAM image calls on {len(frames)} frames, "
           f"estimated ${len(calls) * cost_usd('sam-3.1', {'images_processed': 1}):.4f}")
     if args.dry_run:
         for frame, target, phrase in calls:
@@ -81,7 +87,7 @@ def main(argv: list[str] | None = None) -> None:
     conn = db.connect(settings.db_path)
     client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
     results = []
-    for frame in FRAMES:
+    for frame in frames:
         image, jpeg = load_for_upload(frame.path)
         out = run_dir / frame.name
         out.mkdir(parents=True)

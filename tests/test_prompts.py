@@ -1,9 +1,12 @@
 import textwrap
+from pathlib import Path
 
 import pytest
 
 from vigia.config import ConfigError
 from vigia.prompts import load_prompts
+
+REPO = Path(__file__).resolve().parent.parent
 
 VALID = """
 plume:
@@ -48,3 +51,10 @@ def test_unknown_camera_kind_is_rejected(tmp_path):
 def test_empty_phrase_is_rejected(tmp_path):
     with pytest.raises(ConfigError):
         load_prompts(write(tmp_path, VALID.replace("[lava fountain]", "['']")))
+
+
+def test_committed_prompts_cover_plumes_and_fountains_on_visible_cameras():
+    prompts = load_prompts(REPO / "config" / "prompts.yaml")
+
+    assert prompts.phrases("plume", "visible")
+    assert prompts.phrases("fountain", "visible")

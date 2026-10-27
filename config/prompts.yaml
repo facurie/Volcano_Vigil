@@ -1,0 +1,14 @@
+# SAM 3.1 noun phrases per target and camera kind, best first. SAM takes one
+# phrase per request, so each phrase listed is one more segmentation or
+# tracking call. Chosen on episode 55 frames by scripts/tune_prompts.py; the
+# evidence is in docs/research/prompt_tuning.md.
+
+plume:
+  visible: [steam]          # the whole column on every frame, 14 km at night to 1 km by day; never the fountain
+  thermal: []               # not tested: the gas column is faint in thermal frames
+fountain:
+  visible: [lava fountain]  # the jet only, day and night, even with glowing flows around it
+  thermal: []               # on F1 every phrase took the whole hot lava field, never the fountain alone
+incandescence:
+  visible: [glow]           # night glow of the fountain, including the glow point seen from KPcam
+  thermal: [glowing lava]   # the hot lava field (lava coverage) on F1
