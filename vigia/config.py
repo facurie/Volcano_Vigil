@@ -19,6 +19,9 @@ class ConfigError(ValueError):
     """Raised when the sources file is missing fields or inconsistent."""
 
 
+CameraKind = Literal["visible", "thermal"]
+
+
 class Volcano(BaseModel):
     name: str
     country: str
@@ -35,7 +38,7 @@ class Camera(BaseModel):
     attribution: str = Field(min_length=1)
     enabled: bool = False
     poll_minutes: float = Field(default=5, gt=0)
-    kind: Literal["visible", "thermal"] = "visible"
+    kind: CameraKind = "visible"
     ashcam_code: str | None = None  # USGS AshCam archive code, e.g. kilauea-kp-cam
     page_url: str | None = None
     notes: str | None = None
