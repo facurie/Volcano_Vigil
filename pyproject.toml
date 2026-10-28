@@ -32,6 +32,7 @@ vigia-backfill = "vigia.ingest.ashcam:main"
 vigia-quality = "vigia.gate:main"
 vigia-measure = "vigia.metrics:main"
 vigia-wind = "vigia.wind:main"
+vigia-agent = "vigia.agent.loop:main"
 
 [tool.setuptools.packages.find]
 include = ["vigia*"]

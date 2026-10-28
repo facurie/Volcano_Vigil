@@ -1,15 +1,17 @@
 import json
 
 import httpx
+import openai
 import pytest
 
 from conftest import NOW, make_jpeg
 from test_agent_tools import SOURCES, T0, context
 from test_meta_client import make_client, response_body, turn_body
 from test_sam import IMAGE_OUTPUT
-from vigia.agent.loop import WRAP_UP, instructions, run_agent, trace
+from vigia.agent.loop import WRAP_UP, instructions, main, run_agent, trace
 from vigia.agent.tools import Args, NoArgs, Tool
 from vigia.config import Volcano
+from vigia.meta.client import MetaClient
 from vigia.timeutil import to_iso
 
 
@@ -159,3 +161,47 @@ def test_trace_prints_each_step_and_the_final_report(conn, tmp_path):
     assert "  1 model: Checking." in text
     assert '  1 tool echo {"n": 1} -> ok' in text
     assert text.endswith("n was 1.")
+
+
+SOURCES_YAML = """
+volcanoes:
+  kilauea: {name: Kilauea, country: United States, official_agency: USGS HVO,
+            official_url: "https://www.usgs.gov/volcanoes/kilauea", lat: 19.405, lon: -155.29, utc_offset_hours: -10}
+cameras: []
+"""
+
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(SOURCES_YAML, encoding="utf-8")
+    monkeypatch.setenv("SOURCES_PATH", str(sources))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    return tmp_path
+
+
+def test_cli_refuses_an_unknown_volcano(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--volcano", "etna"])
+
+    assert "etna" in capsys.readouterr().err
+
+
+def test_cli_runs_the_agent_at_the_given_clock_and_prints_its_trace(cli_env, monkeypatch, capsys):
+    api = Script(turn_body([("list_cameras_status", "{}")], rid="resp_1"), turn_body([], text="No cameras."))
+
+    def fake_from_env(ledger):  # the CLI's own ledger, so its database connection is the only one
+        sdk = openai.OpenAI(base_url="https://api.meta.ai/v1", api_key="test-key", max_retries=0,
+                            http_client=httpx.Client(transport=httpx.MockTransport(api)))
+        return MetaClient(sdk, ledger)
+
+    monkeypatch.setattr("vigia.agent.loop.MetaClient.from_env", fake_from_env)
+
+    main(["--volcano", "kilauea", "--at", "2026-10-17T05:00-10:00"])
+
+    out = capsys.readouterr().out
+    assert "at 2026-10-17T15:00:00Z (kilauea): done after 2 turns" in out
+    assert "tool list_cameras_status {} -> ok" in out
+    assert out.rstrip().endswith("No cameras.")
+    assert "Check Kilauea now" in api.requests[0]["input"][0]["content"]

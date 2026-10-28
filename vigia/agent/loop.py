@@ -16,21 +16,31 @@ under one `agent_runs` row: the trace the dashboard shows.
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import json
+import logging
+import sys
 import time
 from collections.abc import Callable, Sequence
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import httpx
 import openai
 
+from vigia import db
 from vigia.agent.tools import Tool, Toolbox, ToolContext
-from vigia.config import Volcano
+from vigia.calibration import load_calibration
+from vigia.config import Volcano, load_sources
 from vigia.meta.client import MetaClient
-from vigia.meta.ledger import BudgetExceeded
-from vigia.timeutil import to_iso, utcnow
+from vigia.meta.ledger import BudgetExceeded, CostLedger
+from vigia.prompts import load_prompts
+from vigia.settings import Settings
+from vigia.timeutil import parse_utc, to_iso, utcnow
+from vigia.wind import WindService
 
 MAX_TURNS = 12
 BUDGET_USD = 0.30
@@ -177,3 +187,40 @@ def trace(conn, run_id: int) -> str:
 def _short(text: str, limit: int = 160) -> str:
     text = " ".join(text.split())
     return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Run the Muse Spark agent on a volcano at a time: now, or a past "
+                                                 "time to replay it.")
+    parser.add_argument("--volcano", required=True, help="volcano id from the sources file, e.g. kilauea")
+    parser.add_argument("--at", type=parse_utc, help="the agent's clock, e.g. 2026-10-17T05:00-10:00 (default: now)")
+    parser.add_argument("--task", help="what to ask (default: check the volcano, measure, compare with the wind)")
+    parser.add_argument("--max-turns", type=int, default=MAX_TURNS, help=f"model turns (default {MAX_TURNS})")
+    parser.add_argument("--budget", type=float, default=BUDGET_USD,
+                        help=f"USD for the whole run, tool calls included (default {BUDGET_USD})")
+    parser.add_argument("--effort", choices=["low", "medium", "high"], default="medium", help="reasoning effort")
+    args = parser.parse_args(argv)
+    if args.max_turns < 1:
+        parser.error("--max-turns must be at least 1")
+
+    settings = Settings.from_env()
+    sources = load_sources(settings.sources_path)
+    if args.volcano not in sources.volcanoes:
+        parser.error(f"unknown volcano {args.volcano!r} in {settings.sources_path}")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")  # the report may hold characters a Windows console cannot show
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    task = args.task or DEFAULT_TASK.format(name=sources.volcanoes[args.volcano].name)
+    with closing(db.connect(settings.db_path)) as conn,             httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+        ctx = ToolContext(conn=conn, data_dir=settings.data_dir, sources=sources,
+                          calibration=load_calibration(settings.calibration_path),
+                          prompts=load_prompts(settings.prompts_path), winds=WindService(conn, http, sources),
+                          now=args.at or utcnow())
+        client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+        result = run_agent(client, ctx, args.volcano, task, max_turns=args.max_turns, budget_usd=args.budget,
+                           effort=args.effort)
+        print(trace(conn, result.run_id))
+
+
+if __name__ == "__main__":
+    main()
