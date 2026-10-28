@@ -27,6 +27,8 @@ class Volcano(BaseModel):
     country: str
     official_agency: str
     official_url: str
+    lat: float | None = Field(default=None, ge=-90, le=90)  # summit area: sets the sun's elevation for the night check
+    lon: float | None = Field(default=None, ge=-180, le=180)
 
 
 class Camera(BaseModel):

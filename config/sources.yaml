@@ -6,6 +6,8 @@
 # frames with exact capture times); `vigia-backfill` downloads from it.
 # `live_source: ashcam` polls the archive instead of M.jpg: every 2-min (KPcam
 # 5-min) frame with its exact capture time (docs/research/ashcam_latency.md).
+# Each volcano's lat/lon (summit area, east positive) sets the sun's elevation
+# for the quality gate's night check.
 # See DATA_SOURCES.md for the full record of each source and its terms.
 
 volcanoes:
@@ -14,11 +16,15 @@ volcanoes:
     country: United States (Hawaiʻi)
     official_agency: USGS Hawaiian Volcano Observatory (HVO)
     official_url: https://www.usgs.gov/volcanoes/kilauea
+    lat: 19.405    # Halemaʻumaʻu north vent (19.40496 N, 155.29022 W)
+    lon: -155.290
   nevado-del-ruiz:
     name: Nevado del Ruiz
     country: Colombia
     official_agency: Servicio Geológico Colombiano (SGC)
     official_url: https://www2.sgc.gov.co/Noticias/Paginas/Boletines-semanales.aspx
+    lat: 4.895     # Arenas crater
+    lon: -75.323
 
 cameras:
   # --- USGS HVO, Kīlauea summit. Public domain; credit "U.S. Geological Survey". ---

@@ -98,3 +98,27 @@ def test_committed_sources_keep_sgc_disabled_and_name_every_usgs_archive():
 
     assert [c.id for c in sources.cameras if c.volcano == "nevado-del-ruiz" and c.enabled] == []
     assert [c.id for c in sources.cameras if c.volcano == "kilauea" and not c.ashcam_code] == []
+
+
+def placed(text, lat="19.405", lon="-155.29"):
+    return text.replace("    official_url: https://www.usgs.gov/volcanoes/kilauea",
+                        f"    official_url: https://www.usgs.gov/volcanoes/kilauea\n    lat: {lat}\n    lon: {lon}")
+
+
+def test_volcano_position_is_optional(tmp_path):
+    assert load_sources(write(tmp_path, VALID)).volcanoes["kilauea"].lat is None
+
+    volcano = load_sources(write(tmp_path, placed(VALID))).volcanoes["kilauea"]
+
+    assert (volcano.lat, volcano.lon) == (19.405, -155.29)
+
+
+def test_volcano_latitude_out_of_range_is_rejected(tmp_path):
+    with pytest.raises(ConfigError, match="lat"):
+        load_sources(write(tmp_path, placed(VALID, lat="119.4")))
+
+
+def test_committed_sources_place_every_volcano():
+    sources = load_sources(REPO / "config" / "sources.yaml")
+
+    assert [name for name, v in sources.volcanoes.items() if v.lat is None or v.lon is None] == []
