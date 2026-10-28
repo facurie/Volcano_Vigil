@@ -30,6 +30,7 @@ vigia-track = "vigia.tracking:main"
 vigia-ingest = "vigia.ingest.worker:main"
 vigia-backfill = "vigia.ingest.ashcam:main"
 vigia-quality = "vigia.gate:main"
+vigia-measure = "vigia.metrics:main"
 
 [tool.setuptools.packages.find]
 include = ["vigia*"]

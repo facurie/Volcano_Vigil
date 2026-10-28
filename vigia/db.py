@@ -106,6 +106,22 @@ CREATE TABLE IF NOT EXISTS detections (      -- one tracked object on one frame
 );
 CREATE INDEX IF NOT EXISTS idx_detections_frame ON detections (frame_id);
 CREATE INDEX IF NOT EXISTS idx_detections_track ON detections (track_id);
+CREATE TABLE IF NOT EXISTS measurements (    -- one metric of one detection (vigia.metrics)
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    detection_id INTEGER NOT NULL REFERENCES detections (id),
+    frame_id     INTEGER NOT NULL REFERENCES frames (id),
+    camera_id    TEXT    NOT NULL,
+    captured_at  TEXT    NOT NULL,  -- UTC capture time of the frame
+    target       TEXT    NOT NULL,  -- plume | fountain | incandescence
+    metric       TEXT    NOT NULL,  -- top_height | top_altitude | area | drift_offset | drift_bearing
+    value        REAL    NOT NULL,
+    sigma        REAL    NOT NULL,  -- one standard deviation, from the Monte Carlo
+    unit         TEXT    NOT NULL,  -- m | m2 | deg
+    preset       TEXT    NOT NULL,  -- the calibration preset used
+    computed_at  TEXT    NOT NULL,  -- UTC
+    UNIQUE (detection_id, metric)
+);
+CREATE INDEX IF NOT EXISTS idx_measurements_series ON measurements (camera_id, metric, captured_at);
 """
 
 
