@@ -13,11 +13,13 @@ from pydantic import AwareDatetime, Field
 from test_gate import ANSWER, encode, flat, sharp, spark_api
 from test_meta_client import FakeApi, make_client, response_body
 from test_metrics import kp_calibration
-from test_sam import IMAGE_OUTPUT
+from test_sam import IMAGE_OUTPUT, OBJ_0
+from test_tracking import FakeMeta, needs_ffmpeg
 from vigia import masks
 from vigia.agent.tools import (TOOLS, Args, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs, SegmentArgs, Tool,
-                               ToolContext, ToolError, Toolbox, assess_frame, get_history, get_recent_frames,
-                               list_cameras_status, segment_frame, strict_schema)
+                               ToolContext, ToolError, Toolbox, TrackArgs, TrackIdArgs, assess_frame, get_history,
+                               get_recent_frames, list_cameras_status, measure_track, segment_frame, strict_schema,
+                               track_window_tool)
 from vigia.config import Camera, Sources, Volcano
 from vigia.ingest.store import FrameStore
 from vigia.meta.ledger import BudgetExceeded
@@ -410,3 +412,79 @@ def test_segment_frame_needs_a_meta_client(conn, store, tmp_path):
 
     with pytest.raises(ToolError, match="Meta client"):
         segment_frame(context(conn, tmp_path), SegmentArgs(frame_id=frame_id, phrase="steam"))
+
+
+# --- track_window and measure_track
+
+
+def test_track_window_returns_stored_tracks_that_cover_the_window_without_calling_sam(conn, store, tmp_path):
+    frames = [add_frame(conn, store, "kilauea-kp", m) for m in range(-55, 30, 5)]  # the last 5 after the clock
+    track = add_track(conn, add_run(conn, "kilauea-kp", "plume", frames, phrase="steam"), frames)
+
+    result = track_window_tool(context(conn, tmp_path), TrackArgs(
+        camera_id="kilauea-kp", start=T0 - timedelta(hours=1), end=T0 + timedelta(hours=1), target="plume"))
+
+    assert (result["cached"], result["end"], result["usable_frames"]) == (True, "2026-10-17T15:00:00Z", 12)
+    assert result["tracks"] == [{"track_id": track, "phrase": "steam", "object_id": "0", "detections": 12,
+                                 "first_seen": "2026-10-17T14:05:00Z", "last_seen": "2026-10-17T15:00:00Z",
+                                 "mean_score": 0.8, "max_area_px": 5400}]
+
+
+def test_track_window_refuses_to_track_too_few_frames(conn, store, tmp_path):
+    for m in (-15, -10, -5):
+        add_frame(conn, store, "kilauea-kp", m)
+
+    with pytest.raises(ToolError, match="only 3 usable frames"):
+        track_window_tool(context(conn, tmp_path), TrackArgs(
+            camera_id="kilauea-kp", start=T0 - timedelta(hours=1), end=T0, target="plume"))
+
+
+def test_track_window_refuses_windows_over_three_hours(conn, tmp_path):
+    with pytest.raises(ToolError, match="3 hours"):
+        track_window_tool(context(conn, tmp_path), TrackArgs(
+            camera_id="kilauea-kp", start=T0 - timedelta(hours=4), end=T0, target="plume"))
+
+
+@needs_ffmpeg
+def test_track_window_tracks_an_untracked_window_with_the_targets_phrases(conn, store, tmp_path):
+    for m in range(-50, 1, 5):  # 11 frames
+        add_frame(conn, store, "kilauea-kp", m, size=(640, 668))
+    fake = FakeMeta({"steam": f"<0f>{OBJ_0}\n<10f>{OBJ_0}\n"})
+
+    result = track_window_tool(context(conn, tmp_path, client=make_client(fake, conn)), TrackArgs(
+        camera_id="kilauea-kp", start=T0 - timedelta(hours=1), end=T0, target="plume"))
+
+    assert (result["cached"], result["usable_frames"]) == (False, 11)
+    assert [track["detections"] for track in result["tracks"]] == [2]
+    assert [row[0] for row in conn.execute("SELECT phrase FROM tracking_runs")] == ["steam"]
+
+
+def test_measure_track_measures_the_track_up_to_the_clock(conn, store, tmp_path):
+    frames = [add_frame(conn, store, "kilauea-kp", m) for m in (-10, -5, 5)]
+    track = add_track(conn, add_run(conn, "kilauea-kp", "plume", frames), frames, box=(80, 60, 120, 150))
+
+    result = measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))
+
+    assert (result["camera_id"], result["target"], result["last"]) == ("kilauea-kp", "plume", "2026-10-17T14:55:00Z")
+    assert set(result["metrics"]) == {"top_height", "top_altitude", "area", "drift_offset", "drift_bearing"}
+    top = result["metrics"]["top_altitude"]
+    assert (top["frames"], top["unit"], top["latest"]["frame_id"]) == (2, "m", frames[1])
+    assert top["latest"]["sigma"] > 0
+    assert sum(result["metrics"]["drift_bearing"]["frames_per_side"].values()) == 2
+    assert conn.execute("SELECT COUNT(DISTINCT frame_id) FROM measurements").fetchone()[0] == 2  # not the later one
+
+
+def test_a_track_of_an_uncalibrated_camera_cannot_be_measured(conn, store, tmp_path):
+    frames = [add_frame(conn, store, "kilauea-k2", -5)]
+    track = add_track(conn, add_run(conn, "kilauea-k2", "fountain", frames), frames)
+
+    with pytest.raises(ToolError, match="kilauea-k2 is not calibrated"):
+        measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))
+
+
+def test_a_track_seen_only_after_the_clock_cannot_be_measured(conn, store, tmp_path):
+    frames = [add_frame(conn, store, "kilauea-kp", 5)]
+    track = add_track(conn, add_run(conn, "kilauea-kp", "plume", frames), frames)
+
+    with pytest.raises(ToolError, match="no detections by 2026-10-17T15:00:00Z"):
+        measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))

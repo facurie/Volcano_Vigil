@@ -18,19 +18,21 @@ import sqlite3
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
+from vigia import tracking
 from vigia.calibration import Calibration
 from vigia.config import Camera, Sources
 from vigia.gate import QualityGate
 from vigia.imaging import load_for_upload
 from vigia.meta.client import MetaClient
 from vigia.meta.ledger import BudgetExceeded
+from vigia.metrics import measure_window
 from vigia.prompts import Prompts, Target
 from vigia.timeutil import parse_utc, to_iso
 from vigia.wind import WindService
@@ -371,6 +373,126 @@ def segment_frame(ctx: ToolContext, args: SegmentArgs) -> dict[str, Any]:
             "objects_found": len(objects), "objects": found}
 
 
+# --- track_window
+
+
+MAX_TRACK_HOURS = 3
+MIN_TRACK_FRAMES = 10
+
+
+class TrackArgs(Args):
+    camera_id: str = Field(description="camera id")
+    start: AwareDatetime = Field(description="window start, UTC, e.g. 2026-10-17T14:00:00Z")
+    end: AwareDatetime = Field(description="window end, UTC; clipped to now")
+    target: Target = Field(description="plume, fountain or incandescence")
+
+
+def track_window_tool(ctx: ToolContext, args: TrackArgs) -> dict[str, Any]:
+    camera = ctx.camera(args.camera_id)
+    start, end = args.start.astimezone(timezone.utc), min(args.end.astimezone(timezone.utc), ctx.now)
+    if start >= end:
+        raise ToolError(f"the window must start before it ends and before now ({to_iso(ctx.now)})")
+    if end - start > timedelta(hours=MAX_TRACK_HOURS):
+        raise ToolError(f"windows are limited to {MAX_TRACK_HOURS} hours")
+    frames = tracking.usable_frames(ctx.conn, ctx.data_dir, camera.id, start, end)
+    if not frames:
+        raise ToolError(f"{camera.id} has no usable frames between {to_iso(start)} and {to_iso(end)}")
+    run_ids = _covering_runs(ctx.conn, camera.id, args.target, start, end, {frame.id for frame in frames})
+    cached = bool(run_ids)
+    if not cached:
+        if len(frames) < MIN_TRACK_FRAMES:
+            raise ToolError(f"only {len(frames)} usable frames in the window; tracking needs {MIN_TRACK_FRAMES} "
+                            "(and SAM bills 50 per request anyway), so widen it")
+        report = tracking.track_window(ctx.meta(), ctx.conn, ctx.data_dir, camera, ctx.prompts, start, end,
+                                       targets=[args.target])
+        if not report.runs:
+            raise ToolError("tracking stored nothing: " + ("; ".join(report.errors)
+                                                         or f"no {args.target} phrase for a {camera.kind} camera"))
+        run_ids = [run.run_id for run in report.runs]
+    return {"camera_id": camera.id, "target": args.target, "start": to_iso(start), "end": to_iso(end),
+            "usable_frames": len(frames), "cached": cached, "tracks": _tracks(ctx.conn, run_ids, start, end)}
+
+
+def _covering_runs(conn: sqlite3.Connection, camera_id: str, target: str, start: datetime, end: datetime,
+                   wanted: set[int]) -> list[int]:
+    """The stored runs of the camera and target over the window, if together they include every wanted frame."""
+    chosen, covered = [], set()
+    for row in conn.execute(
+            """SELECT id, frame_ids FROM tracking_runs
+               WHERE camera_id = ? AND target = ? AND window_start <= ? AND window_end >= ? ORDER BY id""",
+            (camera_id, target, to_iso(end), to_iso(start))):
+        frames = wanted & set(json.loads(row["frame_ids"]))
+        if frames:
+            chosen.append(row["id"])
+            covered |= frames
+    return chosen if covered >= wanted else []
+
+
+def _tracks(conn: sqlite3.Connection, run_ids: list[int], start: datetime, end: datetime) -> list[dict[str, Any]]:
+    marks = ",".join("?" * len(run_ids))
+    rows = conn.execute(
+        f"""SELECT t.id, t.object_id, r.phrase, COUNT(*) AS detections, MIN(f.captured_at) AS first_seen,
+                   MAX(f.captured_at) AS last_seen, AVG(d.score) AS mean_score, MAX(d.area_px) AS max_area_px
+            FROM tracks t JOIN tracking_runs r ON r.id = t.run_id JOIN detections d ON d.track_id = t.id
+            JOIN frames f ON f.id = d.frame_id
+            WHERE t.run_id IN ({marks}) AND f.captured_at BETWEEN ? AND ?
+            GROUP BY t.id ORDER BY detections DESC, t.id""", (*run_ids, to_iso(start), to_iso(end))).fetchall()
+    return [{"track_id": row["id"], "phrase": row["phrase"], "object_id": row["object_id"],
+             "detections": row["detections"], "first_seen": row["first_seen"], "last_seen": row["last_seen"],
+             "mean_score": None if row["mean_score"] is None else round(row["mean_score"], 2),
+             "max_area_px": row["max_area_px"]} for row in rows]
+
+
+# --- measure_track
+
+
+class TrackIdArgs(Args):
+    track_id: int = Field(description="track id, from track_window")
+
+
+def measure_track(ctx: ToolContext, args: TrackIdArgs) -> dict[str, Any]:
+    track = ctx.conn.execute(
+        """SELECT t.id, r.camera_id, r.target, r.phrase FROM tracks t JOIN tracking_runs r ON r.id = t.run_id
+           WHERE t.id = ?""", (args.track_id,)).fetchone()
+    if track is None:
+        raise ToolError(f"no track {args.track_id}")
+    now = to_iso(ctx.now)
+    span = ctx.conn.execute(
+        """SELECT MIN(f.captured_at) AS first, MAX(f.captured_at) AS last FROM detections d
+           JOIN frames f ON f.id = d.frame_id WHERE d.track_id = ? AND f.captured_at <= ?""",
+        (track["id"], now)).fetchone()
+    if span["first"] is None:
+        raise ToolError(f"track {track['id']} has no detections by {now}")
+    camera_id = track["camera_id"]
+    if camera_id not in ctx.calibration.cameras:
+        raise ToolError(f"{camera_id} is not calibrated, so its tracks cannot be measured; its detections still "
+                        "show what it sees")
+    report = measure_window(ctx.conn, ctx.calibration, camera_id, parse_utc(span["first"]), parse_utc(span["last"]))
+    rows = ctx.conn.execute(
+        """SELECT m.metric, m.value, m.sigma, m.unit, m.captured_at, m.frame_id FROM measurements m
+           JOIN detections d ON d.id = m.detection_id WHERE d.track_id = ? AND m.captured_at <= ?
+           ORDER BY m.captured_at""", (track["id"], now)).fetchall()
+    if not rows:
+        problems = report.errors or [f"{report.uncalibrated} detections lie on frames no calibration preset covers"]
+        raise ToolError(f"track {track['id']} could not be measured: {'; '.join(problems)}")
+    series: dict[str, list[sqlite3.Row]] = defaultdict(list)
+    for row in rows:
+        series[row["metric"]].append(row)
+    metrics = {}
+    for metric, values in series.items():
+        latest = values[-1]
+        summary = {"unit": latest["unit"], "frames": len(values), "latest": _point(latest)}
+        if metric == "drift_bearing":
+            summary["frames_per_side"] = dict(Counter(str(round(row["value"])) for row in values))
+        else:
+            numbers = np.array([row["value"] for row in values])
+            summary["max"] = _point(values[int(numbers.argmax())])
+            summary["mean"] = _round(float(numbers.mean()), latest["unit"])
+        metrics[metric] = summary
+    return {"track_id": track["id"], "camera_id": camera_id, "target": track["target"], "phrase": track["phrase"],
+            "first": span["first"], "last": span["last"], "metrics": metrics}
+
+
 TOOLS: list[Tool] = [
     Tool("list_cameras_status",
          "Every camera that is enabled or sent frames in the last 24 hours, as of now: its latest frame and quality "
@@ -394,6 +516,21 @@ TOOLS: list[Tool] = [
          "phrases: 'steam' for a plume, 'lava fountain', 'glow' for incandescence ('glowing lava' on thermal "
          "cameras); a phrase with 'volcanic' in it returns the fountain.",
          SegmentArgs, segment_frame),
+    Tool("track_window",
+         "Track a target through a camera's usable frames between start and end (at most 3 hours, clipped to now) "
+         "with SAM 3.1 video and the target's tuned phrases. If stored runs already cover every usable frame of the "
+         "window it returns their tracks at no cost; otherwise it tracks the window (about $0.01 per phrase, a few "
+         "minutes; needs 10 usable frames). Returns each track's id, phrase, detections in the window, and first "
+         "and last detection.",
+         TrackArgs, track_window_tool),
+    Tool("measure_track",
+         "Measure a track's detections up to now on the vertical plane through the vent: top_height (m above the "
+         "vent) and top_altitude (m above sea level) of the mask's highest pixel, area (m2), and for plumes "
+         "drift_offset (m across the line of sight, positive to the right) and drift_bearing (the bearing of the "
+         "side of the line of sight the plume sits on). Each value has a one-sigma uncertainty from a Monte Carlo "
+         "over the calibration. Returns per metric the latest, the maximum and the mean with frame ids. Only "
+         "calibrated cameras can be measured.",
+         TrackIdArgs, measure_track),
     Tool("get_history",
          "A camera's series of one metric for one target over the last `hours` (at most 48): the highest "
          "detection on each frame, thinned to 40 points, with the latest, maximum and minimum and their frame ids (for drift_bearing only "
