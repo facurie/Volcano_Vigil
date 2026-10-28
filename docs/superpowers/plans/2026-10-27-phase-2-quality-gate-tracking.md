@@ -123,7 +123,7 @@ Run every command from the repo root (Git Bash). Commit messages are imperative 
 - Create: `vigia/sun.py`, `tests/test_sun.py`
 - Modify: `vigia/config.py`, `config/sources.yaml`, `tests/test_config.py`
 
-- [ ] **Step 1: Write the failing sun tests** (`tests/test_sun.py`)
+- [x] **Step 1: Write the failing sun tests** (`tests/test_sun.py`)
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -160,12 +160,12 @@ def test_a_naive_time_is_rejected():
         solar_elevation(datetime(2026, 10, 17, 13, 0), *KILAUEA)
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sun.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.sun'`
 
-- [ ] **Step 3: Create `vigia/sun.py`**
+- [x] **Step 3: Create `vigia/sun.py`**
 
 ```python
 """The sun's elevation above the horizon, for the quality gate's night check.
@@ -215,12 +215,12 @@ def solar_elevation(when: datetime, lat: float, lon: float) -> float:
     return 90 - math.degrees(math.acos(max(-1.0, min(1.0, cos_zenith))))
 ```
 
-- [ ] **Step 4: Run the sun tests to see them pass**
+- [x] **Step 4: Run the sun tests to see them pass**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sun.py -v`
 Expected: 5 passed
 
-- [ ] **Step 5: Write the failing config tests** (append to `tests/test_config.py`)
+- [x] **Step 5: Write the failing config tests** (append to `tests/test_config.py`)
 
 ```python
 def placed(text, lat="19.405", lon="-155.29"):
@@ -250,7 +250,7 @@ def test_committed_sources_place_every_volcano():
 Run: `.venv/Scripts/python.exe -m pytest tests/test_config.py -v`
 Expected: the three new tests FAIL (`Volcano` has no `lat`)
 
-- [ ] **Step 6: Add the position to `Volcano`** in `vigia/config.py`
+- [x] **Step 6: Add the position to `Volcano`** in `vigia/config.py`
 
 ```python
 class Volcano(BaseModel):
@@ -262,7 +262,7 @@ class Volcano(BaseModel):
     lon: float | None = Field(default=None, ge=-180, le=180)
 ```
 
-- [ ] **Step 7: Place both volcanoes in `config/sources.yaml`**
+- [x] **Step 7: Place both volcanoes in `config/sources.yaml`**
 
 Add to the header comment, after the `live_source` lines:
 
@@ -290,12 +290,12 @@ and add two lines at the end of each volcano:
     lon: -75.323
 ```
 
-- [ ] **Step 8: Run the suite**
+- [x] **Step 8: Run the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest`
 Expected: 113 passed
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add vigia/sun.py vigia/config.py config/sources.yaml tests/test_sun.py tests/test_config.py
@@ -311,7 +311,7 @@ The thresholds are the calibrated values from the Facts section; Task 3 records 
 **Files:**
 - Create: `vigia/quality.py`, `tests/test_quality.py`
 
-- [ ] **Step 1: Write the failing tests** (`tests/test_quality.py`)
+- [x] **Step 1: Write the failing tests** (`tests/test_quality.py`)
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -462,12 +462,12 @@ def test_without_a_sun_elevation_the_frame_counts_as_daytime():
     assert check(with_edges(0.002), sun_elevation=None) == LocalVerdict("reject", ("low_visibility",))
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_quality.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.quality'`
 
-- [ ] **Step 3: Create `vigia/quality.py`**
+- [x] **Step 3: Create `vigia/quality.py`**
 
 ```python
 """Local frame checks that cost nothing: stale, frozen, dark night and fog.
@@ -615,12 +615,12 @@ def _reduce(image: Image.Image, side: int) -> Image.Image:
     return image.reduce(max(1, math.ceil(max(image.size) / side)))
 ```
 
-- [ ] **Step 4: Run the tests to see them pass, then the suite**
+- [x] **Step 4: Run the tests to see them pass, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_quality.py -v` → 22 passed
 Run: `.venv/Scripts/python.exe -m pytest` → 135 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add vigia/quality.py tests/test_quality.py
@@ -634,7 +634,7 @@ git commit -m "Add local frame checks for stale, frozen, night and fog frames"
 **Files:**
 - Create: `scripts/calibrate_quality.py` (implementer), `docs/research/quality_calibration.md` (orchestrator)
 
-- [ ] **Step 1: Write the script** (`scripts/calibrate_quality.py`)
+- [x] **Step 1: Write the script** (`scripts/calibrate_quality.py`)
 
 ```python
 """Measure the local quality checks on stored frames, to calibrate their thresholds.
@@ -796,19 +796,19 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Check it runs on one small window**
+- [x] **Step 2: Check it runs on one small window**
 
 Run: `.venv/Scripts/python.exe scripts/calibrate_quality.py --camera kilauea-v1 --window 2026-10-27T00:00Z/2026-10-27T00:30Z`
 Expected: `15 frames measured; results in data/calibration/<time>`. Its `summary.md` lists `kilauea-v1` with mostly `reject (low_visibility …)` (this is the smoke test's fog half hour).
 
-- [ ] **Step 3: Commit the script** (implementer stops here)
+- [x] **Step 3: Commit the script** (implementer stops here)
 
 ```bash
 git add scripts/calibrate_quality.py
 git commit -m "Add script that calibrates the local quality checks on stored frames"
 ```
 
-- [ ] **Step 4 (orchestrator): Run the full calibration**
+- [x] **Step 4 (orchestrator): Run the full calibration**
 
 Run:
 
@@ -820,16 +820,16 @@ Run:
 
 Expected: the counts of the "Chosen thresholds" table in Facts, within ±2 per cell. The first frame of each window now has a change value, which could flip at most one frozen verdict. V1 has no frames in the last window, so it gets no row there.
 
-- [ ] **Step 5 (orchestrator): Check the decisions by eye.** Open each `*_reject.jpg` and `*_uncertain.jpg` sheet, and the `*_pass.jpg` sheets of the foggy afternoon and the quiet night. Record any misclassified frame by camera and HST time.
+- [x] **Step 5 (orchestrator): Check the decisions by eye.** Open each `*_reject.jpg` and `*_uncertain.jpg` sheet, and the `*_pass.jpg` sheets of the foggy afternoon and the quiet night. Record any misclassified frame by camera and HST time.
 
-- [ ] **Step 6 (orchestrator): Write `docs/research/quality_calibration.md`** with these sections:
+- [x] **Step 6 (orchestrator): Write `docs/research/quality_calibration.md`** with these sections:
   - *Method*: windows and frame counts; metric definitions (as in the `vigia/quality.py` docstring); the run directory; the command.
   - *Measurements*: the condition table from Facts, updated with the run's ranges.
   - *Thresholds*: each value and the measurement that fixes it.
   - *Decisions*: the run's `summary.md` table, plus the visual check: misclassified frames, with camera and time.
   - *Caveats*: K2 fog with a sharp foreground and overcast KP pass locally; Muse Spark sees only hazy frames; quiet-night vent glow is kept on purpose; contrast is not used; the night check skips thermal cameras; one calibration day.
 
-- [ ] **Step 7 (orchestrator): Commit**
+- [x] **Step 7 (orchestrator): Commit**
 
 ```bash
 git add docs/research/quality_calibration.md
@@ -846,7 +846,7 @@ The gate runs the local checks on one stored frame, asks Muse Spark when its mod
 - Create: `vigia/gate.py`, `tests/test_gate.py`
 - Modify: `vigia/db.py`
 
-- [ ] **Step 1: Write the failing tests** (`tests/test_gate.py`)
+- [x] **Step 1: Write the failing tests** (`tests/test_gate.py`)
 
 ```python
 import io
@@ -1110,12 +1110,12 @@ def test_read_answer_without_a_zoned_printed_time_has_none(iso):
     assert read_answer(ANSWER | {"printed_timestamp_iso": iso}).printed_time is None
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_gate.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.gate'`
 
-- [ ] **Step 3: Add the `frame_quality` table** — in `vigia/db.py`, append to `SCHEMA` after the `api_calls` index:
+- [x] **Step 3: Add the `frame_quality` table** — in `vigia/db.py`, append to `SCHEMA` after the `api_calls` index:
 
 ```sql
 CREATE TABLE IF NOT EXISTS frame_quality (
@@ -1140,7 +1140,7 @@ CREATE TABLE IF NOT EXISTS frame_quality (
 );
 ```
 
-- [ ] **Step 4: Create `vigia/gate.py`**
+- [x] **Step 4: Create `vigia/gate.py`**
 
 ```python
 """The quality gate: local checks on every frame, Muse Spark when they cannot decide.
@@ -1433,12 +1433,12 @@ def _open_rgb(path: Path) -> Image.Image:
         return image.convert("RGB")
 ```
 
-- [ ] **Step 5: Run the tests to see them pass, then the suite**
+- [x] **Step 5: Run the tests to see them pass, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_gate.py -v` → 25 passed
 Run: `.venv/Scripts/python.exe -m pytest` → 160 passed
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vigia/db.py vigia/gate.py tests/test_gate.py
@@ -1452,7 +1452,7 @@ git commit -m "Add the quality gate: local verdicts, Muse Spark for hazy frames"
 **Files:**
 - Modify: `vigia/gate.py`, `pyproject.toml`, `scripts/smoke_test.py`, `tests/test_gate.py`
 
-- [ ] **Step 1: Write the failing CLI tests** (append to `tests/test_gate.py`; add `from vigia import db` and `from vigia.gate import main` to its imports)
+- [x] **Step 1: Write the failing CLI tests** (append to `tests/test_gate.py`; add `from vigia import db` and `from vigia.gate import main` to its imports)
 
 ```python
 SOURCES_YAML = """
@@ -1515,7 +1515,7 @@ def test_cli_refuses_an_empty_window(cli_env, capsys):
 Run: `.venv/Scripts/python.exe -m pytest tests/test_gate.py -v`
 Expected: FAIL with `ImportError: cannot import name 'main' from 'vigia.gate'`
 
-- [ ] **Step 2: Add the CLI** — in `vigia/gate.py` add `import argparse` and `from contextlib import closing` to the standard-library imports, replace `from vigia.config import Sources` with
+- [x] **Step 2: Add the CLI** — in `vigia/gate.py` add `import argparse` and `from contextlib import closing` to the standard-library imports, replace `from vigia.config import Sources` with
 
 ```python
 from vigia import db
@@ -1573,7 +1573,7 @@ vigia-quality = "vigia.gate:main"
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_gate.py -v` → 28 passed
 
-- [ ] **Step 3: Point the smoke test at the package's prompt and schema** — in `scripts/smoke_test.py`:
+- [x] **Step 3: Point the smoke test at the package's prompt and schema** — in `scripts/smoke_test.py`:
   - delete `ASSESS_INSTRUCTIONS`, `ASSESS_PROMPT`, `ASSESS_SCHEMA` and the `ASSESS_SCHEMA["required"] = ...` line;
   - add `from vigia.gate import GATE_INSTRUCTIONS, GATE_PROMPT, GATE_SCHEMA` after `from vigia.imaging import load_for_upload`;
   - in `analyze_image`, replace the whole `else:` branch of `if client is None:` with:
@@ -1600,13 +1600,13 @@ Run: `.venv/Scripts/python.exe -m pytest tests/test_gate.py -v` → 28 passed
 Run: `.venv/Scripts/python.exe scripts/smoke_test.py --help`
 Expected: the usage text (the imports work). Do not run the smoke test itself: it calls the paid API.
 
-- [ ] **Step 4: Register the console script and run the suite**
+- [x] **Step 4: Register the console script and run the suite**
 
 Run: `.venv/Scripts/python.exe -m pip install -e ".[dev]" -q` then `.venv/Scripts/vigia-quality.exe --help`
 Expected: usage listing `--camera`, `--start`, `--end`, `--spark`, `--redo`
 Run: `.venv/Scripts/python.exe -m pytest` → 163 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add vigia/gate.py pyproject.toml scripts/smoke_test.py tests/test_gate.py
@@ -1621,7 +1621,7 @@ git commit -m "Add vigia-quality CLI and share the gate prompt with the smoke te
 - Create: `vigia/masks.py`, `tests/test_masks.py`
 - Modify: `vigia/meta/sam.py`, `vigia/video.py`, `tests/test_sam.py`, `tests/test_video.py`
 
-- [ ] **Step 1: Write the failing mask tests** (`tests/test_masks.py`)
+- [x] **Step 1: Write the failing mask tests** (`tests/test_masks.py`)
 
 ```python
 import numpy as np
@@ -1672,7 +1672,7 @@ def test_decode_rejects_runs_that_do_not_fill_the_size():
 Run: `.venv/Scripts/python.exe -m pytest tests/test_masks.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.masks'`
 
-- [ ] **Step 2: Create `vigia/masks.py`**
+- [x] **Step 2: Create `vigia/masks.py`**
 
 ```python
 """COCO run-length encoding of boolean masks.
@@ -1749,7 +1749,7 @@ def _from_string(counts: str) -> list[int]:
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_masks.py -v` → 7 passed
 
-- [ ] **Step 3: Write the failing `fit_mask` and `assemble` tests**
+- [x] **Step 3: Write the failing `fit_mask` and `assemble` tests**
 
 Append to `tests/test_sam.py` (and change its import to `from vigia.meta.sam import SamParseError, fit_mask, parse_output`):
 
@@ -1779,7 +1779,7 @@ def test_assemble_can_scale_to_a_height(source, tmp_path):
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sam.py tests/test_video.py -v`
 Expected: FAIL: `fit_mask` cannot be imported; `assemble()` got an unexpected keyword argument `height`
 
-- [ ] **Step 4: Make `fit_mask` public** — in `vigia/meta/sam.py`, rename `_fit_to_box` to `fit_mask`, call it from `parse_output` as `mask=fit_mask(raster.astype(bool), bounds.bottom - bounds.top, bounds.right - bounds.left)`, and give it this signature and docstring (the body stays, with `raster` renamed to `mask`):
+- [x] **Step 4: Make `fit_mask` public** — in `vigia/meta/sam.py`, rename `_fit_to_box` to `fit_mask`, call it from `parse_output` as `mask=fit_mask(raster.astype(bool), bounds.bottom - bounds.top, bounds.right - bounds.left)`, and give it this signature and docstring (the body stays, with `raster` renamed to `mask`):
 
 ```python
 def fit_mask(mask: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -1796,7 +1796,7 @@ def fit_mask(mask: np.ndarray, height: int, width: int) -> np.ndarray:
     return mask[np.ix_(rows, cols)]
 ```
 
-- [ ] **Step 5: Let `assemble` scale** — in `vigia/video.py` replace `assemble` with:
+- [x] **Step 5: Let `assemble` scale** — in `vigia/video.py` replace `assemble` with:
 
 ```python
 def assemble(frames: Sequence[str | Path], dst: str | Path, *, fps: float, height: int | None = None) -> Path:
@@ -1818,12 +1818,12 @@ def assemble(frames: Sequence[str | Path], dst: str | Path, *, fps: float, heigh
     return Path(dst)
 ```
 
-- [ ] **Step 6: Run the tests, then the suite**
+- [x] **Step 6: Run the tests, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_sam.py tests/test_video.py -v` → all pass
 Run: `.venv/Scripts/python.exe -m pytest` → 172 passed
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add vigia/masks.py vigia/meta/sam.py vigia/video.py tests/test_masks.py tests/test_sam.py tests/test_video.py
@@ -1838,7 +1838,7 @@ git commit -m "Encode masks as COCO RLE and let tracking scale videos and masks"
 - Create: `vigia/tracking.py`, `tests/test_tracking.py`
 - Modify: `vigia/db.py`
 
-- [ ] **Step 1: Write the failing tests** (`tests/test_tracking.py`)
+- [x] **Step 1: Write the failing tests** (`tests/test_tracking.py`)
 
 ```python
 import json
@@ -1926,7 +1926,7 @@ def test_detection_mask_refuses_a_mask_that_does_not_fit_its_box():
 Run: `.venv/Scripts/python.exe -m pytest tests/test_tracking.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'vigia.tracking'`
 
-- [ ] **Step 2: Add the tracking tables** — in `vigia/db.py`, append to `SCHEMA` after `frame_quality`:
+- [x] **Step 2: Add the tracking tables** — in `vigia/db.py`, append to `SCHEMA` after `frame_quality`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS tracking_runs (   -- one SAM video request: one phrase over one window of frames
@@ -1969,7 +1969,7 @@ CREATE INDEX IF NOT EXISTS idx_detections_frame ON detections (frame_id);
 CREATE INDEX IF NOT EXISTS idx_detections_track ON detections (track_id);
 ```
 
-- [ ] **Step 3: Create `vigia/tracking.py`**
+- [x] **Step 3: Create `vigia/tracking.py`**
 
 ```python
 """Track plumes and fountains through timelapses of usable frames with SAM 3.1 video.
@@ -2046,12 +2046,12 @@ def detection_mask(detection: Mapping[str, Any], width: int, height: int) -> np.
     return full
 ```
 
-- [ ] **Step 4: Run the tests, then the suite**
+- [x] **Step 4: Run the tests, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_tracking.py -v` → 5 passed
 Run: `.venv/Scripts/python.exe -m pytest` → 177 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add vigia/db.py vigia/tracking.py tests/test_tracking.py
@@ -2065,7 +2065,7 @@ git commit -m "Store tracking runs and select a camera's usable frames"
 **Files:**
 - Modify: `vigia/tracking.py`, `tests/test_tracking.py`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_tracking.py`; add `import shutil`, `import httpx`, `from test_meta_client import make_client, response_body, sse`, `from test_sam import OBJ_0`, `from vigia.config import Camera`, `from vigia.prompts import Prompts` to its imports, and `track_window` to the `vigia.tracking` import)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_tracking.py`; add `import shutil`, `import httpx`, `from test_meta_client import make_client, response_body, sse`, `from test_sam import OBJ_0`, `from vigia.config import Camera`, `from vigia.prompts import Prompts` to its imports, and `track_window` to the `vigia.tracking` import)
 
 ```python
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -2201,7 +2201,7 @@ def test_track_window_refuses_frames_of_different_sizes(store, conn, tmp_path):
 Run: `.venv/Scripts/python.exe -m pytest tests/test_tracking.py -v`
 Expected: FAIL with `ImportError: cannot import name 'track_window'`
 
-- [ ] **Step 2: Implement** — in `vigia/tracking.py` replace the imports with:
+- [x] **Step 2: Implement** — in `vigia/tracking.py` replace the imports with:
 
 ```python
 from __future__ import annotations
@@ -2396,12 +2396,12 @@ def _to_frame_pixels(obj: SamObject, frame: WindowFrame, info: VideoInfo) -> tup
     return box, fit_mask(obj.mask, box[3] - box[1], box[2] - box[0])
 ```
 
-- [ ] **Step 3: Run the tests, then the suite**
+- [x] **Step 3: Run the tests, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_tracking.py -v` → 11 passed
 Run: `.venv/Scripts/python.exe -m pytest` → 183 passed
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add vigia/tracking.py tests/test_tracking.py
@@ -2416,7 +2416,7 @@ git commit -m "Track a window of usable frames with SAM 3.1 video, one run per p
 - Modify: `vigia/tracking.py`, `vigia/settings.py`, `.env.example`, `pyproject.toml`, `tests/test_tracking.py`
 - Create: `scripts/render_tracks.py`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_tracking.py`; add `from pathlib import Path`, `from vigia import db`, `from vigia.settings import Settings` and `main` to the `vigia.tracking` import)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_tracking.py`; add `from pathlib import Path`, `from vigia import db`, `from vigia.settings import Settings` and `main` to the `vigia.tracking` import)
 
 ```python
 SOURCES_YAML = """
@@ -2486,7 +2486,7 @@ def test_settings_name_the_prompts_file(monkeypatch):
 Run: `.venv/Scripts/python.exe -m pytest tests/test_tracking.py -v`
 Expected: FAIL with `ImportError: cannot import name 'main'`
 
-- [ ] **Step 2: Add `prompts_path` to the settings** — in `vigia/settings.py` add the field after `sources_path`:
+- [x] **Step 2: Add `prompts_path` to the settings** — in `vigia/settings.py` add the field after `sources_path`:
 
 ```python
     prompts_path: Path
@@ -2504,7 +2504,7 @@ In `.env.example`, add under `SOURCES_PATH=config/sources.yaml`:
 PROMPTS_PATH=config/prompts.yaml
 ```
 
-- [ ] **Step 3: Add the CLI** — in `vigia/tracking.py` add `import argparse` and `from contextlib import closing` to the standard-library imports; replace `from vigia import masks` with `from vigia import db, masks`; replace `from vigia.config import Camera` with `from vigia.config import Camera, load_sources`; add `from vigia.meta.ledger import CostLedger` after the `vigia.meta.client` import; replace `from vigia.prompts import Prompts, Target` with `from vigia.prompts import Prompts, Target, load_prompts`; add `from vigia.settings import Settings` after it. Add this line at the end of the module docstring:
+- [x] **Step 3: Add the CLI** — in `vigia/tracking.py` add `import argparse` and `from contextlib import closing` to the standard-library imports; replace `from vigia import masks` with `from vigia import db, masks`; replace `from vigia.config import Camera` with `from vigia.config import Camera, load_sources`; add `from vigia.meta.ledger import CostLedger` after the `vigia.meta.client` import; replace `from vigia.prompts import Prompts, Target` with `from vigia.prompts import Prompts, Target, load_prompts`; add `from vigia.settings import Settings` after it. Add this line at the end of the module docstring:
 
 ```text
     vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
@@ -2568,14 +2568,14 @@ In `pyproject.toml` `[project.scripts]` add:
 vigia-track = "vigia.tracking:main"
 ```
 
-- [ ] **Step 4: Run the tests, then the suite**
+- [x] **Step 4: Run the tests, then the suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_tracking.py -v` → 15 passed
 Run: `.venv/Scripts/python.exe -m pytest` → 187 passed
 Run: `.venv/Scripts/python.exe -m pip install -e ".[dev]" -q` then `.venv/Scripts/vigia-track.exe --help`
 Expected: usage listing `--camera`, `--start`, `--end`, `--target`, `--min-frames`, `--redo`
 
-- [ ] **Step 5: Write `scripts/render_tracks.py`**
+- [x] **Step 5: Write `scripts/render_tracks.py`**
 
 ```python
 """Draw a camera's SAM tracks over its frames: an MP4 and a contact sheet.
@@ -2694,7 +2694,7 @@ if __name__ == "__main__":
 Run: `.venv/Scripts/python.exe scripts/render_tracks.py --help`
 Expected: the usage text. Its real run comes in Task 10, after tracks exist.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add vigia/tracking.py vigia/settings.py .env.example pyproject.toml tests/test_tracking.py scripts/render_tracks.py
@@ -2713,19 +2713,19 @@ Live Meta API spend, about $0.65 (budget ≤ $1.00):
 **Files:**
 - Create: `docs/research/tracking_ep55.md`
 
-- [ ] **Step 1: Pre-flight.** `git status` is clean, `.venv/Scripts/python.exe -m pytest` passes, and `vigia-quality --help` and `vigia-track --help` work. Today's spend (`SELECT SUM(cost_usd) FROM api_calls WHERE called_at >= '<today>'`) leaves room under `DAILY_BUDGET_USD`.
+- [x] **Step 1: Pre-flight.** `git status` is clean, `.venv/Scripts/python.exe -m pytest` passes, and `vigia-quality --help` and `vigia-track --help` work. Today's spend (`SELECT SUM(cost_usd) FROM api_calls WHERE called_at >= '<today>'`) leaves room under `DAILY_BUDGET_USD`.
 
-- [ ] **Step 2: Assess episode 55** (local checks; Muse Spark only for hazy frames)
+- [x] **Step 2: Assess episode 55** (local checks; Muse Spark only for hazy frames)
 
 Run: `.venv/Scripts/vigia-quality.exe --camera kilauea-kp --camera kilauea-k2 --camera kilauea-v1 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z`
 Expected: KP `78 assessed, 78 usable`, K2 `195 … 195 usable`, V1 `195 … 195 usable`, `0 by Muse Spark` each (per the calibration).
 
-- [ ] **Step 3: Assess the calibration windows**
+- [x] **Step 3: Assess the calibration windows**
 
 Run: `.venv/Scripts/vigia-quality.exe --camera kilauea-kp --camera kilauea-k2 --camera kilauea-v1 --start 2026-10-26T22:00Z --end 2026-10-27T19:00Z`
 Expected: the fog and the dark night are rejected locally. About 39 frames are decided by Muse Spark. The live frames after 08:00Z (if `vigia-ingest` stored any) are assessed too.
 
-- [ ] **Step 4: Check that Muse Spark never saw a rejected frame**
+- [x] **Step 4: Check that Muse Spark never saw a rejected frame**
 
 ```bash
 .venv/Scripts/python.exe -c "
@@ -2738,7 +2738,7 @@ for r in c.execute(\"SELECT f.camera_id, q.local_decision, q.reasons, q.decided_
 
 Expected: `(0,)`. Every `reject` row has `decided_by = 'local'`.
 
-- [ ] **Step 5: Verification sample with `--spark all`.** Read printed times and PTZ on frames with known answers:
+- [x] **Step 5: Verification sample with `--spark all`.** Read printed times and PTZ on frames with known answers:
 
 Run, one by one:
 - `.venv/Scripts/vigia-quality.exe --camera kilauea-v1 --start 2026-10-17T16:58Z --end 2026-10-17T17:02Z --spark all --redo`
@@ -2752,7 +2752,7 @@ Expected:
 
 If Muse Spark misreads 4K overlays scaled to 2048 px, record it as a finding; do not change code in this task.
 
-- [ ] **Step 6: Track episode 55** (one window per camera; 3 phrases each)
+- [x] **Step 6: Track episode 55** (one window per camera; 3 phrases each)
 
 Run, one by one:
 - `.venv/Scripts/vigia-track.exe --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z`
@@ -2761,7 +2761,7 @@ Run, one by one:
 
 Expected: K2 and V1 report `195 usable frames, video 1920x1080` and KP `78`; each has plume, fountain and incandescence runs; costs about $0.117, $0.117 and $0.047.
 
-- [ ] **Step 7: Render and look**
+- [x] **Step 7: Render and look**
 
 Run: `.venv/Scripts/python.exe scripts/render_tracks.py --camera <camera> --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z` for each of the three cameras, then open each `contact_sheet.jpg`. Check that:
 - the plume (`steam`) mask covers the gas column;
@@ -2770,7 +2770,7 @@ Run: `.venv/Scripts/python.exe scripts/render_tracks.py --camera <camera> --star
 
 Note track breaks, for example at V1's zoom changes (03:49 and 04:43 HST).
 
-- [ ] **Step 8: Acceptance checks**
+- [x] **Step 8: Acceptance checks**
 
 ```bash
 .venv/Scripts/python.exe -c "
@@ -2796,7 +2796,7 @@ If check 2 fails, investigate with superpowers:systematic-debugging before chang
 
 Then record the cause and the fix (or the documented limitation) in the results doc.
 
-- [ ] **Step 9: Write `docs/research/tracking_ep55.md`** with these sections:
+- [x] **Step 9: Write `docs/research/tracking_ep55.md`** with these sections:
   - *Method*: commands, windows, video size, cost per camera from `api_calls`.
   - *Quality gate results*: counts per camera and window from `frame_quality`, Muse Spark calls and their cost, and the Step 5 sample table (frame, view, printed time vs. capture time, PTZ).
   - *Tracks*: per camera and target, the tracks, detections and first/last seen in HST.
@@ -2804,7 +2804,7 @@ Then record the cause and the fix (or the documented limitation) in the results 
   - *Overlays*: paths of the contact sheets and MP4s under `data/tracks/`.
   - *Caveats*: track breaks at zoom changes; KP is not a fountain camera; `steam` masks include the drifting cloud; mask edges good to about 2 px; what Phase 3 should use.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add docs/research/tracking_ep55.md
@@ -2818,7 +2818,7 @@ git commit -m "Record episode 55 quality verdicts and SAM tracks"
 **Files:**
 - Modify: `README.md`, `docs/PLAN.md`
 
-- [ ] **Step 1: README.**
+- [x] **Step 1: README.**
   - In *Status*, replace `- [ ] Quality gate, SAM 3.1 segmentation and tracking, metrics, wind comparison` with:
 
 ```markdown
@@ -2836,7 +2836,7 @@ vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30
                                    # SAM 3.1 video tracks over the usable frames
 ```
 
-- [ ] **Step 2: docs/PLAN.md.**
+- [x] **Step 2: docs/PLAN.md.**
   - Tick the four Phase 2 boxes.
   - Module map:
     - mark `quality.py` and `tracking.py` as `(exists, phase 2)`;
@@ -2850,12 +2850,12 @@ vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30
     - "live tracking: one SAM window per camera per hour (Phase 2 cost rule)".
   - *Budget*: update *Spent so far*.
 
-- [ ] **Step 3: Final verification**
+- [x] **Step 3: Final verification**
 
 Run: `.venv/Scripts/python.exe -m pytest`
 Expected: all pass, 0 failures (187 if nothing changed in Task 10).
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 ```bash
 git add README.md docs/PLAN.md
@@ -2863,10 +2863,38 @@ git commit -m "Mark Phase 2 done: quality gate and timelapse tracking"
 git push origin main
 ```
 
-- [ ] **Step 5: Update the project memory** (`vigia-andino-status`). Record:
+- [x] **Step 5: Update the project memory** (`vigia-andino-status`). Record:
   - Phase 2 done and pushed;
   - the new modules and CLIs, thresholds and their calibration windows;
   - the episode 55 tracking results and the fountain end time;
   - the Muse Spark gate policy;
   - test count, spend, the calibration frames backfilled (Oct 26–27);
   - next: Phase 3 (geometry, metrics, first validation).
+
+---
+
+## Execution notes (2026-10-28)
+
+Tasks 1, 2 and 4–9 were run by `implementer` subagents and checked by `reviewer` subagents. The orchestrator ran Task 3's calibration and Tasks 10–11. The suite went from 105 to 190 tests. Deviations from the steps above:
+
+1. **Glow counted in patches (commit `b0ee2d3`, after Task 2).**
+   - The visual check of the first calibration run showed that single hot blocks included K2's row of path lamps: 39 of 60 quiet-night K2 frames passed as "incandescent".
+   - `measure()` now counts only 2×2 patches of hot blocks. A failing test came first: `test_small_lights_in_the_dark_are_not_glow`.
+   - Results:
+     - quiet-night K2: 2 of 60 frames pass, both showing a real vent glow;
+     - episode 55 nights all still pass; the minimum is KP at 0.094 % against the 0.05 % threshold;
+     - the decision counts of the other windows did not change.
+   - This adds one test, so every later suite count is one higher than planned.
+2. **Task 8 review fixes (commit `1713866`).**
+   - `track_window` now refuses a phrase listed for more than one target before uploading. Otherwise SAM would be billed twice and the second store would hit the UNIQUE constraint.
+   - A run that fails to store is reported, and the other phrases go on.
+   - The docstring says that windows are matched by their first and last frame.
+   - Two more tests: the suite reached 190, not 187.
+3. **Task 10 order.** The free episode-55 assessment, the calibration windows with Muse Spark (39 calls, $0.30) and the 4-frame `--spark all` sample ran while Tasks 7–9 were in review. The gate code was already final by then.
+4. **Parallel tracking runs.** V1 and KP ran in parallel. The `cost:` line each run prints sums every `track:` call since it started, so it included the other camera's calls ($0.1638 and $0.0858 printed, against $0.117 and $0.0468 billed). The ledger is exact. Total tracking cost: $0.2808.
+5. **Mask decoding time.** K2's run took 14 minutes, mostly spent decoding 168 large plume masks in `meta_sam_parser`'s pure-Python decoder. Each SAM request took 10–18 s. This is documented for the Phase 5 pipeline.
+6. **Acceptance.**
+   - Tracks exist for V1, K2 and KP.
+   - The fountain's last detection is 09:02 HST on K2 and 09:01 HST on V1; HVO gives 09:03.
+   - The 220 frames rejected locally (fog or night) never reached Muse Spark.
+   - Phase 2 spend was $0.61; the project total is $0.82.

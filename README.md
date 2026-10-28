@@ -51,7 +51,9 @@ Work in progress during the hackathon. Implemented so far:
 - [x] SAM 3.1 phrases tuned per target on episode 55 frames ([evidence](docs/research/prompt_tuning.md))
 - [x] API cost ledger with daily budget cap
 - [x] Mask overlay renderer with a legend strip below the frame
-- [ ] Quality gate, SAM 3.1 segmentation and tracking, metrics, wind comparison
+- [x] Quality gate: free local checks (stale, frozen, night without incandescence, fog), Muse Spark for hazy frames, printed time and PTZ readout ([calibration](docs/research/quality_calibration.md))
+- [x] SAM 3.1 video tracking over timelapses of usable frames, with per-frame masks ([episode 55 results](docs/research/tracking_ep55.md))
+- [ ] Metrics (height ± σ, drift) and wind comparison
 - [ ] Muse Spark agent and bulletins
 - [ ] Episode 55 replay and validation
 - [ ] Dashboard and deployment
@@ -70,6 +72,10 @@ vigia-ingest --once                # poll every enabled camera once
 vigia-ingest                       # keep polling on each camera's interval
 vigia-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
                                    # download archived frames (USGS AshCam keeps ~31 days)
+vigia-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+                                   # judge frames: local checks, Muse Spark for hazy ones
+vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+                                   # SAM 3.1 video tracks over the usable frames
 pytest                             # run the test suite
 ```
 

@@ -17,7 +17,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest` (105 passing at the end of Phase 1, session 2).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest` (190 passing at the end of Phase 2, session 3).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -69,6 +69,23 @@
   - Thermal cameras: incandescence `glowing lava` (the hot lava field).
   - Every phrase with "volcanic" in it returns the fountain on close cameras.
   - Large masks come at reduced raster resolution (long side 1024 px); `vigia/meta/sam.py` scales them to their box.
+- **Quality gate** ([quality_calibration.md](research/quality_calibration.md)):
+  - Local checks, calibrated on 984 frames:
+    - fog: edge density < 0.005;
+    - hazy, sent to Muse Spark: 0.005–0.015;
+    - night (sun < −6°): rejected unless incandescent patches cover ≥ 0.05 % (2×2 block patches, so K2's path lamps don't count);
+    - frozen: fingerprint change < 0.15.
+  - Episode 55: all 468 frames pass locally, with no Muse Spark call.
+  - A foggy afternoon sends 39 hazy frames to Muse Spark ($0.30). Muse Spark rejected all 15 K2/KP fog frames and kept 23 of 24 hazy V1 views.
+  - Known false passes: K2 fog that leaves the foreground sharp; KP overcast.
+  - Muse Spark reads the printed time within 6 s of the capture time and parses PTZ readouts (V1 presets 9.4×, 1.4×, 1.0×, and 9.6× on Oct 26).
+- **Tracking** ([tracking_ep55.md](research/tracking_ep55.md)):
+  - Episode 55 on V1, K2 and KP: one 1920×1080 window per camera at 10 fps, 3 phrases each, $0.28.
+  - The fountain's last detection is 09:02 HST on K2 and 09:01 HST on V1; the official end is 09:03.
+  - V1 keeps one fountain track through its PTZ changes.
+  - `steam` masks include the cloud drifting downwind.
+  - KP `glow` hit a lens flare in daylight.
+  - Decoding big plume masks in `meta_sam_parser` (pure Python) takes about 11 min for K2's 168 masks.
 
 ## Target module map
 
@@ -81,8 +98,11 @@ vigia/
   ingest/store.py         shared frame storage + camera state   (exists, phase 1)
   ingest/ashcam.py        AshCam archive client and backfill    (exists, phase 1)
   meta/client.py sam.py pricing.py ledger.py                    (exist)
-  quality.py              local checks + Muse Spark gate         (phase 2)
-  tracking.py             timelapse build + SAM video tracks     (phase 2)
+  sun.py                  sun elevation for the night check      (exists, phase 2)
+  quality.py              local checks: stale, frozen, night, fog (exists, phase 2)
+  gate.py                 quality gate + frame_quality; vigia-quality (exists, phase 2)
+  masks.py                COCO RLE masks                         (exists, phase 2)
+  tracking.py             timelapse build + SAM video tracks; vigia-track (exists, phase 2)
   geometry.py             camera model, calibration, height ± σ  (phase 3)
   metrics.py              area, height, drift per detection      (phase 3)
   wind.py                 Open-Meteo winds aloft                 (phase 4)
@@ -115,17 +135,17 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 
 ## Phase 2: Wed Oct 28. Quality gate and timelapse tracking
 
-- [ ] **`vigia/quality.py`, local checks** (no API cost):
+- [x] **`vigia/quality.py`, local checks** (no API cost):
   - stale: capture time older than 30 min;
   - frozen: the same hash, or an unchanged streak;
   - night: solar elevation at the camera below −6° (keep only if incandescence is plausible);
   - low visibility: contrast and edge-density thresholds, calibrated on the smoke test's fog frame.
-- [ ] **Muse Spark gate** for frames that pass the local checks: usability, the printed timestamp and the printed PTZ values. Move the smoke test's JSON schema into the package. Store the result in a `frame_quality` table.
-- [ ] **`vigia/tracking.py`:**
+- [x] **Muse Spark gate** for frames that pass the local checks: usability, the printed timestamp and the printed PTZ values. Move the smoke test's JSON schema into the package. Store the result in a `frame_quality` table.
+- [x] **`vigia/tracking.py`:**
   - Assemble N consecutive usable frames of a camera into an MP4.
   - Upload it and run SAM video once per phrase from `prompts.yaml`.
   - Persist `tracks` (camera, phrase, window) and `detections` (frame_id, track_id, box, score, area, mask as COCO RLE via `decode_mask_to_rle`).
-- [ ] **Cost rule:** SAM bills at least 50 frames per video request, so send windows of 50 frames or more when backfilling; live, use one window per hour.
+- [x] **Cost rule:** SAM bills at least 50 frames per video request, so send windows of 50 frames or more when backfilling; live, use one window per hour.
 
 **Acceptance:**
 - Tracks exist for episode 55 V1/K2/KP.
@@ -176,6 +196,9 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 - [ ] **`vigia/replay.py` and the `vigia-replay --episode 55 --speed 60` CLI:**
   - Feed the AshCam episode-55 frames through the same pipeline on a simulated clock: quality, tracking, metrics, and the agent every N minutes.
   - Write a timeline JSON.
+  - The pipeline runner also serves live mode:
+    - it runs `QualityGate.assess_range(spark="uncertain")` on new frames;
+    - it tracks one SAM window per camera per hour (the Phase 2 cost rule), off the request path, because mask decoding takes minutes.
 - [ ] **Muse Spark video understanding:** send the episode timelapse and ask for the phases (onset, peak, decline, end). Cross-check with the SAM-derived times.
 
 **Acceptance:** the replay produces six or more bulletins across the episode, plus the comparison table against USGS.
@@ -236,7 +259,7 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 
 ## Budget
 
-Spent so far: $0.20 (smoke test $0.05, SAM prompt tuning $0.15). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $0.82 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 
