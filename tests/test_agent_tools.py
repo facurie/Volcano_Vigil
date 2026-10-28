@@ -1,3 +1,4 @@
+import dataclasses
 import io
 import json
 import re
@@ -17,6 +18,7 @@ from test_sam import IMAGE_OUTPUT, OBJ_0
 from test_tracking import FakeMeta, needs_ffmpeg
 from test_wind import open_meteo_day
 from vigia import masks
+from vigia.calibration import CameraCalibration, Preset, Site
 from vigia.agent.tools import (TOOLS, Args, CompareArgs, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs,
                                SegmentArgs, Tool, ToolContext, ToolError, Toolbox, TrackArgs, TrackIdArgs, WindArgs,
                                _wind_json, assess_frame, compare_cameras, get_history, get_recent_frames, get_wind,
@@ -611,3 +613,19 @@ def test_track_window_explains_a_window_whose_stored_run_misses_newly_usable_fra
 def test_wind_directions_wrap_to_zero_instead_of_360():
     assert _wind_json(Wind(5, 179.6)) == {"from_deg": 180, "toward_deg": 0, "speed_ms": 5}
     assert _wind_json(Wind(5, 359.6)) == {"from_deg": 0, "toward_deg": 180, "speed_ms": 5}
+
+
+def test_a_camera_whose_preset_cannot_fix_a_view_is_not_calibrated(conn, store, tmp_path):
+    # K2cam's episode 55 preset has an image size but no references (docs/research/calibration_ep55.md)
+    calibration = kp_calibration()
+    k2 = CameraCalibration(volcano="kilauea", position=Site(lat=19.42, lon=-155.2889, elev_m=1245),
+                           presets=[Preset(name="ep55", valid_from="2026-10-17T00:00:00Z", image_size=SIZE)])
+    ctx = dataclasses.replace(context(conn, tmp_path), calibration=calibration.model_copy(
+        update={"cameras": {**calibration.cameras, "kilauea-k2": k2}}))
+    kp, k2_frame = add_frame(conn, store, "kilauea-kp", -5), add_frame(conn, store, "kilauea-k2", -4)
+
+    status = {c["camera_id"]: c["calibrated"] for c in list_cameras_status(ctx, NoArgs())["cameras"]}
+    lined_up = {c["camera_id"]: c["calibrated"] for c in compare_cameras(ctx, CompareArgs(volcano="kilauea"))["cameras"]}
+
+    assert status == {"kilauea-kp": True, "kilauea-k2": False}
+    assert lined_up == {"kilauea-kp": True, "kilauea-k2": False}

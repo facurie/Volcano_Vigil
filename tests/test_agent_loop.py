@@ -205,3 +205,23 @@ def test_cli_runs_the_agent_at_the_given_clock_and_prints_its_trace(cli_env, mon
     assert "tool list_cameras_status {} -> ok" in out
     assert out.rstrip().endswith("No cameras.")
     assert "Check Kilauea now" in api.requests[0]["input"][0]["content"]
+
+
+def test_an_answer_that_did_not_complete_is_an_error(conn, tmp_path):
+    result = run(conn, tmp_path, Script(turn_body([], status="failed")))
+
+    assert result.status == "error" and "failed" in result.error
+
+
+def test_an_unexpected_failure_still_closes_the_run(conn, tmp_path):
+    def broken(ctx, args):
+        return {"not json": {1, 2}}  # a set: json.dumps fails outside the toolbox
+
+    api = Script(turn_body([("broken", "{}")], rid="resp_1"))
+    with pytest.raises(TypeError):
+        run_agent(make_client(api, conn), context(conn, tmp_path), "kilauea", "Go.",
+                  tools=[Tool("broken", "Broken.", NoArgs, broken)], wall_clock=lambda: NOW)
+
+    row = conn.execute("SELECT status, error, finished_at FROM agent_runs").fetchone()
+    assert (row["status"], row["finished_at"]) == ("error", to_iso(NOW))
+    assert "TypeError" in row["error"]

@@ -118,46 +118,53 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
             conn.execute(f"INSERT INTO agent_steps ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
                          tuple(columns.values()))
 
-    for turn in range(1, max_turns + 1):
-        if turn == max_turns:
-            pending.append({"role": "user", "content": WRAP_UP})
-        started = time.perf_counter()
-        try:
-            reply = job.respond(input=pending, tools=definitions, instructions=text, purpose="turn",
-                                previous_response_id=previous, effort=effort, context_tokens=context_tokens)
-        except BudgetExceeded as exc:
-            status, error = "budget", str(exc)
-            break
-        except openai.APIError as exc:
-            status, error = "error", f"{type(exc).__name__}: {exc}"[:500]
-            break
-        turns = turn
-        step("model", response_id=reply.response_id, text=reply.text, reasoning=reply.reasoning,
-             cost_usd=reply.cost_usd, latency_ms=_ms(started))
-        if not reply.calls:
-            final = reply.text
-            if reply.status == "incomplete":
-                status, error = "error", "the answer was cut off at max_output_tokens"
-            else:
-                status = "done"
-            break
-        if turn == max_turns:
-            final = reply.text
-            break
-        pending = []
-        for call in reply.calls:
-            spent, started = job.tag_spent(), time.perf_counter()
-            result, ok = toolbox.call(call.name, call.arguments)
-            output = json.dumps(result, ensure_ascii=False)
-            step("tool", tool_name=call.name, call_id=call.call_id, arguments=call.arguments, result=output,
-                 ok=int(ok), cost_usd=job.tag_spent() - spent, latency_ms=_ms(started))
-            pending.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
-        previous, context_tokens = reply.response_id, reply.context_tokens
-    cost = job.tag_spent()
-    with conn:
-        conn.execute(
-            "UPDATE agent_runs SET finished_at = ?, status = ?, turns = ?, cost_usd = ?, final_text = ?, error = ? "
-            "WHERE id = ?", (to_iso(wall_clock()), status, turns, cost, final, error, run_id))
+    try:
+        for turn in range(1, max_turns + 1):
+            if turn == max_turns:
+                pending.append({"role": "user", "content": WRAP_UP})
+            started = time.perf_counter()
+            try:
+                reply = job.respond(input=pending, tools=definitions, instructions=text, purpose="turn",
+                                    previous_response_id=previous, effort=effort, context_tokens=context_tokens)
+            except BudgetExceeded as exc:
+                status, error = "budget", str(exc)
+                break
+            except openai.APIError as exc:
+                status, error = "error", f"{type(exc).__name__}: {exc}"[:500]
+                break
+            turns = turn
+            step("model", response_id=reply.response_id, text=reply.text, reasoning=reply.reasoning,
+                 cost_usd=reply.cost_usd, latency_ms=_ms(started))
+            if not reply.calls:
+                final = reply.text
+                if reply.status == "incomplete":
+                    status, error = "error", "the answer was cut off at max_output_tokens"
+                elif reply.status != "completed":
+                    status, error = "error", f"the answer ended with status {reply.status!r}"
+                else:
+                    status = "done"
+                break
+            if turn == max_turns:
+                final = reply.text
+                break
+            pending = []
+            for call in reply.calls:
+                spent, started = job.tag_spent(), time.perf_counter()
+                result, ok = toolbox.call(call.name, call.arguments)
+                output = json.dumps(result, ensure_ascii=False)
+                step("tool", tool_name=call.name, call_id=call.call_id, arguments=call.arguments, result=output,
+                     ok=int(ok), cost_usd=job.tag_spent() - spent, latency_ms=_ms(started))
+                pending.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
+            previous, context_tokens = reply.response_id, reply.context_tokens
+    except BaseException as exc:  # Ctrl-C or a bug: the run must not stay 'running'
+        status, error = "error", f"{type(exc).__name__}: {exc}"[:500]
+        raise
+    finally:
+        cost = job.tag_spent()
+        with conn:
+            conn.execute(
+                "UPDATE agent_runs SET finished_at = ?, status = ?, turns = ?, cost_usd = ?, final_text = ?, "
+                "error = ? WHERE id = ?", (to_iso(wall_clock()), status, turns, cost, final, error, run_id))
     return AgentRun(run_id, status, turns, cost, final, error)
 
 
@@ -211,7 +218,8 @@ def main(argv: list[str] | None = None) -> None:
         sys.stdout.reconfigure(errors="replace")  # the report may hold characters a Windows console cannot show
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     task = args.task or DEFAULT_TASK.format(name=sources.volcanoes[args.volcano].name)
-    with closing(db.connect(settings.db_path)) as conn,             httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+    with closing(db.connect(settings.db_path)) as conn, \
+            httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
         ctx = ToolContext(conn=conn, data_dir=settings.data_dir, sources=sources,
                           calibration=load_calibration(settings.calibration_path),
                           prompts=load_prompts(settings.prompts_path), winds=WindService(conn, http, sources),

@@ -28,7 +28,7 @@ import numpy as np
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from vigia import tracking
-from vigia.calibration import Calibration
+from vigia.calibration import Calibration, sample_geometry
 from vigia.config import Camera, Sources
 from vigia.gate import QualityGate
 from vigia.imaging import load_for_upload
@@ -236,10 +236,22 @@ def list_cameras_status(ctx: ToolContext, args: NoArgs) -> dict[str, Any]:
                 "minutes_ago": round((ctx.now - parse_utc(latest["captured_at"])).total_seconds() / 60, 1),
                 "usable": _usable(latest), "reasons": _verdict_reasons(latest)},
             "frames_last_hour": hour["frames"], "usable_last_hour": hour["usable"],
-            "calibrated": ctx.calibration.preset_for(camera.id, ctx.now) is not None,
+            "calibrated": _calibrated(ctx, camera.id, ctx.now),
             "last_detection": {row["target"]: row["last"] for row in seen},
         })
     return {"now": now, "cameras": cameras}
+
+
+def _calibrated(ctx: ToolContext, camera_id: str, when: datetime) -> bool:
+    """Whether a preset covers the camera at `when` and its references fix the view (a two-sample solve)."""
+    preset = ctx.calibration.preset_for(camera_id, when)
+    if preset is None:
+        return False
+    try:
+        sample_geometry(ctx.calibration, camera_id, preset, samples=2)
+    except ValueError:
+        return False
+    return True
 
 
 def _status(ctx: ToolContext, latest: sqlite3.Row | None) -> str:
@@ -601,7 +613,7 @@ def compare_cameras(ctx: ToolContext, args: CompareArgs) -> dict[str, Any]:
                     heights[(target, row["metric"])][camera.id] = (row["value"], row["sigma"])
         cameras.append({"camera_id": camera.id, "frame_id": frame["id"], "captured_at": frame["captured_at"],
                         "usable": _usable(frame), "detections": dict(Counter(row["target"] for row in detections)),
-                        "calibrated": ctx.calibration.preset_for(camera.id, parse_utc(frame["captured_at"])) is not None,
+                        "calibrated": _calibrated(ctx, camera.id, parse_utc(frame["captured_at"])),
                         "measurements": measured})
     if not cameras:
         raise ToolError(f"no {args.volcano} camera has a frame within 10 minutes of {to_iso(when)}")
