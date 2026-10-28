@@ -131,8 +131,8 @@ def window(store, conn, count=3, size=(640, 668)):
     return [add_frame(store, conn, 2 * i, size=size) for i in range(count)]
 
 
-def track(fake, conn, tmp_path, **kwargs):
-    return track_window(make_client(fake, conn), conn, tmp_path, K2, PROMPTS, T0, T0 + timedelta(hours=1),
+def track(fake, conn, tmp_path, prompts=PROMPTS, **kwargs):
+    return track_window(make_client(fake, conn), conn, tmp_path, K2, prompts, T0, T0 + timedelta(hours=1),
                         max_height=334, **kwargs)
 
 
@@ -214,3 +214,26 @@ def test_track_window_refuses_frames_of_different_sizes(store, conn, tmp_path):
     with pytest.raises(ValueError, match="sizes"):
         track(fake, conn, tmp_path)
     assert fake.requests == []
+
+
+def test_a_phrase_listed_for_two_targets_is_refused_before_any_request(store, conn, tmp_path):
+    window(store, conn)
+    fake = FakeMeta({"steam": ""})
+    twice = Prompts(plume={"visible": ["steam"]}, fountain={"visible": ["steam"]})
+
+    with pytest.raises(ValueError, match="more than one target"):
+        track(fake, conn, tmp_path, prompts=twice)
+    assert fake.requests == []
+
+
+@needs_ffmpeg
+def test_a_run_that_cannot_be_stored_is_reported_and_the_others_go_on(store, conn, tmp_path):
+    window(store, conn)
+    fake = FakeMeta({"steam": f"<5f>{OBJ_0}\n", "lava fountain": ""})  # frame 5 is outside the 3-frame video
+
+    report = track(fake, conn, tmp_path)
+
+    assert [run.phrase for run in report.runs] == ["lava fountain"]
+    assert len(report.errors) == 1 and "steam" in report.errors[0]
+    assert conn.execute("SELECT COUNT(*) FROM tracking_runs WHERE phrase = 'steam'").fetchone()[0] == 0
+    assert fake.calls()[-1] == ("DELETE", "/v1/files/file-1")

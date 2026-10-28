@@ -18,7 +18,7 @@ import json
 import logging
 import sqlite3
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -136,7 +136,8 @@ def track_window(
     Raises ValueError before spending anything when the window has no usable
     frames, mixes frame sizes or formats, or was already tracked with one of
     the phrases (`redo` replaces those runs). A failed SAM request is reported
-    and the other phrases go on.
+    and the other phrases go on. A window is matched by its first and last
+    frame, so a window that only overlaps an earlier one is tracked again.
     """
     frames = usable_frames(conn, data_dir, camera.id, start, end)
     if not frames:
@@ -144,6 +145,9 @@ def track_window(
     if len({(f.width, f.height, f.path.suffix.lower()) for f in frames}) > 1:
         raise ValueError(f"camera {camera.id}: the window mixes frame sizes or formats; split it")
     phrases = [(target, phrase) for target in targets for phrase in prompts.phrases(target, camera.kind)]
+    repeated = sorted(p for p, n in Counter(p for _, p in phrases).items() if n > 1)
+    if repeated:
+        raise ValueError(f"camera {camera.id}: phrase(s) {', '.join(repeated)} listed for more than one target")
     window = (to_iso(frames[0].captured_at), to_iso(frames[-1].captured_at))
     existing = _existing_runs(conn, camera.id, [phrase for _, phrase in phrases], *window)
     if existing and not redo:
@@ -170,9 +174,13 @@ def track_window(
                 log.warning("camera %s, %s: %s", camera.id, phrase, exc)
                 report.errors.append(f"{target} / {phrase}: {type(exc).__name__}: {exc}"[:300])
                 continue
-            with conn:
-                _delete_runs(conn, existing.get(phrase, []))
-                report.runs.append(_store_run(conn, camera.id, target, phrase, frames, info, objects, now()))
+            try:
+                with conn:
+                    _delete_runs(conn, existing.get(phrase, []))
+                    report.runs.append(_store_run(conn, camera.id, target, phrase, frames, info, objects, now()))
+            except (ValueError, sqlite3.Error) as exc:
+                log.warning("camera %s, %s: could not store the run: %s", camera.id, phrase, exc)
+                report.errors.append(f"{target} / {phrase}: could not store the run: {type(exc).__name__}: {exc}"[:300])
     finally:
         try:
             client.delete_file(file_id)
