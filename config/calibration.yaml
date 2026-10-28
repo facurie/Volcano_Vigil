@@ -54,6 +54,23 @@ cameras:
       - name: fixed
         valid_from: "2026-09-25T00:00:00Z"
         image_size: [3840, 2160]
+        distortion:
+          k1: 0.0
+          sigma: 1.0
+          source: Free; the nine Moon positions, from the centre to the top-left corner, measure it.
+        # The Moon's centre on clear AshCam frames: scripts/moon_references.py (JPL Horizons airless
+        # topocentric position at the capture time, refraction for 792 hPa, circle fitted to the lit limb;
+        # limb misfit 0.5-1.6 px). Evidence in docs/research/calibration_ep55.md.
+        celestial:
+          - {name: "Moon 20261016T2215Z", pixel: [490.1, 885.2], az_deg: 122.2104, el_deg: 5.7648}
+          - {name: "Moon 20261016T2230Z", pixel: [589.3, 710.5], az_deg: 123.6700, el_deg: 8.6078}
+          - {name: "Moon 20261016T2245Z", pixel: [695.5, 539.1], az_deg: 125.2388, el_deg: 11.4180}
+          - {name: "Moon 20261016T2300Z", pixel: [809.8, 370.7], az_deg: 126.9254, el_deg: 14.1814}
+          - {name: "Moon 20261016T2315Z", pixel: [930.4, 208.8], az_deg: 128.7394, el_deg: 16.8880}
+          - {name: "Moon 20261019T0045Z", pixel: [627.9, 127.5], az_deg: 123.4620, el_deg: 17.9432}
+          - {name: "Moon 20261020T0045Z", pixel: [66.5, 562.4], az_deg: 114.7288, el_deg: 10.5607}
+          - {name: "Moon 20261020T0100Z", pixel: [174.7, 370.3], az_deg: 116.2394, el_deg: 13.6701}
+          - {name: "Moon 20261020T0115Z", pixel: [293.2, 181.0], az_deg: 117.8590, el_deg: 16.7469}
         note: Fixed camera; the same framing (tree, skyline) on every AshCam morning from Sep 28 to Oct 27.
   kilauea-k2:
     volcano: kilauea
