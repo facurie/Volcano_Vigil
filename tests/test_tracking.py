@@ -1,13 +1,19 @@
 import json
+import shutil
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import numpy as np
 import pytest
 
 from conftest import make_jpeg
+from test_meta_client import make_client, response_body, sse
+from test_sam import OBJ_0
 from vigia import masks
+from vigia.config import Camera
 from vigia.ingest.store import FrameStore
-from vigia.tracking import detection_mask, unassessed_frames, usable_frames
+from vigia.prompts import Prompts
+from vigia.tracking import detection_mask, track_window, unassessed_frames, usable_frames
 
 T0 = datetime(2026, 10, 17, 18, 0, 2, tzinfo=timezone.utc)
 
@@ -78,3 +84,133 @@ def test_detection_mask_refuses_a_mask_that_does_not_fit_its_box():
 
     with pytest.raises(ValueError, match="detection 7"):
         detection_mask(detection, width=10, height=10)
+
+
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+
+K2 = Camera(id="kilauea-k2", name="K2cam", volcano="kilauea", url="https://example.org/K2.jpg",
+            license="Public Domain", attribution="U.S. Geological Survey")
+PROMPTS = Prompts(plume={"visible": ["steam"]}, fountain={"visible": ["lava fountain"]})
+UPLOADED = {"id": "file-1", "object": "file", "bytes": 1000, "created_at": 1793000000,
+            "filename": "window.mp4", "purpose": "user_data"}
+SERVER_ERROR = {"error": {"message": "boom", "type": "server_error", "param": None, "code": None}}
+
+
+class FakeMeta:
+    """The Files API plus streamed SAM video answers, one output text per phrase; records every request."""
+
+    def __init__(self, outputs, failing=()):
+        self.outputs = outputs
+        self.failing = failing
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if request.url.path == "/v1/files":
+            return httpx.Response(200, json=UPLOADED)
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"id": "file-1", "object": "file", "deleted": True})
+        phrase = json.loads(request.content)["input"][0]["content"][0]["text"]
+        if phrase in self.failing:
+            return httpx.Response(500, json=SERVER_ERROR)
+        final = response_body("sam-3.1", "", {"video_frames_processed": 50})
+        events = [{"type": "response.created", "sequence_number": 0,
+                   "response": {**final, "status": "in_progress", "output": []}}]
+        if self.outputs[phrase]:
+            events.append({"type": "response.output_text.delta", "sequence_number": 1, "item_id": "msg_1",
+                           "output_index": 0, "content_index": 0, "delta": self.outputs[phrase], "logprobs": []})
+        events.append({"type": "response.completed", "sequence_number": 2, "response": final})
+        return httpx.Response(200, content=sse(events), headers={"content-type": "text/event-stream"})
+
+    def calls(self):
+        return [(request.method, request.url.path) for request in self.requests]
+
+
+def window(store, conn, count=3, size=(640, 668)):
+    """`count` usable frames, 2 minutes apart from T0, twice the size of the 320x334 SAM sample."""
+    return [add_frame(store, conn, 2 * i, size=size) for i in range(count)]
+
+
+def track(fake, conn, tmp_path, **kwargs):
+    return track_window(make_client(fake, conn), conn, tmp_path, K2, PROMPTS, T0, T0 + timedelta(hours=1),
+                        max_height=334, **kwargs)
+
+
+@needs_ffmpeg
+def test_track_window_stores_runs_tracks_and_detections_in_frame_pixels(store, conn, tmp_path):
+    ids = window(store, conn)
+    fake = FakeMeta({"steam": f"<0f>{OBJ_0}\n<2f>{OBJ_0}\n", "lava fountain": ""})
+
+    report = track(fake, conn, tmp_path)
+
+    assert report.video_size == (320, 334)
+    plume, fountain = report.runs
+    assert (plume.target, plume.tracks, plume.detections) == ("plume", 1, 2)
+    assert (plume.first_seen, plume.last_seen) == (T0, T0 + timedelta(minutes=4))
+    assert (fountain.target, fountain.tracks, fountain.first_seen) == ("fountain", 0, None)
+    run = conn.execute("SELECT * FROM tracking_runs WHERE id = ?", (plume.run_id,)).fetchone()
+    assert json.loads(run["frame_ids"]) == ids
+    rows = conn.execute("SELECT * FROM detections ORDER BY frame_id").fetchall()
+    assert [row["frame_id"] for row in rows] == [ids[0], ids[2]]
+    first = rows[0]
+    assert (first["box_left"], first["box_top"], first["box_right"], first["box_bottom"]) == (422, 456, 542, 510)
+    assert first["area_px"] == 4 * 1539
+    assert first["score"] == pytest.approx(0.96)
+    assert detection_mask(first, width=640, height=668).sum() == 4 * 1539
+
+
+@needs_ffmpeg
+def test_track_window_uploads_the_window_once_and_deletes_it(store, conn, tmp_path):
+    window(store, conn)
+    fake = FakeMeta({"steam": "", "lava fountain": ""})
+
+    track(fake, conn, tmp_path)
+
+    assert fake.calls() == [("POST", "/v1/files"), ("POST", "/v1/responses"), ("POST", "/v1/responses"),
+                            ("DELETE", "/v1/files/file-1")]
+    assert [row["purpose"] for row in conn.execute("SELECT purpose FROM api_calls ORDER BY id")] == [
+        "track:plume", "track:fountain"]
+
+
+@needs_ffmpeg
+def test_track_window_refuses_a_window_it_already_tracked_unless_redo(store, conn, tmp_path):
+    window(store, conn)
+    track(FakeMeta({"steam": f"<0f>{OBJ_0}\n", "lava fountain": ""}), conn, tmp_path)
+    again = FakeMeta({"steam": "", "lava fountain": ""})
+
+    with pytest.raises(ValueError, match="already tracked"):
+        track(again, conn, tmp_path)
+    assert again.requests == []
+
+    track(again, conn, tmp_path, redo=True)
+    assert conn.execute("SELECT COUNT(*) FROM tracking_runs").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM detections").fetchone()[0] == 0
+
+
+@needs_ffmpeg
+def test_a_failed_phrase_is_reported_and_the_others_go_on(store, conn, tmp_path):
+    window(store, conn)
+    fake = FakeMeta({"lava fountain": ""}, failing={"steam"})
+
+    report = track(fake, conn, tmp_path)
+
+    assert [run.phrase for run in report.runs] == ["lava fountain"]
+    assert len(report.errors) == 1 and "steam" in report.errors[0]
+    assert fake.calls()[-1] == ("DELETE", "/v1/files/file-1")
+
+
+def test_track_window_needs_usable_frames(store, conn, tmp_path):
+    add_frame(store, conn, 0, usable=False)
+
+    with pytest.raises(ValueError, match="no usable frames"):
+        track(FakeMeta({}), conn, tmp_path)
+
+
+def test_track_window_refuses_frames_of_different_sizes(store, conn, tmp_path):
+    add_frame(store, conn, 0, size=(640, 668))
+    add_frame(store, conn, 2, size=(320, 334))
+    fake = FakeMeta({})
+
+    with pytest.raises(ValueError, match="sizes"):
+        track(fake, conn, tmp_path)
+    assert fake.requests == []
