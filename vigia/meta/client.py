@@ -11,6 +11,7 @@ import json
 import os
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,26 @@ class SamStreamError(RuntimeError):
     """A streamed SAM response failed or ended early."""
 
 
+@dataclass(frozen=True)
+class ToolCall:
+    call_id: str
+    name: str
+    arguments: str  # JSON text as Muse Spark wrote it; not guaranteed to match the tool's schema
+
+
+@dataclass(frozen=True)
+class Turn:
+    """One agent turn of Muse Spark."""
+
+    response_id: str
+    status: str                  # completed, or incomplete when max_output_tokens cut it off
+    text: str                    # visible text: commentary before tool calls, or the final answer
+    reasoning: str               # reasoning summaries, when the API sends them
+    calls: tuple[ToolCall, ...]
+    cost_usd: float
+    context_tokens: int          # input plus output tokens: what the next chained turn starts from
+
+
 class MetaClient:
     def __init__(
         self,
@@ -47,11 +68,27 @@ class MetaClient:
         *,
         spark_model: str = SPARK_MODEL,
         sam_model: str = SAM_MODEL,
+        tag: str | None = None,
+        tag_budget_usd: float | None = None,
     ):
         self._sdk = sdk
         self._ledger = ledger
         self.spark_model = spark_model
         self.sam_model = sam_model
+        self.tag = tag
+        self._tag_budget_usd = tag_budget_usd
+
+    def tagged(self, tag: str, budget_usd: float | None = None) -> MetaClient:
+        """A client for one job: its calls are logged as '<tag>/<purpose>' and, with a budget, refused once
+        the job's calls would cost more than it. The daily cap still applies."""
+        return MetaClient(self._sdk, self._ledger, spark_model=self.spark_model, sam_model=self.sam_model,
+                          tag=tag, tag_budget_usd=budget_usd)
+
+    def tag_spent(self) -> float:
+        """What this client's job has cost so far."""
+        if self.tag is None:
+            raise RuntimeError("only a tagged client knows what its job has cost")
+        return self._ledger.spent_on(self.tag)
 
     @classmethod
     def from_env(cls, ledger: CostLedger) -> MetaClient:
@@ -100,6 +137,50 @@ class MetaClient:
         estimate = cost_usd(self.spark_model, {"input_tokens": input_estimate, "output_tokens": max_output_tokens})
         response = self._call(self.spark_model, purpose, estimate, lambda: self._sdk.responses.create(**request))
         return json.loads(response.output_text)
+
+    def respond(
+        self,
+        *,
+        input: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        instructions: str,
+        purpose: str,
+        previous_response_id: str | None = None,
+        effort: str = "medium",
+        max_output_tokens: int = 6000,
+        context_tokens: int = 0,
+    ) -> Turn:
+        """One agent turn of Muse Spark with function tools, chained to the previous turn.
+
+        The server keeps the conversation of `previous_response_id` but not the request settings, so the
+        tools, instructions and reasoning effort go with every turn. `context_tokens` (the previous turn's)
+        feeds the pre-call budget estimate.
+        """
+        request: dict[str, Any] = {
+            "model": self.spark_model,
+            "input": input,
+            "tools": tools,
+            "instructions": instructions,
+            "reasoning": {"effort": effort, "summary": "auto"},
+            "parallel_tool_calls": True,
+            "max_output_tokens": max_output_tokens,
+        }
+        if previous_response_id is not None:
+            request["previous_response_id"] = previous_response_id
+        sent = len(json.dumps(input)) + len(json.dumps(tools)) + len(instructions)
+        estimate = cost_usd(self.spark_model, {"input_tokens": context_tokens + sent // 3,
+                                               "output_tokens": max_output_tokens})
+        response = self._call(self.spark_model, purpose, estimate, lambda: self._sdk.responses.create(**request))
+        calls, reasoning = [], []
+        for item in response.output:
+            if item.type == "function_call":
+                calls.append(ToolCall(item.call_id, item.name, item.arguments))
+            elif item.type == "reasoning":
+                reasoning += [part.text for part in item.summary or []]
+        usage = response.usage.model_dump() if response.usage else {}
+        return Turn(response.id, response.status or "", response.output_text, "\n".join(reasoning), tuple(calls),
+                    cost_usd(self.spark_model, usage),
+                    (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0))
 
     def segment_image(self, image: bytes, phrase: str, *, purpose: str, mime: str = "image/jpeg") -> list[SamObject]:
         """Segment every instance of ONE noun phrase in an image."""
@@ -160,6 +241,10 @@ class MetaClient:
         return parse_output("".join(chunks), video=True)
 
     def _call(self, model: str, purpose: str, estimate_usd: float, send: Callable[[], Any]) -> Any:
+        if self.tag is not None:
+            purpose = f"{self.tag}/{purpose}"
+            if self._tag_budget_usd is not None:
+                self._ledger.ensure_tag_budget(self.tag, self._tag_budget_usd, estimate_usd)
         self._ledger.ensure_budget(estimate_usd)
         started = time.perf_counter()
         try:

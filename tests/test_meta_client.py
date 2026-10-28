@@ -156,3 +156,86 @@ def test_upload_video_uses_the_user_data_purpose_with_an_expiry(conn, tmp_path):
     assert request.url.path == "/v1/files"
     assert b'name="purpose"\r\n\r\nuser_data' in request.content
     assert b'name="expires_after[seconds]"' in request.content
+
+
+TOOL = {"type": "function", "name": "list_cameras_status", "description": "Status of every camera.",
+        "parameters": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        "strict": True}
+
+
+def turn_body(calls, text="", reasoning="", rid="resp_2", status="completed"):
+    """A Muse Spark Responses answer: optional reasoning summary and commentary, then function calls."""
+    output = []
+    if reasoning:
+        output.append({"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": reasoning}]})
+    if text:
+        output.append({"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
+                       "content": [{"type": "output_text", "text": text, "annotations": []}]})
+    output += [{"type": "function_call", "id": f"fc_{i}", "call_id": f"call_{i}", "name": name,
+                "arguments": arguments, "status": "completed"} for i, (name, arguments) in enumerate(calls)]
+    return {"id": rid, "object": "response", "created_at": 1793000000, "status": status,
+            "model": "muse-spark-1.3", "output": output, "usage": SPARK_USAGE}
+
+
+def test_respond_sends_tools_and_instructions_every_turn_and_chains_the_previous_one(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=turn_body([("list_cameras_status", "{}")])))
+    client = make_client(api, conn)
+
+    client.respond(input=[{"role": "user", "content": "Check the cameras."}], tools=[TOOL],
+                   instructions="Be brief.", purpose="agent")
+    client.respond(input=[{"type": "function_call_output", "call_id": "call_0", "output": "{}"}], tools=[TOOL],
+                   instructions="Be brief.", purpose="agent", previous_response_id="resp_2")
+
+    first, second = api.json_body(0), api.json_body(1)
+    assert "previous_response_id" not in first
+    assert second["previous_response_id"] == "resp_2"
+    assert second["input"] == [{"type": "function_call_output", "call_id": "call_0", "output": "{}"}]
+    for body in (first, second):
+        assert body["model"] == "muse-spark-1.3"
+        assert (body["tools"], body["instructions"]) == ([TOOL], "Be brief.")
+        assert body["reasoning"] == {"effort": "medium", "summary": "auto"}
+        assert body["parallel_tool_calls"] is True
+
+
+def test_respond_returns_the_tool_calls_the_commentary_and_the_reasoning(conn):
+    body = turn_body([("get_wind", '{"volcano": "kilauea"}'), ("list_cameras_status", "{}")],
+                     text="First the cameras.", reasoning="Two independent checks.")
+    api = FakeApi(lambda r: httpx.Response(200, json=body))
+
+    turn = make_client(api, conn).respond(input=[], tools=[TOOL], instructions="x", purpose="agent")
+
+    assert [(c.call_id, c.name, c.arguments) for c in turn.calls] == [
+        ("call_0", "get_wind", '{"volcano": "kilauea"}'), ("call_1", "list_cameras_status", "{}")]
+    assert (turn.response_id, turn.status, turn.text, turn.reasoning) == (
+        "resp_2", "completed", "First the cameras.", "Two independent checks.")
+    assert turn.cost_usd == pytest.approx(1800 * 1.25e-6 + 300 * 4.25e-6)
+    assert turn.context_tokens == 2100
+    assert calls(conn)[0]["purpose"] == "agent"
+
+
+def test_a_tagged_client_logs_its_calls_under_the_tag(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=turn_body([])))
+    client = make_client(api, conn)
+    job = client.tagged("agent:7")
+
+    job.respond(input=[], tools=[TOOL], instructions="x", purpose="turn")
+    client.respond(input=[], tools=[TOOL], instructions="x", purpose="turn")
+
+    assert [row["purpose"] for row in calls(conn)] == ["agent:7/turn", "turn"]
+    assert job.tag_spent() == pytest.approx(0.003525)
+
+
+def test_a_tagged_budget_refuses_a_call_before_sending_it(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=turn_body([])))
+    job = make_client(api, conn, budget=10.0).tagged("agent:7", budget_usd=0.02)
+
+    job.respond(input=[], tools=[TOOL], instructions="x", purpose="turn", max_output_tokens=2000)
+    with pytest.raises(BudgetExceeded, match="agent:7"):
+        job.respond(input=[], tools=[TOOL], instructions="x", purpose="turn")  # 6000 output tokens: ~$0.026
+
+    assert len(api.requests) == 1
+
+
+def test_an_untagged_client_has_no_job_spend(conn):
+    with pytest.raises(RuntimeError, match="tagged"):
+        make_client(FakeApi(lambda r: httpx.Response(500)), conn).tag_spent()

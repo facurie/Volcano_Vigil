@@ -50,3 +50,20 @@ def test_ensure_budget_blocks_a_call_that_would_exceed_the_cap(ledger):
 
     with pytest.raises(BudgetExceeded, match="1.00"):
         ledger.ensure_budget(estimated_cost_usd=0.41)
+
+
+def test_the_spend_of_a_tag_counts_only_calls_logged_under_it(ledger):
+    ledger.record(model="muse-spark-1.3", purpose="agent:1/turn", cost_usd=0.01)
+    ledger.record(model="sam-3.1", purpose="agent:1/segment", cost_usd=0.0025)
+    ledger.record(model="muse-spark-1.3", purpose="agent:12/turn", cost_usd=0.5)
+    ledger.record(model="muse-spark-1.3", purpose="agent:1", cost_usd=0.5)
+
+    assert ledger.spent_on("agent:1") == pytest.approx(0.0125)
+
+
+def test_a_tag_budget_refuses_a_call_that_would_exceed_it(ledger):
+    ledger.record(model="muse-spark-1.3", purpose="agent:1/turn", cost_usd=0.25)
+
+    ledger.ensure_tag_budget("agent:1", 0.30, 0.04)
+    with pytest.raises(BudgetExceeded, match="agent:1"):
+        ledger.ensure_tag_budget("agent:1", 0.30, 0.06)
