@@ -243,4 +243,11 @@ def sample_geometry(calibration: Calibration, camera_id: str, preset: Preset, sa
         focal=focal, focal_sigma=focal_sigma, k1=k1, k1_sigma=k1_sigma, roll=roll, roll_sigma=roll_sigma,
     )
     view, rms = solve_view(refs, preset.image_size)
+    # A draw the solver could not fit stands out from the others' misfit (which perturbed positions can
+    # legitimately raise to tens of pixels); its view would corrupt every sigma.
+    lost = rms > 10 * np.median(rms) + 10
+    if lost.any():
+        raise ValueError(f"{lost.sum()} of {samples} Monte Carlo samples did not converge (misfit up to "
+                         f"{rms.max():.0f} px against a median of {np.median(rms):.1f} px): add references or "
+                         "tighten the priors")
     return Geometry(camera_id, preset.name, view, camera_elev, vent_sight, vent_elev, k, rms)

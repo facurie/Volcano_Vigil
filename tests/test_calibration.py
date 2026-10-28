@@ -188,3 +188,19 @@ def test_a_roll_the_references_cannot_measure_follows_its_prior():
 
     assert view.roll[0] == pytest.approx(0.7, abs=1e-3)
     assert view.roll[1:].std() == pytest.approx(0.5, rel=0.2)
+
+
+def test_samples_that_did_not_converge_are_refused(monkeypatch):
+    from vigia import calibration as module
+    solve = module.solve_view
+
+    def one_sample_lost(refs, size):
+        view, rms = solve(refs, size)
+        rms = rms.copy()
+        rms[3] = 5000.0
+        return view, rms
+
+    monkeypatch.setattr(module, "solve_view", one_sample_lost)
+
+    with pytest.raises(ValueError, match="1 of 20 Monte Carlo samples did not converge"):
+        sample_geometry(calibration(), "kilauea-kp", preset(), samples=20)
