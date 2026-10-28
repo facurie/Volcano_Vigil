@@ -15,11 +15,12 @@ from test_meta_client import FakeApi, make_client, response_body
 from test_metrics import kp_calibration
 from test_sam import IMAGE_OUTPUT, OBJ_0
 from test_tracking import FakeMeta, needs_ffmpeg
+from test_wind import open_meteo_day
 from vigia import masks
-from vigia.agent.tools import (TOOLS, Args, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs, SegmentArgs, Tool,
-                               ToolContext, ToolError, Toolbox, TrackArgs, TrackIdArgs, assess_frame, get_history,
-                               get_recent_frames, list_cameras_status, measure_track, segment_frame, strict_schema,
-                               track_window_tool)
+from vigia.agent.tools import (TOOLS, Args, CompareArgs, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs,
+                               SegmentArgs, Tool, ToolContext, ToolError, Toolbox, TrackArgs, TrackIdArgs, WindArgs,
+                               assess_frame, compare_cameras, get_history, get_recent_frames, get_wind,
+                               list_cameras_status, measure_track, segment_frame, strict_schema, track_window_tool)
 from vigia.config import Camera, Sources, Volcano
 from vigia.ingest.store import FrameStore
 from vigia.meta.ledger import BudgetExceeded
@@ -488,3 +489,85 @@ def test_a_track_seen_only_after_the_clock_cannot_be_measured(conn, store, tmp_p
 
     with pytest.raises(ToolError, match="no detections by 2026-10-17T15:00:00Z"):
         measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))
+
+
+# --- get_wind and compare_cameras
+
+
+def test_get_wind_compares_the_drift_side_with_the_layers_mean_wind(conn, tmp_path):
+    ctx = context(conn, tmp_path, open_meteo=open_meteo_day())
+
+    result = get_wind(ctx, WindArgs(volcano="kilauea", altitude_m=6951, drift_bearing_deg=224.39))
+
+    assert (result["model_hour"], result["source"]) == ("2026-10-17T15:00:00Z", "Open-Meteo Historical Forecast API")
+    assert result["layer_mean"] == {"bottom_m": 1080, "top_m": 6951, "from_deg": 331, "toward_deg": 151,
+                                    "speed_ms": 3.3}
+    assert result["at_altitude"]["toward_deg"] == 80
+    assert result["drift_check"] == {"measured_side_deg": 224.4, "wind_toward_deg": 151, "angle_deg": 73,
+                                     "consistent": True}
+    assert len(result["levels"]) == 6
+
+
+def test_get_wind_without_a_drift_has_no_check(conn, tmp_path):
+    result = get_wind(context(conn, tmp_path, open_meteo=open_meteo_day()), WindArgs(volcano="kilauea", altitude_m=3000))
+
+    assert "drift_check" not in result
+
+
+@pytest.mark.parametrize("args, message", [
+    (dict(volcano="etna", altitude_m=3000), "unknown volcano 'etna'"),
+    (dict(volcano="kilauea", altitude_m=3000, time=T0 + timedelta(hours=1)), "after now"),
+])
+def test_get_wind_refuses_bad_requests(conn, tmp_path, args, message):
+    with pytest.raises(ToolError, match=message):
+        get_wind(context(conn, tmp_path, open_meteo=open_meteo_day()), WindArgs(**args))
+
+
+def test_get_wind_reports_open_meteo_failures(conn, tmp_path):
+    with pytest.raises(ToolError, match="Open-Meteo"):
+        get_wind(context(conn, tmp_path), WindArgs(volcano="kilauea", altitude_m=3000))
+
+
+def test_compare_cameras_lines_up_each_cameras_nearest_frame(conn, store, tmp_path):
+    kp = add_frame(conn, store, "kilauea-kp", -5)
+    k2 = add_frame(conn, store, "kilauea-k2", -4)
+    add_frame(conn, store, "kilauea-v1", -20)  # more than 10 minutes away
+    (kp_detection,) = detection_ids(conn, add_track(conn, add_run(conn, "kilauea-kp", "plume", [kp]), [kp]))
+    add_track(conn, add_run(conn, "kilauea-k2", "fountain", [k2]), [k2])
+    add_measurement(conn, kp, "top_altitude", 6951, 429, detection_id=kp_detection)
+    add_measurement(conn, kp, "drift_bearing", 224.4, 2, detection_id=kp_detection, unit="deg")
+
+    result = compare_cameras(context(conn, tmp_path), CompareArgs(volcano="kilauea"))
+
+    cameras = {c["camera_id"]: c for c in result["cameras"]}
+    assert set(cameras) == {"kilauea-kp", "kilauea-k2"}
+    assert cameras["kilauea-kp"]["measurements"] == {"plume": {
+        "top_altitude": {"value": 6951, "sigma": 429, "unit": "m"},
+        "drift_bearing": {"value": 224.4, "sigma": 2.0, "unit": "deg"}}}
+    assert cameras["kilauea-k2"] == {"camera_id": "kilauea-k2", "frame_id": k2, "captured_at": "2026-10-17T14:56:00Z",
+                                     "usable": True, "detections": {"fountain": 1}, "calibrated": False,
+                                     "measurements": {}}
+    assert result["agreement"] == [] and "fewer than two" in result["note"]
+
+
+def test_two_cameras_measuring_the_same_height_are_cross_checked(conn, store, tmp_path):
+    kp, v1 = add_frame(conn, store, "kilauea-kp", -5), add_frame(conn, store, "kilauea-v1", -3)
+    for frame, value, sigma, camera_id in ((kp, 6951, 429, "kilauea-kp"), (v1, 6500, 300, "kilauea-v1")):
+        (detection,) = detection_ids(conn, add_track(conn, add_run(conn, camera_id, "plume", [frame]), [frame]))
+        add_measurement(conn, frame, "top_altitude", value, sigma, detection_id=detection)
+
+    result = compare_cameras(context(conn, tmp_path), CompareArgs(volcano="kilauea", time=T0 - timedelta(minutes=4)))
+
+    assert result["agreement"] == [{"target": "plume", "metric": "top_altitude", "cameras": ["kilauea-kp", "kilauea-v1"],
+                                    "difference_m": 451, "sigma_m": 523, "z": 0.9}]
+
+
+def test_compare_cameras_needs_a_frame_near_the_time(conn, tmp_path):
+    with pytest.raises(ToolError, match="within 10 minutes"):
+        compare_cameras(context(conn, tmp_path), CompareArgs(volcano="kilauea"))
+
+
+def test_the_agent_has_the_nine_planned_tools():
+    assert [tool.name for tool in TOOLS] == [
+        "list_cameras_status", "get_recent_frames", "assess_frame", "segment_frame", "track_window",
+        "measure_track", "get_wind", "compare_cameras", "get_history"]

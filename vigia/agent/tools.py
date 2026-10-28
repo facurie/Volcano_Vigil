@@ -12,8 +12,10 @@ tool becomes an error message for the model instead of an exception.
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
+import math
 import sqlite3
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
@@ -35,7 +37,7 @@ from vigia.meta.ledger import BudgetExceeded
 from vigia.metrics import measure_window
 from vigia.prompts import Prompts, Target
 from vigia.timeutil import parse_utc, to_iso
-from vigia.wind import WindService
+from vigia.wind import SOURCE_NAMES, SOURCE_URLS, Wind, WindService, WindUnavailable, compare_drift
 
 log = logging.getLogger(__name__)
 
@@ -186,6 +188,19 @@ def _frame(ctx: ToolContext, frame_id: int) -> sqlite3.Row:
     if row is None:
         raise ToolError(f"no frame {frame_id} captured by {to_iso(ctx.now)}")
     return row
+
+
+def _when(ctx: ToolContext, when: datetime | None) -> datetime:
+    """A time argument in UTC, the agent's clock if None; never after the clock."""
+    when = ctx.now if when is None else when.astimezone(timezone.utc)
+    if when > ctx.now:
+        raise ToolError(f"{to_iso(when)} is after now ({to_iso(ctx.now)})")
+    return when
+
+
+def _volcano(ctx: ToolContext, volcano_id: str) -> None:
+    if volcano_id not in ctx.sources.volcanoes:
+        raise ToolError(f"unknown volcano {volcano_id!r}; the volcanoes are {', '.join(ctx.sources.volcanoes)}")
 
 
 # --- list_cameras_status
@@ -493,6 +508,109 @@ def measure_track(ctx: ToolContext, args: TrackIdArgs) -> dict[str, Any]:
             "first": span["first"], "last": span["last"], "metrics": metrics}
 
 
+# --- get_wind
+
+
+class WindArgs(Args):
+    volcano: str = Field(description="volcano id, e.g. kilauea")
+    altitude_m: float = Field(ge=0, le=20000, description="metres above sea level, e.g. a plume's top_altitude")
+    time: AwareDatetime | None = Field(default=None, description="UTC time of the measurement; null for now")
+    drift_bearing_deg: float | None = Field(default=None, ge=0, lt=360,
+                                            description="a measured drift side (drift_bearing from measure_track) "
+                                                        "to check against the wind; null to skip the check")
+
+
+def _wind_json(wind: Wind) -> dict[str, Any]:
+    return {"from_deg": round(wind.from_deg), "toward_deg": round(wind.toward_deg), "speed_ms": round(wind.speed_ms, 1)}
+
+
+def get_wind(ctx: ToolContext, args: WindArgs) -> dict[str, Any]:
+    _volcano(ctx, args.volcano)
+    when = _when(ctx, args.time)
+    try:
+        profile = ctx.winds.profile(args.volcano, when)
+    except WindUnavailable as exc:
+        raise ToolError(str(exc)) from exc
+    vent = ctx.calibration.vents.get(args.volcano)
+    bottom = vent.elev_m if vent is not None else profile.levels[0].altitude_m
+    mean = profile.layer_mean(bottom, args.altitude_m)
+    result = {
+        "volcano": args.volcano, "model_hour": to_iso(profile.valid_at), "source": SOURCE_NAMES[profile.source],
+        "source_url": SOURCE_URLS[profile.source], "altitude_m": round(args.altitude_m),
+        "at_altitude": _wind_json(profile.at(args.altitude_m)),
+        "layer_mean": {"bottom_m": round(bottom), "top_m": round(max(args.altitude_m, bottom)), **_wind_json(mean)},
+        "levels": [{"pressure_hpa": level.pressure_hpa, "altitude_m": round(level.altitude_m), **_wind_json(level.wind)}
+                   for level in profile.levels],
+    }
+    if args.drift_bearing_deg is not None:
+        check = compare_drift(args.drift_bearing_deg, mean)
+        result["drift_check"] = {"measured_side_deg": round(check.side_deg, 1), "wind_toward_deg": round(check.toward_deg),
+                                 "angle_deg": round(check.angle_deg), "consistent": check.consistent}
+    return result
+
+
+# --- compare_cameras
+
+
+NEAR = timedelta(minutes=10)
+
+
+class CompareArgs(Args):
+    volcano: str = Field(description="volcano id, e.g. kilauea")
+    time: AwareDatetime | None = Field(default=None, description="UTC time to compare at; null for now")
+
+
+def compare_cameras(ctx: ToolContext, args: CompareArgs) -> dict[str, Any]:
+    _volcano(ctx, args.volcano)
+    when = _when(ctx, args.time)
+    low, high = to_iso(when - NEAR), to_iso(min(when + NEAR, ctx.now))
+    cameras, heights = [], defaultdict(dict)  # (target, metric) -> {camera id: (value, sigma)}
+    for camera in ctx.sources.cameras:
+        if camera.volcano != args.volcano:
+            continue
+        frames = ctx.conn.execute(
+            """SELECT f.id, f.captured_at, q.usable FROM frames f LEFT JOIN frame_quality q ON q.frame_id = f.id
+               WHERE f.camera_id = ? AND f.captured_at BETWEEN ? AND ?""", (camera.id, low, high)).fetchall()
+        if not frames:
+            continue
+        frame = min(frames, key=lambda row: abs(parse_utc(row["captured_at"]) - when))
+        detections = ctx.conn.execute(
+            """SELECT d.id, r.target FROM detections d JOIN tracks t ON t.id = d.track_id
+               JOIN tracking_runs r ON r.id = t.run_id WHERE d.frame_id = ? ORDER BY d.area_px DESC, d.id""",
+            (frame["id"],)).fetchall()
+        largest: dict[str, int] = {}
+        for row in detections:
+            largest.setdefault(row["target"], row["id"])
+        measured = {}
+        for target, detection_id in largest.items():
+            rows = ctx.conn.execute("SELECT metric, value, sigma, unit FROM measurements WHERE detection_id = ?",
+                                    (detection_id,)).fetchall()
+            if rows:
+                measured[target] = {row["metric"]: {"value": _round(row["value"], row["unit"]),
+                                                    "sigma": _round(row["sigma"], row["unit"]), "unit": row["unit"]}
+                                    for row in rows}
+                for row in rows:
+                    heights[(target, row["metric"])][camera.id] = (row["value"], row["sigma"])
+        cameras.append({"camera_id": camera.id, "frame_id": frame["id"], "captured_at": frame["captured_at"],
+                        "usable": _usable(frame), "detections": dict(Counter(row["target"] for row in detections)),
+                        "calibrated": ctx.calibration.preset_for(camera.id, parse_utc(frame["captured_at"])) is not None,
+                        "measurements": measured})
+    if not cameras:
+        raise ToolError(f"no {args.volcano} camera has a frame within 10 minutes of {to_iso(when)}")
+    agreement = []
+    for (target, metric), by_camera in sorted(heights.items()):
+        if metric not in ("top_height", "top_altitude"):
+            continue
+        for a, b in itertools.combinations(sorted(by_camera), 2):
+            (value_a, sigma_a), (value_b, sigma_b) = by_camera[a], by_camera[b]
+            sigma = math.hypot(sigma_a, sigma_b)
+            agreement.append({"target": target, "metric": metric, "cameras": [a, b],
+                              "difference_m": round(value_a - value_b), "sigma_m": round(sigma),
+                              "z": round((value_a - value_b) / sigma, 1) if sigma else None})
+    return {"volcano": args.volcano, "time": to_iso(when), "cameras": cameras, "agreement": agreement,
+            "note": "" if agreement else "fewer than two cameras measured the same height, so nothing is cross-checked"}
+
+
 TOOLS: list[Tool] = [
     Tool("list_cameras_status",
          "Every camera that is enabled or sent frames in the last 24 hours, as of now: its latest frame and quality "
@@ -531,6 +649,17 @@ TOOLS: list[Tool] = [
          "over the calibration. Returns per metric the latest, the maximum and the mean with frame ids. Only "
          "calibrated cameras can be measured.",
          TrackIdArgs, measure_track),
+    Tool("get_wind",
+         "The model wind over a volcano at an hour (Open-Meteo, 850 to 300 hPa): the wind at an altitude, the mean "
+         "wind between the vent and that altitude, and every level. Pass a plume's top_altitude and its measured "
+         "drift_bearing to check the drift: the check gives the angle between that side and where the layer's mean "
+         "wind blows; under 90 degrees the wind pushes the plume to the side it was seen on.",
+         WindArgs, get_wind),
+    Tool("compare_cameras",
+         "Line up every camera of a volcano at one time: each camera's frame nearest to it (within 10 minutes), its "
+         "quality, what its tracks detected there, the measurements of the largest detection per target, and, when "
+         "two cameras measured the same height, their difference against the combined sigma.",
+         CompareArgs, compare_cameras),
     Tool("get_history",
          "A camera's series of one metric for one target over the last `hours` (at most 48): the highest "
          "detection on each frame, thinned to 40 points, with the latest, maximum and minimum and their frame ids (for drift_bearing only "
