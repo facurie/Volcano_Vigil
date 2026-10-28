@@ -19,14 +19,14 @@ from test_wind import open_meteo_day
 from vigia import masks
 from vigia.agent.tools import (TOOLS, Args, CompareArgs, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs,
                                SegmentArgs, Tool, ToolContext, ToolError, Toolbox, TrackArgs, TrackIdArgs, WindArgs,
-                               assess_frame, compare_cameras, get_history, get_recent_frames, get_wind,
+                               _wind_json, assess_frame, compare_cameras, get_history, get_recent_frames, get_wind,
                                list_cameras_status, measure_track, segment_frame, strict_schema, track_window_tool)
 from vigia.config import Camera, Sources, Volcano
 from vigia.ingest.store import FrameStore
 from vigia.meta.ledger import BudgetExceeded
 from vigia.prompts import Prompts
 from vigia.timeutil import to_iso
-from vigia.wind import WindService
+from vigia.wind import Wind, WindService
 
 NOW = datetime(2026, 10, 28, 18, 0, tzinfo=timezone.utc)   # wall clock: Oct 17 is history for Open-Meteo
 T0 = datetime(2026, 10, 17, 15, 0, 0, tzinfo=timezone.utc)  # the agent's clock: 05:00 HST in episode 55
@@ -503,7 +503,7 @@ def test_get_wind_compares_the_drift_side_with_the_layers_mean_wind(conn, tmp_pa
     assert result["layer_mean"] == {"bottom_m": 1080, "top_m": 6951, "from_deg": 331, "toward_deg": 151,
                                     "speed_ms": 3.3}
     assert result["at_altitude"]["toward_deg"] == 80
-    assert result["drift_check"] == {"measured_side_deg": 224.4, "wind_toward_deg": 151, "angle_deg": 73,
+    assert result["drift_check"] == {"measured_side_deg": 224.4, "wind_toward_deg": 151, "angle_deg": 73.3,
                                      "consistent": True}
     assert len(result["levels"]) == 6
 
@@ -571,3 +571,43 @@ def test_the_agent_has_the_nine_planned_tools():
     assert [tool.name for tool in TOOLS] == [
         "list_cameras_status", "get_recent_frames", "assess_frame", "segment_frame", "track_window",
         "measure_track", "get_wind", "compare_cameras", "get_history"]
+
+
+# --- the clock's clips, stale runs and rounding
+
+
+def test_compare_cameras_never_picks_a_frame_after_the_clock(conn, store, tmp_path):
+    add_frame(conn, store, "kilauea-kp", 3)  # nearer to nothing, but after the clock
+    before = add_frame(conn, store, "kilauea-kp", -5)
+
+    result = compare_cameras(context(conn, tmp_path), CompareArgs(volcano="kilauea"))
+
+    assert [(c["camera_id"], c["frame_id"]) for c in result["cameras"]] == [("kilauea-kp", before)]
+
+
+def test_measure_track_ignores_measurements_stored_after_the_clock(conn, store, tmp_path):
+    frames = [add_frame(conn, store, "kilauea-kp", m) for m in (-10, 5)]
+    track = add_track(conn, add_run(conn, "kilauea-kp", "plume", frames), frames, box=(80, 60, 120, 150))
+    # a past run over the whole window left a measurement of the later frame
+    add_measurement(conn, frames[1], "top_altitude", 99999, 10, detection_id=detection_ids(conn, track)[1])
+
+    result = measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))
+
+    top = result["metrics"]["top_altitude"]
+    assert top["frames"] == 1 and top["latest"]["frame_id"] == frames[0]
+    assert top["max"]["frame_id"] == frames[0] and top["mean"] < 99999
+
+
+def test_track_window_explains_a_window_whose_stored_run_misses_newly_usable_frames(conn, store, tmp_path):
+    frames = [add_frame(conn, store, "kilauea-kp", m) for m in range(-50, 1, 5)]  # 11 usable frames
+    stored = frames[:5] + frames[6:]  # the run was made before frame 5 became usable
+    add_track(conn, add_run(conn, "kilauea-kp", "plume", stored, phrase="steam"), stored)
+
+    with pytest.raises(ToolError, match="shift or widen the window"):
+        track_window_tool(context(conn, tmp_path, client=make_client(FakeMeta({}), conn)), TrackArgs(
+            camera_id="kilauea-kp", start=T0 - timedelta(hours=1), end=T0, target="plume"))
+
+
+def test_wind_directions_wrap_to_zero_instead_of_360():
+    assert _wind_json(Wind(5, 179.6)) == {"from_deg": 180, "toward_deg": 0, "speed_ms": 5}
+    assert _wind_json(Wind(5, 359.6)) == {"from_deg": 0, "toward_deg": 180, "speed_ms": 5}

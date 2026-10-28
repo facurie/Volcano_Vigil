@@ -418,8 +418,14 @@ def track_window_tool(ctx: ToolContext, args: TrackArgs) -> dict[str, Any]:
         if len(frames) < MIN_TRACK_FRAMES:
             raise ToolError(f"only {len(frames)} usable frames in the window; tracking needs {MIN_TRACK_FRAMES} "
                             "(and SAM bills 50 per request anyway), so widen it")
-        report = tracking.track_window(ctx.meta(), ctx.conn, ctx.data_dir, camera, ctx.prompts, start, end,
-                                       targets=[args.target])
+        try:
+            report = tracking.track_window(ctx.meta(), ctx.conn, ctx.data_dir, camera, ctx.prompts, start, end,
+                                           targets=[args.target])
+        except ValueError as exc:
+            if "already tracked" not in str(exc):
+                raise
+            raise ToolError("stored runs of exactly this window exist but miss frames that became usable since; "
+                            "shift or widen the window by a few minutes") from exc
         if not report.runs:
             raise ToolError("tracking stored nothing: " + ("; ".join(report.errors)
                                                          or f"no {args.target} phrase for a {camera.kind} camera"))
@@ -521,7 +527,8 @@ class WindArgs(Args):
 
 
 def _wind_json(wind: Wind) -> dict[str, Any]:
-    return {"from_deg": round(wind.from_deg), "toward_deg": round(wind.toward_deg), "speed_ms": round(wind.speed_ms, 1)}
+    return {"from_deg": round(wind.from_deg) % 360, "toward_deg": round(wind.toward_deg) % 360,
+            "speed_ms": round(wind.speed_ms, 1)}
 
 
 def get_wind(ctx: ToolContext, args: WindArgs) -> dict[str, Any]:
@@ -544,8 +551,9 @@ def get_wind(ctx: ToolContext, args: WindArgs) -> dict[str, Any]:
     }
     if args.drift_bearing_deg is not None:
         check = compare_drift(args.drift_bearing_deg, mean)
-        result["drift_check"] = {"measured_side_deg": round(check.side_deg, 1), "wind_toward_deg": round(check.toward_deg),
-                                 "angle_deg": round(check.angle_deg), "consistent": check.consistent}
+        result["drift_check"] = {"measured_side_deg": round(check.side_deg, 1),
+                                 "wind_toward_deg": round(check.toward_deg) % 360,
+                                 "angle_deg": round(check.angle_deg, 1), "consistent": check.consistent}
     return result
 
 
