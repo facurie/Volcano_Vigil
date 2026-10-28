@@ -1,4 +1,4 @@
-"""Compare our Kīlauea episode 55 measurements with the official USGS values: docs/VALIDATION.md.
+"""Compare our Kilauea episode 55 measurements with the official USGS values: docs/VALIDATION.md.
 
 Run vigia-measure for kilauea-kp and kilauea-k2 over 2026-10-17
 13:00-19:30Z first. This script reads those measurements, the fountain
