@@ -8,10 +8,13 @@ pan/tilt/zoom readout are printed on it. A printed time more than 10 minutes
 from the stored capture time makes a frame unusable, since its measurements
 would land at the wrong time. An uncertain frame that Muse Spark did not see
 is not used. Each frame's verdict is one row of `frame_quality`.
+
+    vigia-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
 """
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import json
 import logging
@@ -19,6 +22,7 @@ import re
 import sqlite3
 from collections import Counter
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -28,9 +32,12 @@ import numpy as np
 import openai
 from PIL import Image
 
-from vigia.config import Sources
+from vigia import db
+from vigia.config import Sources, load_sources
 from vigia.imaging import load_for_upload
 from vigia.meta.client import MetaClient
+from vigia.meta.ledger import CostLedger
+from vigia.settings import Settings
 from vigia.quality import ImageStats, LocalVerdict, Thresholds, check_local, difference, fingerprint, measure
 from vigia.sun import solar_elevation
 from vigia.timeutil import parse_utc, to_iso, utcnow
@@ -286,3 +293,37 @@ def _printed_time(iso: str) -> datetime | None:
 def _open_rgb(path: Path) -> Image.Image:
     with Image.open(path) as image:
         return image.convert("RGB")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Assess stored frames: local checks first, then Muse Spark "
+                                                 "for the frames they cannot decide.")
+    parser.add_argument("--camera", action="append", required=True, help="camera id; repeat it for several")
+    parser.add_argument("--start", type=parse_utc, required=True, help="first capture time, e.g. 2026-10-17T13:00Z")
+    parser.add_argument("--end", type=parse_utc, required=True, help="last capture time, e.g. 2026-10-17T19:30Z")
+    parser.add_argument("--spark", choices=["never", "uncertain", "all"], default="uncertain",
+                        help="frames Muse Spark sees: none, those the local checks cannot decide (default), "
+                             "or all that they do not reject")
+    parser.add_argument("--redo", action="store_true", help="assess again frames that already have a verdict")
+    args = parser.parse_args(argv)
+    if args.start >= args.end:
+        parser.error("--start must be before --end")
+
+    settings = Settings.from_env()
+    sources = load_sources(settings.sources_path)
+    known = {camera.id for camera in sources.cameras}
+    for camera_id in args.camera:
+        if camera_id not in known:
+            parser.error(f"unknown camera {camera_id!r} in {settings.sources_path}")
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    with closing(db.connect(settings.db_path)) as conn:
+        client = None if args.spark == "never" else MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+        gate = QualityGate(conn, settings.data_dir, sources, client)
+        for camera_id in args.camera:
+            report = gate.assess_range(camera_id, args.start, args.end, spark=args.spark, redo=args.redo)
+            print(f"{camera_id}: {report.summary()}")
+
+
+if __name__ == "__main__":
+    main()

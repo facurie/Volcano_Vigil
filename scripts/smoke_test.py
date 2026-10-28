@@ -28,6 +28,7 @@ from PIL import Image
 
 from vigia import db
 from vigia.config import load_sources
+from vigia.gate import GATE_INSTRUCTIONS, GATE_PROMPT, GATE_SCHEMA
 from vigia.imaging import load_for_upload
 from vigia.ingest.fetch import Ingestor
 from vigia.ingest.store import FrameStore
@@ -46,46 +47,6 @@ TRACK_COLORS = [(255, 120, 0), (0, 200, 255), (190, 0, 255), (0, 220, 120), (255
 EP55 = Path("data/raw/usgs_ep55")
 DEFAULT_EP55_FRAME = EP55 / "ashcam" / "kilauea-v1-cam" / "kilauea-v1-cam-1792256342.jpg"  # 06:59 HST
 DEFAULT_EP55_VIDEO = EP55 / "vlc-record-2026-10-19-14h15m07s-V1cam20261017M.avi-.mp4"
-
-ASSESS_INSTRUCTIONS = (
-    "You are the quality gate of a volcano webcam monitoring system. You look at one webcam frame "
-    "and report only what is actually visible. Never infer activity that you cannot see."
-)
-ASSESS_PROMPT = (
-    "Assess this volcano webcam frame.\n"
-    "1. Is it usable for measuring a volcanic plume or lava fountain, or is the view blocked "
-    "(cloud, fog, darkness, rain on the lens, glare, frozen or corrupted image)? Explain briefly.\n"
-    "2. Transcribe any timestamp printed on the image exactly as written, and convert it to "
-    "ISO 8601 keeping the printed time zone (leave the offset out if no zone is printed). "
-    "Use empty strings if there is no readable timestamp. Also transcribe any camera label.\n"
-    "3. List the visible features, classify the activity, and describe the scene in English and Spanish.\n"
-    "4. Suggest short noun phrases for a text-prompted segmentation model to find what matters."
-)
-ASSESS_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "usable": {"type": "boolean"},
-        "view": {"type": "string", "enum": [
-            "clear", "partly_obscured", "obscured_by_cloud_or_fog", "night_dark", "night_with_glow",
-            "rain_or_lens_water", "glare", "frozen_or_corrupted"]},
-        "usable_reason": {"type": "string"},
-        "printed_timestamp_text": {"type": "string"},
-        "printed_timestamp_iso": {"type": "string"},
-        "printed_camera_label": {"type": "string"},
-        "visible_features": {"type": "array", "items": {"type": "string", "enum": [
-            "crater", "crater_floor", "vent", "lava_lake", "lava_fountain", "incandescent_glow",
-            "volcanic_plume", "steam", "gas_haze", "ash_cloud", "meteorological_cloud", "fog",
-            "blue_sky", "night_sky", "people", "structures"]}},
-        "activity": {"type": "string", "enum": [
-            "no_visible_activity", "degassing", "steaming", "ash_emission", "lava_fountaining",
-            "lava_lake_activity", "unclear"]},
-        "description_en": {"type": "string"},
-        "description_es": {"type": "string"},
-        "suggested_sam_phrases": {"type": "array", "items": {"type": "string"}},
-    },
-    "additionalProperties": False,
-}
-ASSESS_SCHEMA["required"] = list(ASSESS_SCHEMA["properties"])
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -157,22 +118,21 @@ def analyze_image(client: MetaClient | None, path: Path, out: Path) -> list[str]
     if client is None:
         lines += ["### Muse Spark assessment", "", "Skipped (dry run).", ""]
     else:
-        assessment = client.ask_json(prompt=ASSESS_PROMPT, images=[jpeg], schema_name="frame_assessment",
-                                     schema=ASSESS_SCHEMA, instructions=ASSESS_INSTRUCTIONS, purpose="smoke:assess")
+        assessment = client.ask_json(prompt=GATE_PROMPT, images=[jpeg], schema_name="frame_assessment",
+                                     schema=GATE_SCHEMA, instructions=GATE_INSTRUCTIONS, purpose="smoke:assess")
         (out / "assessment.json").write_text(json.dumps(assessment, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"[{out.name}] assessment: usable={assessment['usable']} view={assessment['view']} "
               f"timestamp={assessment['printed_timestamp_text']!r}")
         lines += ["### Muse Spark assessment", "",
-                  "| usable | view | printed timestamp | ISO | camera label | activity |",
-                  "|---|---|---|---|---|---|",
+                  "| usable | view | printed timestamp | ISO | camera label | PTZ | activity |",
+                  "|---|---|---|---|---|---|---|",
                   f"| {assessment['usable']} | {assessment['view']} | {assessment['printed_timestamp_text']} "
                   f"| {assessment['printed_timestamp_iso']} | {assessment['printed_camera_label']} "
-                  f"| {assessment['activity']} |", "",
+                  f"| {assessment['printed_ptz_text']} | {assessment['activity']} |", "",
                   f"Why: {assessment['usable_reason']}", "",
                   f"Visible: {', '.join(assessment['visible_features'])}", "",
                   f"EN: {assessment['description_en']}", "",
-                  f"ES: {assessment['description_es']}", "",
-                  f"Suggested SAM phrases: {', '.join(assessment['suggested_sam_phrases'])}", ""]
+                  f"ES: {assessment['description_es']}", ""]
 
     lines += ["### SAM 3.1", "", "| phrase | objects | best score | mask area | overlay |", "|---|---|---|---|---|"]
     all_layers = []

@@ -28,6 +28,7 @@ dev = [
 [project.scripts]
 vigia-ingest = "vigia.ingest.worker:main"
 vigia-backfill = "vigia.ingest.ashcam:main"
+vigia-quality = "vigia.gate:main"
 
 [tool.setuptools.packages.find]
 include = ["vigia*"]

@@ -8,8 +8,9 @@ import pytest
 from PIL import Image, ImageDraw
 
 from test_meta_client import SPARK_USAGE, FakeApi, make_client, response_body
+from vigia import db
 from vigia.config import Camera, Sources, Volcano
-from vigia.gate import GATE_SCHEMA, QualityGate, parse_ptz, read_answer
+from vigia.gate import GATE_SCHEMA, QualityGate, main, parse_ptz, read_answer
 from vigia.ingest.store import FrameStore
 from vigia.quality import Thresholds
 
@@ -257,3 +258,60 @@ def test_read_answer_converts_the_printed_time_to_utc():
 @pytest.mark.parametrize("iso", ["", "2026-10-17T12:00:01", "17/10/2026 12:00"])
 def test_read_answer_without_a_zoned_printed_time_has_none(iso):
     assert read_answer(ANSWER | {"printed_timestamp_iso": iso}).printed_time is None
+
+
+SOURCES_YAML = """
+volcanoes:
+  kilauea:
+    name: Kīlauea
+    country: United States
+    official_agency: USGS Hawaiian Volcano Observatory
+    official_url: https://www.usgs.gov/volcanoes/kilauea
+    lat: 19.405
+    lon: -155.29
+cameras:
+  - id: kilauea-v1
+    name: V1cam
+    volcano: kilauea
+    url: https://example.org/V1cam/images/M.jpg
+    license: Public Domain
+    attribution: U.S. Geological Survey
+"""
+WINDOW = ["--start", "2026-10-17T21:00Z", "--end", "2026-10-17T23:00Z"]
+
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(SOURCES_YAML, encoding="utf-8")
+    monkeypatch.setenv("SOURCES_PATH", str(sources))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    return tmp_path / "data"
+
+
+def test_cli_assesses_the_window_locally_and_prints_a_summary(cli_env, capsys):
+    conn = db.connect(cli_env / "vigia.sqlite")
+    store = FrameStore(conn, cli_env)
+    add(store, sharp(), DAY)
+    add(store, flat(150), DAY + timedelta(minutes=2))
+
+    main(["--camera", "kilauea-v1", *WINDOW, "--spark", "never"])
+
+    assert capsys.readouterr().out.startswith("kilauea-v1: 2 assessed, 1 usable, 1 rejected (low_visibility 1)")
+    assert conn.execute("SELECT COUNT(*) FROM frame_quality").fetchone()[0] == 2
+    conn.close()
+
+
+def test_cli_refuses_an_unknown_camera(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--camera", "etna-1", *WINDOW, "--spark", "never"])
+
+    assert "etna-1" in capsys.readouterr().err
+
+
+def test_cli_refuses_an_empty_window(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--camera", "kilauea-v1", "--start", "2026-10-17T23:00Z", "--end", "2026-10-17T21:00Z"])
+
+    assert "before" in capsys.readouterr().err
