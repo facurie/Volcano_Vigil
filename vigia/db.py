@@ -67,6 +67,45 @@ CREATE TABLE IF NOT EXISTS frame_quality (
     printed_ptz       TEXT,              -- JSON {"pan", "tilt", "zoom_raw", "zoom"}
     spark_answer      TEXT               -- the whole JSON answer
 );
+
+CREATE TABLE IF NOT EXISTS tracking_runs (   -- one SAM video request: one phrase over one window of frames
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    camera_id    TEXT    NOT NULL,
+    target       TEXT    NOT NULL,  -- plume | fountain | incandescence
+    phrase       TEXT    NOT NULL,
+    window_start TEXT    NOT NULL,  -- UTC capture time of the window's first frame
+    window_end   TEXT    NOT NULL,  -- UTC capture time of its last frame
+    frame_ids    TEXT    NOT NULL,  -- JSON list; video frame i is frame_ids[i]
+    video_width  INTEGER NOT NULL,
+    video_height INTEGER NOT NULL,
+    created_at   TEXT    NOT NULL,  -- UTC
+    UNIQUE (camera_id, phrase, window_start, window_end)
+);
+
+CREATE TABLE IF NOT EXISTS tracks (          -- one SAM object of a run
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id     INTEGER NOT NULL REFERENCES tracking_runs (id),
+    object_id  TEXT    NOT NULL,  -- SAM's id, stable within its run
+    first_seen TEXT    NOT NULL,  -- UTC capture time of its first detection
+    last_seen  TEXT    NOT NULL,
+    detections INTEGER NOT NULL,
+    UNIQUE (run_id, object_id)
+);
+
+CREATE TABLE IF NOT EXISTS detections (      -- one tracked object on one frame
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id   INTEGER NOT NULL REFERENCES tracks (id),
+    frame_id   INTEGER NOT NULL REFERENCES frames (id),
+    box_left   INTEGER NOT NULL,  -- half-open box in the frame's own pixels
+    box_top    INTEGER NOT NULL,
+    box_right  INTEGER NOT NULL,
+    box_bottom INTEGER NOT NULL,
+    score      REAL,
+    area_px    INTEGER NOT NULL,  -- mask pixels at the frame's resolution
+    mask_rle   TEXT    NOT NULL   -- JSON COCO RLE of the box-sized mask: {"size": [h, w], "counts": "..."}
+);
+CREATE INDEX IF NOT EXISTS idx_detections_frame ON detections (frame_id);
+CREATE INDEX IF NOT EXISTS idx_detections_track ON detections (track_id);
 """
 
 
