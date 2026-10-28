@@ -17,7 +17,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest` (190 passing at the end of Phase 2, session 3).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest` (247 passing at the end of Phase 3, session 4).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -86,6 +86,21 @@
   - `steam` masks include the cloud drifting downwind.
   - KP `glow` hit a lens flare in daylight.
   - Decoding big plume masks in `meta_sam_parser` (pure Python) takes about 11 min for K2's 168 masks.
+- **Calibration** ([calibration_ep55.md](research/calibration_ep55.md)):
+  - The camera model is a pinhole plus one radial-distortion term k1. Heights sit on the vertical plane through the vent, with curvature and refraction.
+  - σ comes from a 1,000-sample Monte Carlo over positions, refraction, picked pixels, mask edge and lean.
+  - **KPcam is calibrated from nine Moon positions** (AshCam frames of Oct 16, 19 and 20, JPL Horizons, `scripts/moon_references.py`):
+    - RMS misfit 1.6 px, focal 3,509 ± 13 px, k1 −0.280 ± 0.006, field of view 62.9°. A pinhole would misfit by 24 px.
+    - Independent checks: the vent lands 30 px from the fountain, and the predicted sea horizon lies on the trade-cumulus base.
+  - **K2cam is not calibrated.** Its GNIS cones and the 3DEP skyline leave the focal length between 2,100 and 3,500 px. No clear sea horizon shows on Oct 15–19, and the night frames are black.
+  - V1cam's position is known only to ±150 m.
+- **Validation** ([VALIDATION.md](VALIDATION.md)):
+  - KPcam plume top at the peak: 6,951 ± 429 m against 7,620 m (−9 %, within 2σ).
+  - At 06:02: 5,169 ± 205 m against 5,182 m.
+  - At 07:30: 4,416 ± 137 m against "under 3,962 m". The mask's top is cloud 2.5–3 km downwind.
+  - End of fountaining: K2 −1.0 min and V1 −1.9 min against 09:03.
+  - Drift: all 75 KPcam frames on the 224° side, consistent with HVO's SW.
+  - Fountain heights are not measured yet.
 
 ## Target module map
 
@@ -103,14 +118,15 @@ vigia/
   gate.py                 quality gate + frame_quality; vigia-quality (exists, phase 2)
   masks.py                COCO RLE masks                         (exists, phase 2)
   tracking.py             timelapse build + SAM video tracks; vigia-track (exists, phase 2)
-  geometry.py             camera model, calibration, height ± σ  (phase 3)
-  metrics.py              area, height, drift per detection      (phase 3)
+  geometry.py             camera model, view solver, heights     (exists, phase 3)
+  calibration.py          calibration.yaml + Monte Carlo of the view (exists, phase 3)
+  metrics.py              area, height, drift per detection; vigia-measure (exists, phase 3)
   wind.py                 Open-Meteo winds aloft                 (phase 4)
   agent/tools.py loop.py bulletin.py                             (phases 4–5)
   replay.py               episode replay on a simulated clock    (phase 5)
   web/app.py web/static/  FastAPI + dashboard                    (phase 6)
 config/prompts.yaml       SAM phrases per target/camera kind     (exists, phase 1)
-config/calibration.yaml   per camera and PTZ preset              (phase 3)
+config/calibration.yaml   per camera and PTZ preset              (exists, phase 3)
 ```
 
 ---
@@ -154,18 +170,18 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 
 ## Phase 3: Thu Oct 29. Geometry, metrics, first validation
 
-- [ ] **`config/calibration.yaml`** (user-fillable, seeded from the geometry draft). Per camera and PTZ preset:
+- [x] **`config/calibration.yaml`** (user-fillable, seeded from the geometry draft). Per camera and PTZ preset:
   - camera position and elevation ± σ;
   - vent position;
   - image size;
   - field of view and/or reference points `{name, pixel [x, y], lat, lon, elev}`.
-- [ ] **`vigia/geometry.py`:**
-  - Pinhole model. Solve azimuth, tilt and focal length from two or more reference points (least squares).
+- [x] **`vigia/geometry.py`:**
+  - Pinhole model. Solve azimuth, tilt and focal length from two or more reference points (least squares). Done with one radial-distortion term too: KPcam's lens bends its corners by a tenth.
   - Height above the vent: `D · (tan θ_top − tan θ_vent)`. Correct for Earth curvature and refraction at long range (~13 m for KPcam at 14 km).
   - σ by Monte Carlo over camera position, distance, focal length, mask edge (±3 px) and plume lean.
-- [ ] **`vigia/metrics.py`:** per detection, top height (m ± σ), area (m² at vent range) and drift bearing (mask centroid offset against the vent column, plus camera azimuth; with one camera only the across-track component is known).
-- [ ] **Calibration strategy:** use cameras with published positions (B1, F1/KW) and landmarks. Use the official values only to check the result, never to fit it.
-- [ ] **`scripts/validate_ep55.py`:**
+- [x] **`vigia/metrics.py`:** per detection, top height (m ± σ), area (m² at vent range) and drift bearing (mask centroid offset against the vent column, plus camera azimuth; with one camera only the across-track component is known).
+- [x] **Calibration strategy:** use cameras with published positions (B1, F1/KW) and landmarks. Use the official values only to check the result, never to fit it. Done differently: KPcam is calibrated from nine Moon positions (JPL Horizons); B1 and F1/KW are fisheye and untracked, so they are not used.
+- [x] **`scripts/validate_ep55.py`:** (fountain rows pending: no K2cam calibration, see [VALIDATION.md](VALIDATION.md) and Phase 8)
   - Measure the fountain at the peak, 06:02, 07:00 and 08:00, and the plume at the peak, 06:02 and 07:30.
   - Also measure the end time and the drift direction.
   - Write the comparison table with errors to `docs/VALIDATION.md`.
@@ -236,6 +252,9 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 
 ## Phase 8: Tue Nov 3. Validation report, README, polish
 
+- [ ] **Calibrate a fountain camera** so the validation's fountain rows get measured. Options:
+  - K2cam needs a vertical reference: a clear sea horizon on a frame with the episode 55 framing, or a post-2018 DEM of the crater rim.
+  - V1cam: the Moon for its view, plus a resection on the vent for its ±150 m position.
 - [ ] Final `docs/VALIDATION.md`: errors, σ, limitations.
 - [ ] Final README: updated diagram, live URL, how to run, the "Built during the hackathon" section, disclaimer, credits, cost report.
 - [ ] Code review pass (`superpowers:requesting-code-review`) and fixes.
@@ -259,7 +278,7 @@ config/calibration.yaml   per camera and PTZ preset              (phase 3)
 
 ## Budget
 
-Spent so far: $0.82 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $0.82 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 

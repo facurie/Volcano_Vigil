@@ -53,7 +53,9 @@ Work in progress during the hackathon. Implemented so far:
 - [x] Mask overlay renderer with a legend strip below the frame
 - [x] Quality gate: free local checks (stale, frozen, night without incandescence, fog), Muse Spark for hazy frames, printed time and PTZ readout ([calibration](docs/research/quality_calibration.md))
 - [x] SAM 3.1 video tracking over timelapses of usable frames, with per-frame masks ([episode 55 results](docs/research/tracking_ep55.md))
-- [ ] Metrics (height ± σ, drift) and wind comparison
+- [x] Camera geometry with lens distortion, calibrated from the Moon (KPcam); heights ± σ by Monte Carlo, area and drift per detection ([calibration](docs/research/calibration_ep55.md))
+- [x] First validation against USGS episode 55 values ([VALIDATION.md](docs/VALIDATION.md))
+- [ ] Wind comparison
 - [ ] Muse Spark agent and bulletins
 - [ ] Episode 55 replay and validation
 - [ ] Dashboard and deployment
@@ -76,6 +78,9 @@ vigia-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:
                                    # judge frames: local checks, Muse Spark for hazy ones
 vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
                                    # SAM 3.1 video tracks over the usable frames
+vigia-measure --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+                                   # heights ± σ, area and drift of the tracked objects
+python scripts/validate_ep55.py    # compare with the official USGS values: docs/VALIDATION.md
 pytest                             # run the test suite
 ```
 
