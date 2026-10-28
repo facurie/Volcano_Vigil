@@ -1,0 +1,179 @@
+"""The agent loop: Muse Spark calls the tools of vigia.agent.tools until it can answer.
+
+Turns are chained with previous_response_id. The server keeps the
+conversation but not the request settings, so the instructions, tools and
+reasoning effort go with every turn. Muse Spark may call several tools in one
+turn; they run one after another, in order. A run ends when Muse Spark
+answers without calling a tool (done), when it still calls tools on its last
+turn (max_turns; it is told to answer on that turn), when a call would push
+the run's Meta spend (its own turns plus the SAM and Muse Spark calls its
+tools make) past `budget_usd` or the day past the daily cap (budget), or when
+the API fails (error). Every turn and tool call is a row of `agent_steps`
+under one `agent_runs` row: the trace the dashboard shows.
+
+    vigia-agent --volcano kilauea --at 2026-10-17T05:00-10:00
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import openai
+
+from vigia.agent.tools import Tool, Toolbox, ToolContext
+from vigia.config import Volcano
+from vigia.meta.client import MetaClient
+from vigia.meta.ledger import BudgetExceeded
+from vigia.timeutil import to_iso, utcnow
+
+MAX_TURNS = 12
+BUDGET_USD = 0.30
+INSTRUCTIONS = """\
+You are Vigía Andino, an agent that watches the public webcams of {name} ({country}) and measures what they \
+show. The official source for this volcano is {agency} ({url}). You never issue alerts or alert levels: you \
+describe what the cameras show, with numbers and the frame ids that support them.
+
+It is {now} UTC{local}. The tools only see frames captured up to this time. Give tool times in UTC with a Z, \
+e.g. {example}. The volcano's id is {volcano_id}.
+
+How to work:
+- Start with list_cameras_status. Only calibrated cameras give heights.
+- Prefer work already done: track_window returns stored tracks for free when the window was tracked before. \
+Tracking a new window costs about $0.01 per phrase and takes minutes; segment_frame costs $0.0025 and \
+assess_frame up to $0.008 per frame.
+- measure_track gives top_altitude (metres above sea level) and top_height (metres above the vent) of the \
+mask's highest pixel, each with a one-sigma uncertainty. drift_bearing is only the side of the camera's line of \
+sight the plume sits on: one camera cannot see drift along its line of sight.
+- To check a plume's drift against the wind, call get_wind with the plume top's altitude and the measured \
+drift_bearing; it compares that side with the mean wind between the vent and the top.
+- Call tools that do not depend on each other in the same turn.
+- Quote only numbers the tools returned, with their uncertainty; never invent one.
+
+Finish with a short report in English: what each camera shows now; the measurements with ± sigma, units, \
+capture times and frame ids; the drift against the wind; and what you could not measure and why."""
+WRAP_UP = "No turns left: write your final report now with what you have, without calling tools."
+DEFAULT_TASK = ("Check {name} now: which cameras show activity? Measure the plume and any lava fountain you can, "
+                "compare the plume's drift with the forecast wind, and report.")
+
+
+@dataclass(frozen=True)
+class AgentRun:
+    run_id: int
+    status: str  # done | max_turns | budget | error
+    turns: int
+    cost_usd: float
+    final_text: str
+    error: str | None
+
+
+def instructions(volcano: Volcano, volcano_id: str, now: datetime) -> str:
+    local = ""
+    if volcano.utc_offset_hours is not None:
+        offset = timedelta(hours=volcano.utc_offset_hours)
+        local = f" ({(now + offset):%Y-%m-%d %H:%M} local time, UTC{volcano.utc_offset_hours:+g})"
+    return INSTRUCTIONS.format(name=volcano.name, country=volcano.country, agency=volcano.official_agency,
+                               url=volcano.official_url, now=f"{now.astimezone(timezone.utc):%Y-%m-%d %H:%M}",
+                               local=local, example=to_iso(now), volcano_id=volcano_id)
+
+
+def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, *, max_turns: int = MAX_TURNS,
+              budget_usd: float = BUDGET_USD, effort: str = "medium", tools: Sequence[Tool] | None = None,
+              wall_clock: Callable[[], datetime] = utcnow) -> AgentRun:
+    """Run the agent on one task at the context's clock and store its trace."""
+    conn = ctx.conn
+    text = instructions(ctx.sources.volcanoes[volcano_id], volcano_id, ctx.now)
+    with conn:
+        run_id = conn.execute(
+            "INSERT INTO agent_runs (started_at, clock, volcano, task, model, status) VALUES (?, ?, ?, ?, ?, 'running')",
+            (to_iso(wall_clock()), to_iso(ctx.now), volcano_id, task, client.spark_model)).lastrowid
+    job = client.tagged(f"agent:{run_id}", budget_usd)
+    toolbox = Toolbox(dataclasses.replace(ctx, client=job), tools)
+    definitions = toolbox.definitions()
+    pending: list[dict[str, Any]] = [{"role": "user", "content": task}]
+    previous, context_tokens, seq, turns = None, 0, 0, 0
+    status, final, error = "max_turns", "", None
+
+    def step(kind: str, **columns: Any) -> None:
+        nonlocal seq
+        seq += 1
+        columns = {"run_id": run_id, "seq": seq, "turn": turns, "kind": kind, "created_at": to_iso(wall_clock()),
+                   **columns}
+        with conn:
+            conn.execute(f"INSERT INTO agent_steps ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+                         tuple(columns.values()))
+
+    for turn in range(1, max_turns + 1):
+        if turn == max_turns:
+            pending.append({"role": "user", "content": WRAP_UP})
+        started = time.perf_counter()
+        try:
+            reply = job.respond(input=pending, tools=definitions, instructions=text, purpose="turn",
+                                previous_response_id=previous, effort=effort, context_tokens=context_tokens)
+        except BudgetExceeded as exc:
+            status, error = "budget", str(exc)
+            break
+        except openai.APIError as exc:
+            status, error = "error", f"{type(exc).__name__}: {exc}"[:500]
+            break
+        turns = turn
+        step("model", response_id=reply.response_id, text=reply.text, reasoning=reply.reasoning,
+             cost_usd=reply.cost_usd, latency_ms=_ms(started))
+        if not reply.calls:
+            final = reply.text
+            if reply.status == "incomplete":
+                status, error = "error", "the answer was cut off at max_output_tokens"
+            else:
+                status = "done"
+            break
+        if turn == max_turns:
+            final = reply.text
+            break
+        pending = []
+        for call in reply.calls:
+            spent, started = job.tag_spent(), time.perf_counter()
+            result, ok = toolbox.call(call.name, call.arguments)
+            output = json.dumps(result, ensure_ascii=False)
+            step("tool", tool_name=call.name, call_id=call.call_id, arguments=call.arguments, result=output,
+                 ok=int(ok), cost_usd=job.tag_spent() - spent, latency_ms=_ms(started))
+            pending.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
+        previous, context_tokens = reply.response_id, reply.context_tokens
+    cost = job.tag_spent()
+    with conn:
+        conn.execute(
+            "UPDATE agent_runs SET finished_at = ?, status = ?, turns = ?, cost_usd = ?, final_text = ?, error = ? "
+            "WHERE id = ?", (to_iso(wall_clock()), status, turns, cost, final, error, run_id))
+    return AgentRun(run_id, status, turns, cost, final, error)
+
+
+def _ms(started: float) -> int:
+    return round((time.perf_counter() - started) * 1000)
+
+
+def trace(conn, run_id: int) -> str:
+    """A stored run as text: one line per step, then the final report."""
+    run = conn.execute("SELECT * FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+    lines = [f"run {run_id} at {run['clock']} ({run['volcano']}): {run['status']} after {run['turns']} turns, "
+             f"${run['cost_usd']:.4f}"]
+    for row in conn.execute("SELECT * FROM agent_steps WHERE run_id = ? ORDER BY seq", (run_id,)):
+        if row["kind"] == "model":
+            if row["text"]:
+                lines.append(f"  {row['turn']} model: {_short(row['text'])}")
+        else:
+            outcome = "ok" if row["ok"] else "error"
+            lines.append(f"  {row['turn']} tool {row['tool_name']} {row['arguments']} -> {outcome} "
+                         f"({row['latency_ms'] / 1000:.1f} s, ${row['cost_usd']:.4f}): {_short(row['result'])}")
+    if run["error"]:
+        lines.append(f"error: {run['error']}")
+    lines += ["final:", run["final_text"] or ""]
+    return "\n".join(lines)
+
+
+def _short(text: str, limit: int = 160) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[:limit - 3] + "..."

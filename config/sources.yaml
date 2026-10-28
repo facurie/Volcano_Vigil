@@ -7,7 +7,7 @@
 # `live_source: ashcam` polls the archive instead of M.jpg: every 2-min (KPcam
 # 5-min) frame with its exact capture time (docs/research/ashcam_latency.md).
 # Each volcano's lat/lon (summit area, east positive) sets the sun's elevation
-# for the quality gate's night check.
+# for the quality gate's night check. utc_offset_hours gives the agent the volcano's local time.
 # See DATA_SOURCES.md for the full record of each source and its terms.
 
 volcanoes:
@@ -18,6 +18,7 @@ volcanoes:
     official_url: https://www.usgs.gov/volcanoes/kilauea
     lat: 19.405    # Halemaʻumaʻu north vent (19.40496 N, 155.29022 W)
     lon: -155.290
+    utc_offset_hours: -10   # HST
   nevado-del-ruiz:
     name: Nevado del Ruiz
     country: Colombia
@@ -25,6 +26,7 @@ volcanoes:
     official_url: https://www2.sgc.gov.co/Noticias/Paginas/Boletines-semanales.aspx
     lat: 4.895     # Arenas crater
     lon: -75.323
+    utc_offset_hours: -5    # Colombia
 
 cameras:
   # --- USGS HVO, Kīlauea summit. Public domain; credit "U.S. Geological Survey". ---

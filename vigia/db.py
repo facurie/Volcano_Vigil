@@ -134,6 +134,41 @@ CREATE TABLE IF NOT EXISTS wind_profiles (   -- Open-Meteo winds aloft over a vo
     levels      TEXT NOT NULL,  -- JSON [[pressure_hpa, altitude_m, speed_ms, from_deg], ...], lowest first
     PRIMARY KEY (volcano, valid_at)
 );
+
+CREATE TABLE IF NOT EXISTS agent_runs (      -- one run of the Muse Spark agent (vigia.agent.loop)
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at  TEXT    NOT NULL,  -- UTC wall clock
+    finished_at TEXT,
+    clock       TEXT    NOT NULL,  -- UTC time the agent worked at: now live, the simulated time in a replay
+    volcano     TEXT    NOT NULL,
+    task        TEXT    NOT NULL,  -- what it was asked
+    model       TEXT    NOT NULL,
+    status      TEXT    NOT NULL,  -- running | done | max_turns | budget | error
+    turns       INTEGER NOT NULL DEFAULT 0,
+    cost_usd    REAL    NOT NULL DEFAULT 0,  -- every Meta call of the run, its tools' calls included
+    final_text  TEXT,
+    error       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agent_steps (     -- one model turn or tool call of a run, in order
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id      INTEGER NOT NULL REFERENCES agent_runs (id),
+    seq         INTEGER NOT NULL,  -- order within the run
+    turn        INTEGER NOT NULL,  -- the model turn that made it
+    kind        TEXT    NOT NULL,  -- model | tool
+    created_at  TEXT    NOT NULL,  -- UTC
+    response_id TEXT,              -- model: the Responses API id
+    text        TEXT,              -- model: its visible text, commentary or the final answer
+    reasoning   TEXT,              -- model: reasoning summaries, when sent
+    tool_name   TEXT,              -- tool: the function called
+    call_id     TEXT,
+    arguments   TEXT,              -- tool: the JSON arguments as Muse Spark sent them
+    result      TEXT,              -- tool: the JSON sent back
+    ok          INTEGER,           -- tool: 0 if the arguments were invalid or the tool failed
+    cost_usd    REAL    NOT NULL DEFAULT 0,  -- model: the turn; tool: the Meta calls it made
+    latency_ms  INTEGER,
+    UNIQUE (run_id, seq)
+);
 """
 
 

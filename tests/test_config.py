@@ -122,3 +122,10 @@ def test_committed_sources_place_every_volcano():
     sources = load_sources(REPO / "config" / "sources.yaml")
 
     assert [name for name, v in sources.volcanoes.items() if v.lat is None or v.lon is None] == []
+
+
+def test_the_repo_sources_give_each_volcanos_local_time():
+    sources = load_sources(REPO / "config" / "sources.yaml")
+
+    assert sources.volcanoes["kilauea"].utc_offset_hours == -10      # HST, no daylight saving
+    assert sources.volcanoes["nevado-del-ruiz"].utc_offset_hours == -5
