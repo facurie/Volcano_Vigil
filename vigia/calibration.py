@@ -19,13 +19,19 @@ the spread of the others gives each measurement's sigma.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import yaml
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from vigia.config import ConfigError
+from vigia.geometry import (REFRACTION_K, References, View, direction, horizon_dip, local_en, sight,
+                            solve_view)
+
+REFRACTION_SIGMA = 0.05  # the refraction coefficient near the ground varies by about this much
 
 
 class Site(BaseModel):
@@ -159,3 +165,82 @@ def load_calibration(path: str | Path) -> Calibration:
         return Calibration.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
+
+
+@dataclass(frozen=True)
+class Geometry:
+    """One preset's view and positions for N samples; sample 0 is the nominal solution."""
+
+    camera_id: str
+    preset: str
+    view: View
+    camera_elev: np.ndarray  # (N,) metres above sea level
+    vent: np.ndarray         # (N, 3) line of sight from the camera to the vent
+    vent_elev: np.ndarray    # (N,)
+    refraction: np.ndarray   # (N,) refraction coefficient
+    rms_px: np.ndarray       # (N,) how far the references sit from the solved view
+
+
+def sample_geometry(calibration: Calibration, camera_id: str, preset: Preset, samples: int = 1000,
+                    seed: int = 0) -> Geometry:
+    """Solve the preset's view for `samples` Monte Carlo draws; raises ValueError if it cannot be fixed."""
+    camera = calibration.cameras[camera_id]
+    vent = calibration.vents[camera.volcano]
+    origin = camera.position
+    rng = np.random.default_rng(seed)
+
+    def noise(sigma, shape=()) -> np.ndarray:
+        draw = rng.normal(0.0, 1.0, (samples, *shape)) * np.asarray(sigma, dtype=float)
+        draw[0] = 0.0
+        return draw
+
+    camera_east, camera_north = noise(origin.sigma_m), noise(origin.sigma_m)
+    camera_elev = origin.elev_m + noise(origin.sigma_elev_m)
+    k = np.clip(REFRACTION_K + noise(REFRACTION_SIGMA), 0.0, 0.5)
+
+    def line_of_sight(site: Site, elev: np.ndarray) -> np.ndarray:
+        east, north = local_en(site.lat, site.lon, origin.lat, origin.lon)
+        return sight(east + noise(site.sigma_m) - camera_east, north + noise(site.sigma_m) - camera_north,
+                     elev - camera_elev, k)
+
+    vent_elev = vent.elev_m + noise(vent.sigma_elev_m)
+    vent_sight = line_of_sight(vent, vent_elev)
+    points, pixels, sigmas = [], [], []
+    if preset.vent_pixel is not None:
+        points.append(vent_sight)
+        pixels.append(np.asarray(preset.vent_pixel.pixel) + noise(preset.vent_pixel.sigma_px, (2,)))
+        sigmas.append(preset.vent_pixel.sigma_px)
+    for mark in preset.landmarks:
+        points.append(line_of_sight(mark, mark.elev_m + noise(mark.sigma_elev_m)))
+        pixels.append(np.asarray(mark.pixel) + noise(mark.sigma_px, (2,)))
+        sigmas.append(mark.sigma_px)
+    for body in preset.celestial:
+        points.append(np.broadcast_to(direction(body.az_deg, body.el_deg), (samples, 3)))
+        pixels.append(np.asarray(body.pixel) + noise(body.sigma_px, (2,)))
+        sigmas.append(body.sigma_px)
+    horizon = np.array([h.pixel for h in preset.horizon], dtype=float).reshape(-1, 2)
+    horizon_sigma = np.array([h.sigma_px for h in preset.horizon], dtype=float)
+    horizon_px = np.repeat(horizon[None], samples, axis=0)
+    horizon_px[..., 1] += noise(horizon_sigma, (len(horizon_sigma),))
+    focal = focal_sigma = None
+    if preset.fov is not None:
+        half_width = preset.image_size[0] / 2
+        hfov = preset.fov.hfov_deg + noise(preset.fov.sigma_deg)
+        focal = half_width / np.tan(np.radians(hfov) / 2)
+        wide, narrow = (half_width / np.tan(np.radians(preset.fov.hfov_deg + s * preset.fov.sigma_deg) / 2)
+                        for s in (1, -1))
+        focal_sigma = (narrow - wide) / 2
+    k1 = k1_sigma = roll = roll_sigma = None
+    if preset.distortion is not None:
+        k1, k1_sigma = preset.distortion.k1 + noise(preset.distortion.sigma), preset.distortion.sigma
+    if preset.roll is not None:
+        roll, roll_sigma = preset.roll.deg + noise(preset.roll.sigma_deg), preset.roll.sigma_deg
+    refs = References(
+        points=np.stack(points, axis=1) if points else np.zeros((samples, 0, 3)),
+        points_px=np.stack(pixels, axis=1) if pixels else np.zeros((samples, 0, 2)),
+        points_sigma=np.array(sigmas, dtype=float).reshape(-1, 2),
+        horizon_px=horizon_px, horizon_el=-horizon_dip(camera_elev, k), horizon_sigma=horizon_sigma,
+        focal=focal, focal_sigma=focal_sigma, k1=k1, k1_sigma=k1_sigma, roll=roll, roll_sigma=roll_sigma,
+    )
+    view, rms = solve_view(refs, preset.image_size)
+    return Geometry(camera_id, preset.name, view, camera_elev, vent_sight, vent_elev, k, rms)
