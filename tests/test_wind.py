@@ -249,3 +249,26 @@ def test_cli_refuses_an_unknown_volcano(cli_env, capsys):
         main(["--volcano", "etna"])
 
     assert "etna" in capsys.readouterr().err
+
+
+def test_an_unreadable_answer_value_is_unavailable(conn):
+    body = open_meteo_day()
+    body["hourly"]["time"][15] = "17 Oct 2026 15h"
+
+    with pytest.raises(WindUnavailable, match="Open-Meteo"):
+        service(conn, OpenMeteo(body)).profile("kilauea", datetime(2026, 10, 17, 15, tzinfo=timezone.utc))
+
+
+def test_an_old_forecast_stands_in_when_open_meteo_fails(conn):
+    clock = [NOW]
+    api = OpenMeteo(open_meteo_day("2026-10-28"))
+    winds = service(conn, api, clock=lambda: clock[0])
+    when = datetime(2026, 10, 28, 20, tzinfo=timezone.utc)
+    winds.profile("kilauea", when)
+
+    clock[0] = NOW + timedelta(hours=2)
+    api.status = 500
+    found = winds.profile("kilauea", when)
+
+    assert len(api.requests) == 2
+    assert (found.source, found.valid_at) == ("forecast", when)

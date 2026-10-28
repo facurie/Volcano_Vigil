@@ -153,7 +153,13 @@ class WindService:
         cached = self._cached(volcano_id, hour, fresh_only=True)
         if cached is not None:
             return cached
-        self._fetch_day(volcano_id, volcano, hour)
+        try:
+            self._fetch_day(volcano_id, volcano, hour)
+        except WindUnavailable:
+            stale = self._cached(volcano_id, hour, fresh_only=False)  # an older forecast beats no wind at all
+            if stale is None:
+                raise
+            return stale
         fetched = self._cached(volcano_id, hour, fresh_only=False)
         if fetched is None:
             raise WindUnavailable(f"Open-Meteo has no wind profile for {volcano_id} at {to_iso(hour)}")
@@ -186,21 +192,21 @@ class WindService:
             if any(len(column) != len(times) for column in columns.values()):
                 raise ValueError("hourly columns of different lengths")
             grid = (float(body["latitude"]), float(body["longitude"]), float(body["elevation"]))
+            fetched_at = to_iso(self._now())
+            rows = []
+            for i, stamp in enumerate(times):
+                levels = []
+                for p in LEVELS_HPA:
+                    z, speed, direction = (columns[f"{name}_{p}hPa"][i] for name in _VARIABLES)
+                    if None not in (z, speed, direction):
+                        levels.append([p, float(z), float(speed), float(direction)])
+                if len(levels) < 2:
+                    continue
+                levels.sort(key=lambda level: level[1])
+                valid_at = datetime.fromisoformat(stamp).replace(tzinfo=timezone.utc)
+                rows.append((volcano_id, to_iso(valid_at), source, fetched_at, *grid, json.dumps(levels)))
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             raise WindUnavailable(f"Open-Meteo failed for {volcano_id} on {day}: {type(exc).__name__}: {exc}"[:300]) from exc
-        fetched_at = to_iso(self._now())
-        rows = []
-        for i, stamp in enumerate(times):
-            levels = []
-            for p in LEVELS_HPA:
-                z, speed, direction = (columns[f"{name}_{p}hPa"][i] for name in _VARIABLES)
-                if None not in (z, speed, direction):
-                    levels.append([p, float(z), float(speed), float(direction)])
-            if len(levels) < 2:
-                continue
-            levels.sort(key=lambda level: level[1])
-            valid_at = datetime.fromisoformat(stamp).replace(tzinfo=timezone.utc)
-            rows.append((volcano_id, to_iso(valid_at), source, fetched_at, *grid, json.dumps(levels)))
         with self._conn:
             self._conn.executemany(
                 """INSERT OR REPLACE INTO wind_profiles (volcano, valid_at, source, fetched_at, grid_lat, grid_lon,
