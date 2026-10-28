@@ -122,6 +122,18 @@ CREATE TABLE IF NOT EXISTS measurements (    -- one metric of one detection (vig
     UNIQUE (detection_id, metric)
 );
 CREATE INDEX IF NOT EXISTS idx_measurements_series ON measurements (camera_id, metric, captured_at);
+
+CREATE TABLE IF NOT EXISTS wind_profiles (   -- Open-Meteo winds aloft over a volcano, one row per model hour (vigia.wind)
+    volcano     TEXT NOT NULL,
+    valid_at    TEXT NOT NULL,  -- UTC model hour
+    source      TEXT NOT NULL,  -- forecast | historical_forecast
+    fetched_at  TEXT NOT NULL,  -- UTC
+    grid_lat    REAL NOT NULL,  -- the model cell Open-Meteo used
+    grid_lon    REAL NOT NULL,
+    grid_elev_m REAL NOT NULL,
+    levels      TEXT NOT NULL,  -- JSON [[pressure_hpa, altitude_m, speed_ms, from_deg], ...], lowest first
+    PRIMARY KEY (volcano, valid_at)
+);
 """
 
 
