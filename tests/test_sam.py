@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from vigia.meta.sam import SamParseError, parse_output
+from vigia.meta.sam import SamParseError, fit_mask, parse_output
 
 # Real sam-3.1 output published in the docs (320x334 source, lossless masks):
 # https://dev.meta.ai/docs/sam/reading-segmentation (confidence values added by us)
@@ -66,3 +66,13 @@ def test_video_output_keeps_frame_indices_and_stable_ids():
 def test_malformed_output_raises():
     with pytest.raises(SamParseError, match="Malformed"):
         parse_output("<0f>0<|box;x1=1;y1=2|>garbage")
+
+
+def test_fit_mask_scales_up_and_down_by_nearest_neighbour():
+    checker = np.array([[True, False], [False, True]])
+
+    up = fit_mask(checker, 4, 6)
+
+    assert up.shape == (4, 6)
+    assert up[:2, :3].all() and not up[:2, 3:].any()
+    assert np.array_equal(fit_mask(up, 2, 2), checker)

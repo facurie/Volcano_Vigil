@@ -71,16 +71,20 @@ def extract_frames(video: str | Path, out_dir: str | Path) -> list[Path]:
     return sorted(out_dir.glob("[0-9][0-9][0-9][0-9][0-9].jpg"))
 
 
-def assemble(frames: Sequence[str | Path], dst: str | Path, *, fps: float) -> Path:
-    """Encode an ordered list of same-sized images into an H.264 MP4."""
+def assemble(frames: Sequence[str | Path], dst: str | Path, *, fps: float, height: int | None = None) -> Path:
+    """Encode an ordered list of same-sized images into an H.264 MP4.
+
+    With `height` (even) the video is scaled to it, keeping the aspect ratio.
+    """
     suffix = Path(frames[0]).suffix
+    scale = f"scale=-2:{height}" if height else "scale=trunc(iw/2)*2:trunc(ih/2)*2"
     with tempfile.TemporaryDirectory() as tmp:
         for i, frame in enumerate(frames):
             shutil.copyfile(frame, Path(tmp) / f"{i:05d}{suffix}")
         _run([
             "ffmpeg", "-v", "error", "-y", "-framerate", str(fps), "-start_number", "0",
             "-i", str(Path(tmp) / f"%05d{suffix}"),
-            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-vf", scale,
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(dst),
         ])
     return Path(dst)

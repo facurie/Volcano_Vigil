@@ -53,3 +53,12 @@ def test_assemble_turns_frames_back_into_a_video(source, tmp_path):
     info = probe(out)
     assert info.frames == 5
     assert info.fps == pytest.approx(5)
+
+
+def test_assemble_can_scale_to_a_height(source, tmp_path):
+    clip = cut_clip(source, tmp_path / "clip.mp4", start_s=0, duration_s=1.0, fps=5, height=240)
+    frames = extract_frames(clip, tmp_path / "frames")
+
+    info = probe(assemble(frames, tmp_path / "out.mp4", fps=5, height=120))
+
+    assert (info.width, info.height, info.frames) == (160, 120, 5)

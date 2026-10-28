@@ -64,19 +64,20 @@ def parse_output(text: str, *, video: bool = False) -> list[SamObject]:
             frame_index=record.frame.frame_index if record.frame else None,
             box=(bounds.left, bounds.top, bounds.right, bounds.bottom),
             score=record.confidence,
-            mask=_fit_to_box(raster.astype(bool), bounds.bottom - bounds.top, bounds.right - bounds.left),
+            mask=fit_mask(raster.astype(bool), bounds.bottom - bounds.top, bounds.right - bounds.left),
         ))
     return objects
 
 
-def _fit_to_box(raster: np.ndarray, height: int, width: int) -> np.ndarray:
-    """Scale a mask raster to its box size, nearest neighbour.
+def fit_mask(mask: np.ndarray, height: int, width: int) -> np.ndarray:
+    """Scale a mask to height x width, nearest neighbour.
 
     SAM sends large masks at reduced resolution (a 1081x680 px box came with a
-    1024x644 raster), so the raster is not always box-sized.
+    1024x644 raster), and tracking maps masks from the video's pixels back to
+    the frame's, so a mask often needs another size.
     """
-    if raster.shape == (height, width):
-        return raster
-    rows = ((np.arange(height) + 0.5) * raster.shape[0] / height).astype(int)
-    cols = ((np.arange(width) + 0.5) * raster.shape[1] / width).astype(int)
-    return raster[np.ix_(rows, cols)]
+    if mask.shape == (height, width):
+        return mask
+    rows = ((np.arange(height) + 0.5) * mask.shape[0] / height).astype(int)
+    cols = ((np.arange(width) + 0.5) * mask.shape[1] / width).astype(int)
+    return mask[np.ix_(rows, cols)]
