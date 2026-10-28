@@ -30,6 +30,7 @@ from vigia.config import Camera, Sources
 from vigia.gate import QualityGate
 from vigia.imaging import load_for_upload
 from vigia.meta.client import MetaClient
+from vigia.meta.ledger import BudgetExceeded
 from vigia.prompts import Prompts, Target
 from vigia.timeutil import parse_utc, to_iso
 from vigia.wind import WindService
@@ -56,6 +57,10 @@ class ToolContext:
     winds: WindService
     now: datetime                     # the agent's clock, UTC
     client: MetaClient | None = None  # the tools that call SAM or Muse Spark fail without one
+
+    def __post_init__(self):
+        if self.now.tzinfo is None:
+            raise ValueError("the agent's clock needs a time zone")
 
     def camera(self, camera_id: str) -> Camera:
         for camera in self.sources.cameras:
@@ -147,6 +152,8 @@ class Toolbox:
             return tool.run(self.ctx, args), True
         except ToolError as exc:
             return {"error": str(exc)}, False
+        except BudgetExceeded as exc:
+            return {"error": f"the run's budget is spent: {exc}"}, False
         except Exception as exc:  # a failing tool must not end the run: the model hears about it instead
             log.exception("tool %s failed", name)
             return {"error": f"{name} failed: {type(exc).__name__}: {exc}"[:500]}, False
@@ -292,9 +299,10 @@ def get_history(ctx: ToolContext, args: HistoryArgs) -> dict[str, Any]:
                                               "and measure its tracks (measure_track) first"}
     values = np.array([point["value"] for point in points])
     keep = sorted(set(np.linspace(0, len(points) - 1, min(len(points), HISTORY_POINTS)).round().astype(int)))
-    return {**head, "unit": points[0]["unit"], "frames": len(points), "latest": _point(points[-1]),
-            "max": _point(points[int(values.argmax())]), "min": _point(points[int(values.argmin())]),
-            "points": [_point(points[i]) for i in keep]}
+    result = {**head, "unit": points[0]["unit"], "frames": len(points), "latest": _point(points[-1])}
+    if args.metric != "drift_bearing":  # the extremes of a bearing mean nothing (359 degrees against 1)
+        result |= {"max": _point(points[int(values.argmax())]), "min": _point(points[int(values.argmin())])}
+    return result | {"points": [_point(points[i]) for i in keep]}
 
 
 # --- assess_frame
@@ -388,6 +396,7 @@ TOOLS: list[Tool] = [
          SegmentArgs, segment_frame),
     Tool("get_history",
          "A camera's series of one metric for one target over the last `hours` (at most 48): the highest "
-         "detection on each frame, thinned to 40 points, with the latest, maximum and minimum and their frame ids.",
+         "detection on each frame, thinned to 40 points, with the latest, maximum and minimum and their frame ids (for drift_bearing only "
+         "the latest and the points).",
          HistoryArgs, get_history),
 ]

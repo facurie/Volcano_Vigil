@@ -20,6 +20,7 @@ from vigia.agent.tools import (TOOLS, Args, FrameArgs, HistoryArgs, NoArgs, Rece
                                list_cameras_status, segment_frame, strict_schema)
 from vigia.config import Camera, Sources, Volcano
 from vigia.ingest.store import FrameStore
+from vigia.meta.ledger import BudgetExceeded
 from vigia.prompts import Prompts
 from vigia.timeutil import to_iso
 from vigia.wind import WindService
@@ -191,6 +192,22 @@ def test_the_string_null_counts_as_null(conn, tmp_path):
         {"n": 2, "when": None}, True)
 
 
+def test_the_clock_must_have_a_time_zone(conn, tmp_path):
+    with pytest.raises(ValueError, match="time zone"):
+        context(conn, tmp_path, now=datetime(2026, 10, 17, 15, 0))
+
+
+def test_a_spent_run_budget_is_an_error_for_the_model_without_a_traceback(conn, tmp_path, caplog):
+    def spend(ctx, args):
+        raise BudgetExceeded("budget $0.30 of agent:1 would be exceeded")
+
+    result, ok = Toolbox(context(conn, tmp_path), [Tool("spend", "Spend.", NoArgs, spend)]).call("spend", "{}")
+
+    assert ok is False
+    assert result == {"error": "the run's budget is spent: budget $0.30 of agent:1 would be exceeded"}
+    assert caplog.records == []
+
+
 @pytest.mark.parametrize("name, arguments, message", [
     ("nope", "{}", "unknown tool 'nope'"),
     ("echo", "{n: 2}", "not JSON"),
@@ -214,10 +231,11 @@ def test_a_bad_call_or_a_failing_tool_is_an_error_for_the_model(conn, tmp_path, 
 def test_list_cameras_status_reports_each_cameras_latest_frame_as_of_the_clock(conn, store, tmp_path):
     kp_old = add_frame(conn, store, "kilauea-kp", -10)
     kp_latest = add_frame(conn, store, "kilauea-kp", -5)
-    add_frame(conn, store, "kilauea-kp", 5)                              # after the clock: unseen
+    kp_future = add_frame(conn, store, "kilauea-kp", 5)                  # after the clock: unseen
     add_frame(conn, store, "kilauea-k2", -45, usable=False, reasons=["low_visibility"])
     add_frame(conn, store, "kilauea-v1", -2, usable=None)                # disabled, but it has frames
-    add_track(conn, add_run(conn, "kilauea-kp", "plume", [kp_old, kp_latest]), [kp_old, kp_latest])
+    add_track(conn, add_run(conn, "kilauea-kp", "plume", [kp_old, kp_latest, kp_future]),
+              [kp_old, kp_latest, kp_future])
 
     result = list_cameras_status(context(conn, tmp_path), NoArgs())
 
@@ -273,6 +291,19 @@ def test_get_history_gives_the_series_up_to_the_clock_with_its_extremes(conn, st
     assert [p["value"] for p in result["points"]] == [5000, 6900, 6500]
     assert result["max"] == {"captured_at": "2026-10-17T14:40:00Z", "frame_id": frames[1], "value": 6900, "sigma": 300}
     assert result["latest"]["value"] == 6500
+
+
+def test_a_bearing_history_has_no_extremes(conn, store, tmp_path):
+    frames = [add_frame(conn, store, "kilauea-kp", m) for m in (-20, -10)]
+    for i, (frame_id, value) in enumerate(zip(frames, (359.0, 1.0))):
+        add_measurement(conn, frame_id, "drift_bearing", value, 5, detection_id=i, unit="deg")
+
+    result = get_history(context(conn, tmp_path), HistoryArgs(camera_id="kilauea-kp", metric="drift_bearing",
+                                                              target="plume", hours=1))
+
+    assert "max" not in result and "min" not in result
+    assert (result["frames"], result["unit"], result["latest"]["value"]) == (2, "deg", 1.0)
+    assert [p["value"] for p in result["points"]] == [359.0, 1.0]
 
 
 def test_a_long_history_is_thinned_but_keeps_its_ends(conn, store, tmp_path):
@@ -361,6 +392,17 @@ def test_segment_frame_returns_sams_objects_in_the_frames_pixels(conn, store, tm
     assert best == {"object_id": "0", "score": 0.96, "box": [422, 456, 542, 510], "top_row": 456,
                     "area_fraction": 0.00037}
     assert result["objects"][1]["score"] == 0.5
+
+
+def test_segment_frame_cannot_see_a_frame_after_the_clock(conn, store, tmp_path):
+    frame_id = add_frame(conn, store, "kilauea-kp", 5)
+    api = FakeApi(lambda r: httpx.Response(200, json=response_body("sam-3.1", IMAGE_OUTPUT, {"images_processed": 1})))
+
+    with pytest.raises(ToolError, match=f"no frame {frame_id} captured by"):
+        segment_frame(context(conn, tmp_path, client=make_client(api, conn)),
+                      SegmentArgs(frame_id=frame_id, phrase="steam"))
+
+    assert api.requests == []
 
 
 def test_segment_frame_needs_a_meta_client(conn, store, tmp_path):
