@@ -27,6 +27,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from vigia.calibration import Calibration
 from vigia.config import Camera, Sources
+from vigia.gate import QualityGate
+from vigia.imaging import load_for_upload
 from vigia.meta.client import MetaClient
 from vigia.prompts import Prompts, Target
 from vigia.timeutil import parse_utc, to_iso
@@ -168,6 +170,15 @@ def _point(row: sqlite3.Row) -> dict[str, Any]:
             "value": _round(row["value"], row["unit"]), "sigma": _round(row["sigma"], row["unit"])}
 
 
+def _frame(ctx: ToolContext, frame_id: int) -> sqlite3.Row:
+    """A stored frame captured by the agent's clock."""
+    row = ctx.conn.execute("SELECT * FROM frames WHERE id = ? AND captured_at <= ?",
+                           (frame_id, to_iso(ctx.now))).fetchone()
+    if row is None:
+        raise ToolError(f"no frame {frame_id} captured by {to_iso(ctx.now)}")
+    return row
+
+
 # --- list_cameras_status
 
 
@@ -286,6 +297,72 @@ def get_history(ctx: ToolContext, args: HistoryArgs) -> dict[str, Any]:
             "points": [_point(points[i]) for i in keep]}
 
 
+# --- assess_frame
+
+
+class FrameArgs(Args):
+    frame_id: int = Field(description="frame id, from list_cameras_status or get_recent_frames")
+
+
+def _quality(ctx: ToolContext, frame_id: int) -> sqlite3.Row | None:
+    return ctx.conn.execute("SELECT * FROM frame_quality WHERE frame_id = ?", (frame_id,)).fetchone()
+
+
+def assess_frame(ctx: ToolContext, args: FrameArgs) -> dict[str, Any]:
+    frame = _frame(ctx, args.frame_id)
+    row = _quality(ctx, frame["id"])
+    if row is None or (row["spark_answer"] is None and row["local_decision"] != "reject"):
+        # Muse Spark looks at every frame the local checks did not reject; a rejected frame costs nothing
+        gate = QualityGate(ctx.conn, ctx.data_dir, ctx.sources, ctx.client)
+        verdict = gate.assess(frame["id"], spark="never")
+        if verdict.local.decision != "reject":
+            gate = QualityGate(ctx.conn, ctx.data_dir, ctx.sources, ctx.meta())
+            gate.assess(frame["id"], spark="all")
+        row = _quality(ctx, frame["id"])
+    answer = json.loads(row["spark_answer"]) if row["spark_answer"] else {}
+    return {
+        "frame_id": frame["id"], "camera_id": frame["camera_id"], "captured_at": frame["captured_at"],
+        "usable": bool(row["usable"]), "decided_by": row["decided_by"], "reasons": _verdict_reasons(row),
+        "sun_elevation_deg": None if row["sun_elevation_deg"] is None else round(row["sun_elevation_deg"], 1),
+        "view": answer.get("view"), "activity": answer.get("activity"),
+        "visible_features": answer.get("visible_features", []), "description": answer.get("description_en"),
+        "printed_time": row["printed_time"],
+        "printed_ptz": json.loads(row["printed_ptz"]) if row["printed_ptz"] else None,
+    }
+
+
+# --- segment_frame
+
+
+SEGMENT_OBJECTS = 10
+
+
+class SegmentArgs(Args):
+    frame_id: int = Field(description="frame id")
+    phrase: str = Field(min_length=1, max_length=60,
+                        description="ONE short noun phrase, e.g. 'steam' or 'lava fountain'")
+
+
+def segment_frame(ctx: ToolContext, args: SegmentArgs) -> dict[str, Any]:
+    frame = _frame(ctx, args.frame_id)
+    client = ctx.meta()
+    image, jpeg = load_for_upload(ctx.data_dir / frame["path"])
+    objects = client.segment_image(jpeg, args.phrase, purpose="segment")
+    sx, sy = frame["width"] / image.width, frame["height"] / image.height
+    found = []
+    for obj in sorted(objects, key=lambda o: -(o.score or 0.0))[:SEGMENT_OBJECTS]:
+        left, top, right, bottom = obj.box
+        rows = np.nonzero(obj.mask.any(axis=1))[0]
+        found.append({
+            "object_id": obj.object_id, "score": None if obj.score is None else round(obj.score, 3),
+            "box": [round(left * sx), round(top * sy), round(right * sx), round(bottom * sy)],
+            "top_row": round((top + rows.min()) * sy) if rows.size else None,
+            "area_fraction": round(obj.area_px / (image.width * image.height), 5),
+        })
+    return {"frame_id": frame["id"], "camera_id": frame["camera_id"], "phrase": args.phrase,
+            "objects_found": len(objects), "objects": found}
+
+
 TOOLS: list[Tool] = [
     Tool("list_cameras_status",
          "Every camera that is enabled or sent frames in the last 24 hours, as of now: its latest frame and quality "
@@ -298,6 +375,17 @@ TOOLS: list[Tool] = [
          "and how many objects of each target its stored tracks detected on it, plus counts of usable frames and "
          "of rejections by reason.",
          RecentFramesArgs, get_recent_frames),
+    Tool("assess_frame",
+         "Look at one frame through the quality gate: local checks, then Muse Spark (about $0.008) unless they "
+         "rejected it or Muse Spark has already seen it. Returns whether the frame is usable and why, the activity "
+         "and features Muse Spark sees, a description, and the time and pan/tilt/zoom printed on it.",
+         FrameArgs, assess_frame),
+    Tool("segment_frame",
+         "Run SAM 3.1 on one frame for ONE short noun phrase ($0.0025). Returns up to 10 objects, best first: "
+         "score, box and highest row in the frame's pixels, and the share of the image each covers. Tuned "
+         "phrases: 'steam' for a plume, 'lava fountain', 'glow' for incandescence ('glowing lava' on thermal "
+         "cameras); a phrase with 'volcanic' in it returns the fountain.",
+         SegmentArgs, segment_frame),
     Tool("get_history",
          "A camera's series of one metric for one target over the last `hours` (at most 48): the highest "
          "detection on each frame, thinned to 40 points, with the latest, maximum and minimum and their frame ids.",

@@ -10,10 +10,14 @@ import pytest
 from PIL import Image
 from pydantic import AwareDatetime, Field
 
+from test_gate import ANSWER, encode, flat, sharp, spark_api
+from test_meta_client import FakeApi, make_client, response_body
 from test_metrics import kp_calibration
+from test_sam import IMAGE_OUTPUT
 from vigia import masks
-from vigia.agent.tools import (TOOLS, Args, HistoryArgs, NoArgs, RecentFramesArgs, Tool, ToolContext, ToolError,
-                               Toolbox, get_history, get_recent_frames, list_cameras_status, strict_schema)
+from vigia.agent.tools import (TOOLS, Args, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs, SegmentArgs, Tool,
+                               ToolContext, ToolError, Toolbox, assess_frame, get_history, get_recent_frames,
+                               list_cameras_status, segment_frame, strict_schema)
 from vigia.config import Camera, Sources, Volcano
 from vigia.ingest.store import FrameStore
 from vigia.prompts import Prompts
@@ -289,3 +293,78 @@ def test_a_camera_without_measurements_has_an_empty_history_and_a_hint(conn, tmp
 
     assert result["points"] == []
     assert "measure_track" in result["note"]
+
+
+DAY = datetime(2026, 10, 17, 22, 0, 5, tzinfo=timezone.utc)  # 12:00 HST: the night check stays out of the way
+
+
+def add_image(store, image, captured_at=DAY):
+    return store.add("kilauea-kp", encode(image), captured_at=captured_at, timestamp_source="ashcam",
+                     fetched_at=captured_at)
+
+
+def test_assess_frame_asks_muse_spark_about_a_frame_the_local_checks_passed(conn, store, tmp_path):
+    frame_id = add_image(store, sharp())
+    api = spark_api()
+    ctx = context(conn, tmp_path, client=make_client(api, conn), now=DAY + timedelta(minutes=5))
+
+    result = assess_frame(ctx, FrameArgs(frame_id=frame_id))
+
+    assert len(api.requests) == 1
+    assert (result["usable"], result["decided_by"], result["activity"]) == (True, "spark", "steaming")
+    assert result["description"] == ANSWER["description_en"]
+    assert result["printed_ptz"] == {"pan": 29.0, "tilt": 0.0, "zoom_raw": 29.0, "zoom": 1.0}
+    assert result["camera_id"] == "kilauea-kp" and result["captured_at"] == "2026-10-17T22:00:05Z"
+
+
+def test_assess_frame_reuses_a_muse_spark_verdict(conn, store, tmp_path):
+    frame_id = add_image(store, sharp())
+    api = spark_api()
+    ctx = context(conn, tmp_path, client=make_client(api, conn), now=DAY + timedelta(minutes=5))
+
+    assess_frame(ctx, FrameArgs(frame_id=frame_id))
+    again = assess_frame(ctx, FrameArgs(frame_id=frame_id))
+
+    assert len(api.requests) == 1 and again["decided_by"] == "spark"
+
+
+def test_assess_frame_does_not_ask_about_a_frame_the_local_checks_rejected(conn, store, tmp_path):
+    frame_id = add_image(store, flat(150))  # fog: no edges
+    api = spark_api()
+    ctx = context(conn, tmp_path, client=make_client(api, conn), now=DAY + timedelta(minutes=5))
+
+    result = assess_frame(ctx, FrameArgs(frame_id=frame_id))
+
+    assert api.requests == []
+    assert result["usable"] is False and "low_visibility" in result["reasons"]
+
+
+def test_a_frame_after_the_clock_does_not_exist_for_the_agent(conn, store, tmp_path):
+    frame_id = add_image(store, sharp())
+
+    with pytest.raises(ToolError, match=f"no frame {frame_id}"):
+        assess_frame(context(conn, tmp_path, now=DAY - timedelta(minutes=1)), FrameArgs(frame_id=frame_id))
+
+
+def test_segment_frame_returns_sams_objects_in_the_frames_pixels(conn, store, tmp_path):
+    # a 4096 px frame is sent at 2048 px, so SAM's boxes double on the way back
+    frame_id = store.add("kilauea-kp", frame_jpeg(1, size=(4096, 4096)), captured_at=T0 - timedelta(minutes=5),
+                         timestamp_source="ashcam", fetched_at=T0)
+    api = FakeApi(lambda r: httpx.Response(200, json=response_body("sam-3.1", IMAGE_OUTPUT, {"images_processed": 1})))
+
+    result = segment_frame(context(conn, tmp_path, client=make_client(api, conn)),
+                           SegmentArgs(frame_id=frame_id, phrase="steam"))
+
+    assert api.json_body()["input"][0]["content"][0] == {"type": "input_text", "text": "steam"}
+    assert (result["phrase"], result["objects_found"]) == ("steam", 2)
+    best = result["objects"][0]
+    assert best == {"object_id": "0", "score": 0.96, "box": [422, 456, 542, 510], "top_row": 456,
+                    "area_fraction": 0.00037}
+    assert result["objects"][1]["score"] == 0.5
+
+
+def test_segment_frame_needs_a_meta_client(conn, store, tmp_path):
+    frame_id = add_frame(conn, store, "kilauea-kp", -5)
+
+    with pytest.raises(ToolError, match="Meta client"):
+        segment_frame(context(conn, tmp_path), SegmentArgs(frame_id=frame_id, phrase="steam"))
