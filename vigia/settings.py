@@ -16,6 +16,7 @@ class Settings:
     data_dir: Path
     db_path: Path
     sources_path: Path
+    prompts_path: Path
     user_agent: str
     daily_budget_usd: float
 
@@ -27,6 +28,7 @@ class Settings:
             data_dir=data_dir,
             db_path=Path(os.getenv("DB_PATH", str(data_dir / "vigia.sqlite"))),
             sources_path=Path(os.getenv("SOURCES_PATH", "config/sources.yaml")),
+            prompts_path=Path(os.getenv("PROMPTS_PATH", "config/prompts.yaml")),
             user_agent=os.getenv("HTTP_USER_AGENT", DEFAULT_USER_AGENT),
             daily_budget_usd=float(os.getenv("DAILY_BUDGET_USD", "5.00")),
         )

@@ -1,6 +1,7 @@
 import json
 import shutil
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 import numpy as np
@@ -9,11 +10,12 @@ import pytest
 from conftest import make_jpeg
 from test_meta_client import make_client, response_body, sse
 from test_sam import OBJ_0
-from vigia import masks
+from vigia import db, masks
 from vigia.config import Camera
 from vigia.ingest.store import FrameStore
 from vigia.prompts import Prompts
-from vigia.tracking import detection_mask, track_window, unassessed_frames, usable_frames
+from vigia.settings import Settings
+from vigia.tracking import detection_mask, main, track_window, unassessed_frames, usable_frames
 
 T0 = datetime(2026, 10, 17, 18, 0, 2, tzinfo=timezone.utc)
 
@@ -237,3 +239,67 @@ def test_a_run_that_cannot_be_stored_is_reported_and_the_others_go_on(store, con
     assert len(report.errors) == 1 and "steam" in report.errors[0]
     assert conn.execute("SELECT COUNT(*) FROM tracking_runs WHERE phrase = 'steam'").fetchone()[0] == 0
     assert fake.calls()[-1] == ("DELETE", "/v1/files/file-1")
+
+
+SOURCES_YAML = """
+volcanoes:
+  kilauea:
+    name: Kīlauea
+    country: United States
+    official_agency: USGS Hawaiian Volcano Observatory
+    official_url: https://www.usgs.gov/volcanoes/kilauea
+    lat: 19.405
+    lon: -155.29
+cameras:
+  - id: kilauea-k2
+    name: K2cam
+    volcano: kilauea
+    url: https://example.org/K2cam/images/M.jpg
+    license: Public Domain
+    attribution: U.S. Geological Survey
+"""
+WINDOW = ["--start", "2026-10-17T18:00Z", "--end", "2026-10-17T19:00Z"]
+
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(SOURCES_YAML, encoding="utf-8")
+    monkeypatch.setenv("SOURCES_PATH", str(sources))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    return tmp_path / "data"
+
+
+def test_cli_refuses_a_window_under_the_billed_minimum(cli_env, capsys):
+    conn = db.connect(cli_env / "vigia.sqlite")
+    store = FrameStore(conn, cli_env)
+    add_frame(store, conn, 0)
+    add_frame(store, conn, 2, usable=None)
+    conn.close()
+
+    with pytest.raises(SystemExit):
+        main(["--camera", "kilauea-k2", *WINDOW])
+
+    err = capsys.readouterr().err
+    assert "1 usable frames" in err and "50" in err and "vigia-quality" in err
+
+
+def test_cli_refuses_an_unknown_camera(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--camera", "etna-1", *WINDOW])
+
+    assert "etna-1" in capsys.readouterr().err
+
+
+def test_cli_refuses_an_empty_window(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--camera", "kilauea-k2", "--start", "2026-10-17T19:00Z", "--end", "2026-10-17T18:00Z"])
+
+    assert "before" in capsys.readouterr().err
+
+
+def test_settings_name_the_prompts_file(monkeypatch):
+    monkeypatch.setenv("PROMPTS_PATH", "elsewhere/prompts.yaml")
+
+    assert Settings.from_env().prompts_path == Path("elsewhere/prompts.yaml")

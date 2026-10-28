@@ -26,6 +26,7 @@ dev = [
 ]
 
 [project.scripts]
+vigia-track = "vigia.tracking:main"
 vigia-ingest = "vigia.ingest.worker:main"
 vigia-backfill = "vigia.ingest.ashcam:main"
 vigia-quality = "vigia.gate:main"

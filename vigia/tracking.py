@@ -10,16 +10,20 @@ mask as COCO RLE (vigia.masks).
 Cost rule: SAM bills at least 50 frames per video request, so backfills send
 windows of 50 frames or more (vigia-track refuses fewer by default); live
 tracking uses one window per camera per hour.
+
+    vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sqlite3
 import tempfile
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -28,11 +32,13 @@ from typing import Any
 import numpy as np
 import openai
 
-from vigia import masks
-from vigia.config import Camera
+from vigia import db, masks
+from vigia.config import Camera, load_sources
 from vigia.meta.client import MetaClient, SamStreamError
+from vigia.meta.ledger import CostLedger
 from vigia.meta.sam import SamObject, SamParseError, fit_mask
-from vigia.prompts import Prompts, Target
+from vigia.prompts import Prompts, Target, load_prompts
+from vigia.settings import Settings
 from vigia.timeutil import parse_utc, to_iso, utcnow
 from vigia.video import VideoInfo, assemble, probe
 
@@ -248,3 +254,52 @@ def _to_frame_pixels(obj: SamObject, frame: WindowFrame, info: VideoInfo) -> tup
     left, top, right, bottom = obj.box
     box = (round(left * sx), round(top * sy), min(frame.width, round(right * sx)), min(frame.height, round(bottom * sy)))
     return box, fit_mask(obj.mask, box[3] - box[1], box[2] - box[0])
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Track plumes and fountains through a camera's usable frames "
+                                                 "with SAM 3.1 video.")
+    parser.add_argument("--camera", required=True, help="camera id from the sources file")
+    parser.add_argument("--start", type=parse_utc, required=True, help="first capture time, e.g. 2026-10-17T13:00Z")
+    parser.add_argument("--end", type=parse_utc, required=True, help="last capture time, e.g. 2026-10-17T19:30Z")
+    parser.add_argument("--target", action="append", choices=TARGETS,
+                        help="what to track; repeat it for several (default: all)")
+    parser.add_argument("--min-frames", type=int, default=MIN_BILLED_FRAMES,
+                        help=f"refuse windows with fewer usable frames (default {MIN_BILLED_FRAMES}: "
+                             "SAM bills that many per request anyway)")
+    parser.add_argument("--redo", action="store_true", help="replace runs of the same window and phrases")
+    args = parser.parse_args(argv)
+    if args.start >= args.end:
+        parser.error("--start must be before --end")
+
+    settings = Settings.from_env()
+    cameras = {camera.id: camera for camera in load_sources(settings.sources_path).cameras}
+    if args.camera not in cameras:
+        parser.error(f"unknown camera {args.camera!r} in {settings.sources_path}")
+    with closing(db.connect(settings.db_path)) as conn:
+        usable = len(usable_frames(conn, settings.data_dir, args.camera, args.start, args.end))
+        if usable < args.min_frames:
+            pending = unassessed_frames(conn, args.camera, args.start, args.end)
+            parser.error(f"{usable} usable frames in the window, fewer than {args.min_frames}: SAM bills "
+                         f"{MIN_BILLED_FRAMES} frames per request, so widen the window"
+                         + (f"; {pending} frames have no quality verdict yet, run vigia-quality first"
+                            if pending else ""))
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+        started = utcnow()
+        try:
+            report = track_window(client, conn, settings.data_dir, cameras[args.camera],
+                                  load_prompts(settings.prompts_path), args.start, args.end,
+                                  targets=args.target or TARGETS, redo=args.redo)
+        except ValueError as exc:
+            parser.error(str(exc))
+        cost = conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM api_calls WHERE purpose LIKE 'track:%' AND called_at >= ?",
+            (to_iso(started),),
+        ).fetchone()[0]
+    print(report.summary())
+    print(f"cost: ${cost:.4f}")
+
+
+if __name__ == "__main__":
+    main()
