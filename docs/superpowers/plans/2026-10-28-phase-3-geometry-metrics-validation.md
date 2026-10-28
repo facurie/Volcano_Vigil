@@ -2486,3 +2486,30 @@ git push origin main
   - the validation summary;
   - the test count;
   - next: Phase 4 (wind and agent tools).
+
+---
+
+## Execution notes (2026-10-28)
+
+Tasks 1–6 were run by `implementer` subagents, which read their task text from this file by line range, and checked by `reviewer` subagents. Tasks 1+2 and 3+4 each went to one implementer, with one commit per task. All four reviews approved, with no critical or important findings. The orchestrator ran Tasks 7–10. The suite went from 190 to 247 tests. Deviations from the steps above:
+
+1. **Monte Carlo convergence guard (`85e21ac`, after Task 5).**
+   - The Task 1–2 reviewer found that a draw the solver cannot fit comes back with a huge misfit and no error, which would corrupt every sigma.
+   - `sample_geometry` now raises when a sample's misfit exceeds 10 times the median plus 10 px.
+   - A first version compared against the nominal misfit. It refused legitimate draws: a vent pixel is 10–30 px off when the camera moves ±500 m. The median rule fixed that.
+   - It adds one test, so the suite has 247 tests, not 246.
+2. **Validation report (`7d49c31`, `6730fad`).**
+   - The summary heading counts only measured rows ("2 of 3 measured rows agree (4 not measured)").
+   - A fixed note explains the "no measurement" rows and the drifting-cloud plume tops.
+   - The script's docstring is ASCII, so `--help` prints on a cp1252 console.
+3. **Task 7.** KPcam's Moon references, re-derived with the committed script on the backfilled frames, are identical to the planning values: RMS 1.64 px, focal 3,509 ± 13 px, k1 −0.280.
+4. **Task 8 outcome: K2cam not calibrated.**
+   - 19 hourly frames from Oct 15–19 keep the episode 55 framing, but none shows a sharp sea horizon. A faint tonal boundary near row 1612 matches neither solution.
+   - The night frames of Oct 18 and 19 are black.
+   - The fountain rows read "no measurement", and Phase 8 lists the fix.
+5. **Results.**
+   - KPcam plume top: 6,951 ± 429 m at the peak (−9 %, z −1.6); 5,169 ± 205 m at 06:02 (−0 %).
+   - At 07:30: 4,416 ± 137 m, above HVO's "under 3,962 m". The mask's top is cloud downwind.
+   - End of fountaining: −1.0 min (K2) and −1.9 min (V1).
+   - Drift: 75 of 75 KPcam frames on the 224° side (SW).
+   - No Meta API money was spent.
