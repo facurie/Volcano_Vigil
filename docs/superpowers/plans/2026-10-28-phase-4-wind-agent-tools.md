@@ -3064,3 +3064,27 @@ Then update the `vigia-andino-status` memory.
 - **Order:** Tasks 1–2 (wind) → 3 (client) → 4–5 → 6–7 (tools) → 8–9 (loop and CLI) → 10. Tests of later tasks import helpers from earlier test files (`test_wind.open_meteo_day`, `test_meta_client.turn_body`, `test_agent_tools.context`), so the order matters.
 - **Subagents:** one `implementer` per group (1–2, 3, 4–5, 6–7, 8–9), each with one commit per task; a `reviewer` per group with its BASE and HEAD; findings go back to the same implementer by SendMessage. Task 10 is the orchestrator's.
 - **Money:** Tasks 1–9 call no paid API (every test uses fakes). Task 10 calls Open-Meteo (free) and runs one agent replay (budget $0.30, expected about $0.05–0.15).
+
+## Execution notes (2026-10-28)
+
+`implementer` subagents ran Tasks 1–9 in five groups (1+2, 3, 4+5, 6+7, 8+9), reading their task text from this file by line range. `reviewer` subagents checked each group. The orchestrator ran Task 10. The suite went from 247 to 342 tests. Deviations from the steps above:
+
+1. **Probe cost.** The planning probes cost $0.0082, not $0.0128: the first probe was counted twice. Phase 4 spent $0.095 in all (probes $0.0082, replays $0.0569 and $0.0302).
+2. **Wind (`a8ab9c1`, after the Task 1–2 review).**
+   - An older cached forecast now stands in when Open-Meteo fails.
+   - An unreadable time or value in the answer raises `WindUnavailable` instead of a bare `ValueError`.
+   - The docstring says the wind at the top agrees in 58 frames, not 59. The 59 came from an approximate scratch computation; `scripts/validate_ep55.py` gives 58.
+3. **Tools, reviews of Tasks 4–5 (`fdacf31`) and 6–7 (`c741525`).**
+   - Both reviews found clock clips that no test pinned: removing the bound in `list_cameras_status`, `compare_cameras` or the `measure_track` measurements query left the suite green. Tests now fail under each of these mutations.
+   - `ToolContext` rejects a naive clock.
+   - A spent run budget is returned to the model without a traceback.
+   - `get_history` gives no max or min for `drift_bearing`.
+   - `track_window` explains a stored window whose usable frames changed.
+   - Wind bearings wrap to 0 rather than 360, and `angle_deg` has one decimal.
+4. **Calibrated flag and abnormal ends (`c888d45`, after the first live run).**
+   - Replay run 1 listed K2cam as calibrated: its `ep55` preset has an image size and no references. A camera now counts as calibrated only if a two-sample solve of its view succeeds.
+   - From the Task 8–9 review: an answer whose status is neither `completed` nor `incomplete` is an error, and a run that ends on an exception is still closed as `error`. Before, a Ctrl-C during a long tool left it at `running`.
+5. **Results.**
+   - Replay run 2 (`vigia-agent --volcano kilauea --at 2026-10-17T05:00-10:00`) took 5 turns and $0.0302. It used KPcam, reused the stored track, and measured 6,951 ± 429 m at 14:55:05Z. The wind check: towards 151°, 73.3° from the side, consistent. Nothing after the clock appeared.
+   - The VALIDATION drift section now lists the layer-mean check: 74 of 75 frames consistent, median angle 39°.
+   - Details are in `docs/research/agent_ep55.md`.

@@ -3,8 +3,10 @@
 Run vigia-measure for kilauea-kp and kilauea-k2 over 2026-10-17
 13:00-19:30Z first. This script reads those measurements, the fountain
 tracks' last detections and the plume drift, and writes the comparison with
-errors and sigmas. The official values and their sources are in
-docs/research/episode55.md: they are compared with, never fitted.
+errors and sigmas. The plume drift is also checked against Open-Meteo's model
+wind (vigia.wind; the day is fetched once, then read from the database). The
+official values and their sources are in docs/research/episode55.md: they
+are compared with, never fitted.
 
     python scripts/validate_ep55.py
 """
@@ -16,11 +18,15 @@ from dataclasses import dataclass
 from datetime import timedelta, timezone
 from pathlib import Path
 
+import httpx
 import numpy as np
 
 from vigia import db
+from vigia.calibration import load_calibration
+from vigia.config import load_sources
 from vigia.settings import Settings
 from vigia.timeutil import parse_utc, utcnow
+from vigia.wind import WindService, compare_drift
 
 FT = 0.3048
 HST = timezone(timedelta(hours=-10))
@@ -73,8 +79,11 @@ def main(argv: list[str] | None = None) -> None:
     rows = [height_row(conn, check) for check in CHECKS]
     ends = end_rows(conn)
     drifts = drift_rows(conn)
+    with httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+        winds = wind_rows(conn, WindService(conn, http, load_sources(settings.sources_path)),
+                          load_calibration(settings.calibration_path).vents["kilauea"].elev_m)
     conn.close()
-    args.out.write_text(report(rows, ends, drifts), encoding="utf-8")
+    args.out.write_text(report(rows, ends, drifts, winds), encoding="utf-8")
     print(f"wrote {args.out}")
     for row in rows:
         print(" | ".join(row))
@@ -150,6 +159,31 @@ def drift_rows(conn) -> list[list[str]]:
     return rows
 
 
+def wind_rows(conn, winds: WindService, vent_elev: float) -> list[list[str]]:
+    """Each plume frame's drift side against the model wind: the mean between the vent and the frame's
+    plume top, and the wind at the top alone."""
+    rows = []
+    for camera_id in ("kilauea-kp", "kilauea-k2"):
+        pairs = conn.execute(
+            """SELECT side.captured_at, side.value, top.value FROM measurements side
+               JOIN measurements top ON top.detection_id = side.detection_id AND top.metric = 'top_altitude'
+               WHERE side.camera_id = ? AND side.metric = 'drift_bearing' AND side.captured_at BETWEEN ? AND ?
+               ORDER BY side.captured_at""", (camera_id, *EPISODE)).fetchall()
+        if not pairs:
+            continue
+        mean_checks, top_checks = [], []
+        for captured_at, side, top in pairs:
+            profile = winds.profile("kilauea", parse_utc(captured_at))
+            mean_checks.append(compare_drift(side, profile.layer_mean(vent_elev, top)))
+            top_checks.append(compare_drift(side, profile.at(top)))
+        angles = [check.angle_deg for check in mean_checks]
+        rows.append([camera_id, str(len(pairs)),
+                     f"{sum(check.consistent is True for check in mean_checks)} of {len(pairs)}",
+                     f"{np.median(angles):.0f}° ({min(angles):.0f}-{max(angles):.0f}°)",
+                     f"{sum(check.consistent is True for check in top_checks)} of {len(pairs)}"])
+    return rows
+
+
 def hst(utc: str, seconds: bool = False) -> str:
     return parse_utc(utc).astimezone(HST).strftime("%H:%M:%S" if seconds else "%H:%M")
 
@@ -159,7 +193,7 @@ def table(header: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines + ["| " + " | ".join(row) + " |" for row in rows])
 
 
-def report(rows: list[list[str]], ends: list[list[str]], drifts: list[list[str]]) -> str:
+def report(rows: list[list[str]], ends: list[list[str]], drifts: list[list[str]], winds: list[list[str]]) -> str:
     agree = sum(row[-1] == "yes" for row in rows)
     measured = sum(row[4] != "no measurement" for row in rows)
     return f"""# Validation: Kīlauea episode 55 (2026-10-17)
@@ -205,6 +239,18 @@ the bearing of that side: KPcam looks southeast (134°), so its right-hand side 
 exactly southwest. K2cam looks south (185°); its right-hand side points to 275°.
 
 {table(["Camera", "Frames", "Across-track side (frames)", "Most frames", "Consistent with SW"], drifts)}
+
+## Drift against the forecast wind
+
+Open-Meteo's model wind over the vent (Historical Forecast API, the hour nearest each frame, 850-300 hPa)
+against the side of the line of sight each frame's plume was measured on (`vigia/wind.py`). A plume drifts
+with the wind of the layer it fills, so the wind is averaged between the vent (1,080 m) and that frame's
+plume top. The angle is between the measured side and where that mean wind blows; under 90° the wind
+pushes the plume to the side it was seen on. The wind at the plume top alone is shown for contrast. The
+model has the low-level wind from the north to north-northwest, while HVO reported it from the northeast.
+
+{table(["Camera", "Frames", "Consistent with the layer-mean wind", "Angle to it: median (range)",
+        "Consistent with the wind at the top"], winds)}
 """
 
 

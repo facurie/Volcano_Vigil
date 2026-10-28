@@ -11,7 +11,7 @@ interpolated as east and north components, never as angles.
 A plume drifts with the wind of the layer it fills, so its drift is compared
 with the mean wind between the vent and its top (`WindProfile.layer_mean`),
 not with the wind at the top alone: on episode 55 the layer mean blows to the
-side KPcam saw the plume on in 74 of 75 frames, the wind at the top in 59.
+side KPcam saw the plume on in 74 of 75 frames, the wind at the top in 58.
 One camera measures only the side of its line of sight the plume sits on
 (vigia.metrics drift_bearing), so `compare_drift` gives the angle between that
 side and where the wind blows: under 90 degrees the wind pushes the plume to

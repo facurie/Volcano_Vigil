@@ -17,7 +17,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest` (247 passing at the end of Phase 3, session 4).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest` (342 passing at the end of Phase 4, session 5).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -101,6 +101,16 @@
   - End of fountaining: K2 −1.0 min and V1 −1.9 min against 09:03.
   - Drift: all 75 KPcam frames on the 224° side, consistent with HVO's SW.
   - Fountain heights are not measured yet.
+- **Wind** (`vigia/wind.py`, [VALIDATION.md](VALIDATION.md)):
+  - Open-Meteo levels 850–300 hPa. Hours older than 2 days come from the Historical Forecast API, the rest from the Forecast API. One UTC day is fetched at a time and cached in `wind_profiles`.
+  - The drift side is compared with the mean wind between the vent and the plume top. It agrees in 74 of 75 KPcam frames (median 39°); the wind at the top alone agrees in only 58.
+  - At 05:00 HST the layer blew from 331° towards 151° at 3.3 m/s, 73° from the measured side.
+  - The model has the low-level wind from N–NNW; HVO said NE.
+- **Agent** ([agent_ep55.md](research/agent_ep55.md)):
+  - Nine strict tools (`vigia/agent/tools.py`) see only data captured up to the agent's clock. Arguments are validated, and Muse Spark has sent the string "null" for null.
+  - The loop (`vigia/agent/loop.py`, `vigia-agent`) chains turns with `previous_response_id`. Guards: 12 turns, with a wrap-up message on the last, and $0.30 per run through a tagged `MetaClient`. The trace goes to `agent_runs` and `agent_steps`.
+  - The replay at 05:00 HST took 5 turns and $0.03–0.06. It picked KPcam, measured 6,951 ± 429 m and found the drift consistent with the wind.
+  - Tools plus `text.format` work in one request, which matters for Phase 5's bulletins.
 
 ## Target module map
 
@@ -121,8 +131,9 @@ vigia/
   geometry.py             camera model, view solver, heights     (exists, phase 3)
   calibration.py          calibration.yaml + Monte Carlo of the view (exists, phase 3)
   metrics.py              area, height, drift per detection; vigia-measure (exists, phase 3)
-  wind.py                 Open-Meteo winds aloft                 (phase 4)
-  agent/tools.py loop.py bulletin.py                             (phases 4–5)
+  wind.py                 Open-Meteo winds aloft; vigia-wind     (exists, phase 4)
+  agent/tools.py loop.py  nine tools + tool loop; vigia-agent    (exist, phase 4)
+  agent/bulletin.py                                              (phase 5)
   replay.py               episode replay on a simulated clock    (phase 5)
   web/app.py web/static/  FastAPI + dashboard                    (phase 6)
 config/prompts.yaml       SAM phrases per target/camera kind     (exists, phase 1)
@@ -190,14 +201,14 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 ## Phase 4: Fri Oct 30. Wind and agent tools
 
-- [ ] **`vigia/wind.py`** (check the current Open-Meteo docs via Context7 first):
+- [x] **`vigia/wind.py`** (check the current Open-Meteo docs via Context7 first):
   - Get wind speed and direction plus geopotential height at the 850/700/600/500/400/300 hPa levels over the vent.
   - For Oct 17, use Open-Meteo's historical forecast API.
-  - Interpolate to the plume height, then compare with the measured drift bearing (agreement in degrees).
-- [ ] **`vigia/agent/tools.py`:**
+  - Interpolate to the plume height, then compare with the measured drift bearing (agreement in degrees). Done as the mean wind between the vent and the plume top, which matches the drift side far better than the wind at the top alone.
+- [x] **`vigia/agent/tools.py`:** (`track_window` takes a target and uses the tuned phrases; `get_wind` takes `altitude_m` and an optional drift side; `get_history` also takes a target)
   - Strict JSON-schema tools: `list_cameras_status`, `get_recent_frames(camera, hours)`, `assess_frame(frame_id)`, `segment_frame(frame_id, phrase)`, `track_window(camera, start, end, phrase)`, `measure_track(track_id)`, `get_wind(volcano, height_m, time)`, `compare_cameras(volcano, time)`, `get_history(camera, metric, hours)`.
   - Validate tool arguments; the API does not guarantee them.
-- [ ] **`vigia/agent/loop.py`:**
+- [x] **`vigia/agent/loop.py`:**
   - Responses API loop with `previous_response_id`, resending tools and instructions on every turn, and parallel tool calls.
   - Max-turn and budget guards.
   - Persist the trace in `agent_runs` and `agent_steps`; it will be shown in the dashboard.
@@ -278,7 +289,7 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 ## Budget
 
-Spent so far: $0.82 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $0.91 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 
