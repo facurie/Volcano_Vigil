@@ -46,6 +46,27 @@ CREATE TABLE IF NOT EXISTS api_calls (
     error         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_api_calls_time ON api_calls (called_at);
+
+CREATE TABLE IF NOT EXISTS frame_quality (
+    frame_id          INTEGER PRIMARY KEY REFERENCES frames (id),
+    assessed_at       TEXT    NOT NULL,  -- UTC
+    usable            INTEGER NOT NULL,  -- 1 if measurements may use the frame
+    decided_by        TEXT    NOT NULL,  -- local | spark
+    local_decision    TEXT    NOT NULL,  -- pass | uncertain | reject
+    reasons           TEXT    NOT NULL,  -- JSON list: stale, frozen, night, low_visibility, timestamp_mismatch
+    sun_elevation_deg REAL,              -- NULL when the volcano has no position
+    brightness        REAL    NOT NULL,
+    contrast          REAL    NOT NULL,
+    edge_density      REAL    NOT NULL,
+    glow_fraction     REAL    NOT NULL,
+    change            REAL,              -- against the camera's previous frame; NULL for its first
+    spark_view        TEXT,              -- this and the columns below stay NULL unless Muse Spark was asked
+    spark_reason      TEXT,
+    printed_time_text TEXT,
+    printed_time      TEXT,              -- UTC, when the printed timestamp states its zone
+    printed_ptz       TEXT,              -- JSON {"pan", "tilt", "zoom_raw", "zoom"}
+    spark_answer      TEXT               -- the whole JSON answer
+);
 """
 
 
