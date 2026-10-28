@@ -6,9 +6,10 @@ timestamp at the top; the USGS logo and the PTZ readout at the bottom):
   levels per pixel, on a lightly blurred copy at most 512 px wide. Fog
   flattens everything.
 - glow fraction: the share of a block-averaged copy (at most 256 px wide)
-  that is warm and bright (orange lava) or nearly white (lava that saturates
-  the sensor, or a camera in monochrome night mode). Averaging leaves out
-  small lights such as stars and path lamps.
+  covered by 2x2 squares of blocks that are warm and bright (orange lava) or
+  nearly white (lava that saturates the sensor, or a camera in monochrome
+  night mode). Lone bright blocks, such as stars and K2cam's path lamps, do
+  not count.
 - fingerprint: a block-averaged luminance copy at most 128 px wide. Two
   consecutive frames of a frozen camera share it, even when the printed time
   changes.
@@ -44,7 +45,7 @@ class ImageStats:
     brightness: float     # mean luminance, 0-255
     contrast: float       # standard deviation of luminance
     edge_density: float   # share of pixels on an edge
-    glow_fraction: float  # share of blocks that look incandescent
+    glow_fraction: float  # share of the scene in patches that look incandescent
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ class Thresholds:
     stale_after: timedelta = timedelta(minutes=30)
     frozen_change: float = 0.15  # re-encoding one image changes it by 0.005-0.16; real consecutive frames by 0.24+
     night_sun_deg: float = -6.0  # civil twilight
-    night_glow: float = 0.0005   # episode 55 nights: 0.16 % and up; quiet nights: 0 %, or a vent glow up to 0.2 %
+    night_glow: float = 0.0005   # episode 55 nights: 0.09 % and up; quiet nights: 0 %, or a vent glow up to 0.07 % (K2)
     fog_edges: float = 0.005     # dense fog: 0.000-0.004
     clear_edges: float = 0.015   # in between, the frame is hazy and Muse Spark decides
 
@@ -71,13 +72,13 @@ def measure(image: Image.Image) -> ImageStats:
     rows, cols = np.gradient(luminance)
     blocks = np.asarray(_reduce(scene, _GLOW_SIDE), dtype=np.int16)
     red, green, blue = blocks[..., 0], blocks[..., 1], blocks[..., 2]
-    warm = (red >= 150) & (red - blue >= 60) & (red >= green)
-    white_hot = blocks.min(axis=-1) >= 200
+    hot = ((red >= 150) & (red - blue >= 60) & (red >= green)) | (blocks.min(axis=-1) >= 200)
+    patches = hot[:-1, :-1] & hot[1:, :-1] & hot[:-1, 1:] & hot[1:, 1:]  # 2x2 squares of hot blocks
     return ImageStats(
         brightness=float(luminance.mean()),
         contrast=float(luminance.std()),
         edge_density=float((np.hypot(rows, cols) > _EDGE_STEP).mean()),
-        glow_fraction=float((warm | white_hot).mean()),
+        glow_fraction=float(patches.mean()),
     )
 
 

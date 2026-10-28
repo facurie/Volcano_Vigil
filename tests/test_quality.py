@@ -70,6 +70,15 @@ def test_dim_light_is_not_glow():
     assert measure(dark_with_square((40, 60, 200))).glow_fraction == 0.0
 
 
+def test_small_lights_in_the_dark_are_not_glow():
+    image = Image.new("RGB", (320, 240), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    for x in range(20, 300, 24):  # a row of path lamps, each the size of one measuring block
+        draw.rectangle((x, 180, x + 1, 181), fill=(255, 230, 150))
+
+    assert measure(image).glow_fraction == 0.0
+
+
 def test_difference_is_zero_for_the_same_scene_under_a_new_timestamp():
     before = checkerboard()
     after = before.copy()
