@@ -100,3 +100,35 @@ def test_publish_writes_the_pages_where_the_overlays_resolve(tmp_path):
     assert sorted(path.name for path in folder.iterdir()) == ["bulletin.en.md", "bulletin.es.md", "bulletin.html"]
     assert "](../../bulletins/run3/frame29_plume.jpg)" in (folder / "bulletin.en.md").read_text(encoding="utf-8")
     assert 'src="../../bulletins/run3/frame29_plume.jpg"' in (folder / "bulletin.html").read_text(encoding="utf-8")
+
+
+HOSTILE = '<b>&"x" onerror="alert(1)'
+ESCAPED = "&lt;b&gt;&amp;&quot;x&quot; onerror=&quot;alert(1)"
+
+
+def test_every_text_the_model_wrote_is_escaped_in_the_html():
+    measured = dict(camera_id=HOSTILE, target="plume", frame_ids=[29])
+    page = to_html(bulletin(
+        body_en=HOSTILE, body_es=HOSTILE, notes=[HOSTILE],
+        measurements=[CitedMeasurement(**measured, metric="top_altitude", value=6951, sigma=429, unit="m",
+                                       verified=True)],
+        evidence=[Evidence(frame_id=29, target="plume", caption_en=HOSTILE, caption_es=HOSTILE,
+                           camera_id="kilauea-kp", captured_at="2026-10-17T14:55:05Z",
+                           overlay="bulletins/run3/frame29_plume.jpg")]))
+
+    assert "<b>" not in page and 'onerror="alert' not in page
+    assert f"<p>{ESCAPED}</p>" in page
+    assert f'alt="{ESCAPED}"' in page
+    assert f"<figcaption>{ESCAPED} (kilauea-kp," in page
+    assert f"<td>{ESCAPED}</td>" in page
+    assert f"<li>{ESCAPED}</li>" in page
+
+
+def test_a_pipe_or_a_newline_in_a_cell_does_not_break_the_markdown_table():
+    measured = CitedMeasurement(camera_id="a|b\nc", target="plume", metric="area", value=10, sigma=1, unit="m2",
+                                verified=True, frame_ids=[29])
+
+    text = to_markdown(bulletin(measurements=[measured]), "en")
+
+    row = next(line for line in text.splitlines() if "a\\|b c" in line)
+    assert row.count("|") - row.count("\\|") == 7

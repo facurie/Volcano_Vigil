@@ -41,6 +41,10 @@ DISCLAIMER_ES = ("Lectura automática y experimental de cámaras públicas hecha
                  "alertas ni los avisos oficiales. Para el estado oficial de {name}, consulte a {agency}: {url}")
 
 
+class EvidenceError(Exception):
+    """An evidence frame cannot be drawn; the message says why."""
+
+
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -174,7 +178,7 @@ def run_wind(conn: sqlite3.Connection, run_id: int) -> dict[str, Any] | None:
 def draw_evidence(conn: sqlite3.Connection, data_dir: Path, folder: Path, item: DraftEvidence,
                   clock: datetime) -> Evidence | None:
     """Draw the target's masks on the evidence frame into `folder` (inside the data dir); None if no such frame
-    was captured by the clock."""
+    was captured by the clock. Raises EvidenceError if the frame's image cannot be read."""
     frame = conn.execute("SELECT * FROM frames WHERE id = ? AND captured_at <= ?",
                          (item.frame_id, to_iso(clock))).fetchone()
     if frame is None:
@@ -183,8 +187,11 @@ def draw_evidence(conn: sqlite3.Connection, data_dir: Path, folder: Path, item: 
         """SELECT d.*, r.phrase FROM detections d JOIN tracks t ON t.id = d.track_id
            JOIN tracking_runs r ON r.id = t.run_id WHERE d.frame_id = ? AND r.target = ? ORDER BY d.id""",
         (frame["id"], item.target)).fetchall()
-    with Image.open(data_dir / frame["path"]) as source:
-        image = source.convert("RGB")
+    try:
+        with Image.open(data_dir / frame["path"]) as source:
+            image = source.convert("RGB")
+    except OSError as error:
+        raise EvidenceError(f"evidence frame {item.frame_id} left out: its image could not be read") from error
     scale = min(1.0, OVERLAY_WIDTH / image.width)
     size = (round(image.width * scale), round(image.height * scale))
     if scale < 1:
@@ -195,11 +202,12 @@ def draw_evidence(conn: sqlite3.Connection, data_dir: Path, folder: Path, item: 
         if scale < 1:
             mask = np.asarray(Image.fromarray(mask).resize(size, Image.Resampling.NEAREST), dtype=bool)
         layers.append(Layer(mask, COLORS[item.target], f"{item.target}: {detection['phrase']}"))
-    folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"frame{frame['id']}_{item.target}.jpg"
+    overlay = path.relative_to(data_dir).as_posix()  # before writing: a folder outside the data dir leaves no file
+    folder.mkdir(parents=True, exist_ok=True)
     draw_layers(image, layers).save(path, quality=85)
     return Evidence(**item.model_dump(), camera_id=frame["camera_id"], captured_at=frame["captured_at"],
-                    overlay=path.relative_to(data_dir).as_posix())
+                    overlay=overlay)
 
 
 def build_bulletin(ctx: ToolContext, volcano_id: str, run_id: int, draft: BulletinDraft, out_dir: Path, *,
@@ -210,7 +218,11 @@ def build_bulletin(ctx: ToolContext, volcano_id: str, run_id: int, draft: Bullet
     measurements = [verify(ctx.conn, m, ctx.now) for m in draft.measurements]
     evidence, notes = [], []
     for item in draft.evidence[:EVIDENCE_MAX]:
-        drawn = draw_evidence(ctx.conn, ctx.data_dir, out_dir / f"run{run_id}", item, ctx.now)
+        try:
+            drawn = draw_evidence(ctx.conn, ctx.data_dir, out_dir / f"run{run_id}", item, ctx.now)
+        except EvidenceError as error:
+            notes.append(str(error))
+            continue
         if drawn is None:
             notes.append(f"evidence frame {item.frame_id} left out: no such frame captured by {to_iso(ctx.now)}")
         else:

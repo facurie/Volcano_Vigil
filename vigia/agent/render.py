@@ -109,6 +109,11 @@ def _rows(b: Bulletin, lang: Lang) -> list[list[str]]:
     return rows
 
 
+def _cell(text: str) -> str:
+    """A Markdown table cell: a pipe or a line break in it would break the table."""
+    return " ".join(text.replace("|", "\\|").split())
+
+
 def to_markdown(b: Bulletin, lang: Lang, *, image_root: str = "") -> str:
     """The bulletin in one language; each evidence image links to image_root plus its data-dir path."""
     headline, body, disclaimer = _texts(b, lang)
@@ -119,7 +124,7 @@ def to_markdown(b: Bulletin, lang: Lang, *, image_root: str = "") -> str:
     if b.measurements:
         lines += [f"## {_pick(WORDS['measurements'], lang)}", "", "| " + " | ".join(_header(lang)) + " |",
                   "|---|---|---|---|---|---|"]
-        lines += ["| " + " | ".join(row) + " |" for row in _rows(b, lang)] + [""]
+        lines += ["| " + " | ".join(map(_cell, row)) + " |" for row in _rows(b, lang)] + [""]
     if b.wind:
         lines += [f"## {_pick(WORDS['wind'], lang)}", "", wind_text(b, lang), ""]
     if b.evidence:

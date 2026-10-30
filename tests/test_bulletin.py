@@ -116,6 +116,39 @@ def test_a_measurement_captured_after_the_clock_supports_nothing(conn, store, tm
     assert not verify(conn, quoted(frame_id), T0).verified
 
 
+def stored_measurement(conn, store, metric, value, sigma, unit, minutes=-5):
+    frame_id = add_frame(conn, store, "kilauea-kp", minutes)
+    track_id = add_track(conn, add_run(conn, "kilauea-kp", "plume", [frame_id], phrase="steam"), [frame_id])
+    add_measurement(conn, frame_id, metric, value, sigma, detection_id=detection_ids(conn, track_id)[0], unit=unit)
+    return frame_id
+
+
+@pytest.mark.parametrize("metric, unit, stored, quoted_value, stored_sigma, quoted_sigma, verified", [
+    ("top_altitude", "m", 6900, 6951, 429, 429, True),      # 0.7 %: inside 1 %
+    ("top_altitude", "m", 6800, 6951, 429, 429, False),     # 2.2 %: outside
+    ("top_altitude", "m", 6951, 6951, 429, 440, False),     # the value is right, the sigma is 2.6 % off
+    ("drift_bearing", "deg", 5.05, 5.0, 2.0, 2.0, True),    # 0.05 deg: inside the 0.1 deg term
+    ("drift_bearing", "deg", 5.2, 5.0, 2.0, 2.0, False),    # 0.2 deg: outside it
+    ("drift_bearing", "deg", 5.0, 5.0, 2.0, 2.3, False),    # the sigma alone is off
+    ("area", "m2", 100000, 100800, 5000, 5000, True),       # 0.8 %
+    ("area", "m2", 100000, 102000, 5000, 5000, False),      # 2 %
+])
+def test_a_quoted_number_is_verified_within_rounding_and_one_percent(
+        conn, store, metric, unit, stored, quoted_value, stored_sigma, quoted_sigma, verified):
+    frame_id = stored_measurement(conn, store, metric, stored, stored_sigma, unit)
+
+    cited = verify(conn, quoted(frame_id, metric=metric, unit=unit, value=quoted_value, sigma=quoted_sigma), T0)
+
+    assert cited.verified is verified
+
+
+def test_a_measurement_and_an_evidence_frame_captured_exactly_at_the_clock_are_used(conn, store, tmp_path):
+    frame_id = plume_frame(conn, store, minutes=0)
+
+    assert verify(conn, quoted(frame_id), T0).verified
+    assert draw_evidence(conn, tmp_path, tmp_path / "bulletins" / "run1", shown(frame_id), T0) is not None
+
+
 def test_the_wind_check_is_the_runs_last_get_wind_result_with_a_drift(conn):
     checked = {"volcano": "kilauea", "model_hour": "2026-10-17T15:00:00Z", "layer_mean": {"toward_deg": 151},
                "drift_check": {"angle_deg": 73.3, "consistent": True}, "levels": [{"pressure_hpa": 850}]}
@@ -128,6 +161,19 @@ def test_the_wind_check_is_the_runs_last_get_wind_result_with_a_drift(conn):
 
     assert run_wind(conn, 7) == {key: value for key, value in checked.items() if key != "levels"}
     assert run_wind(conn, 8) is None
+
+
+def test_run_wind_picks_the_last_successful_result(conn):
+    def wind(angle):
+        return {"volcano": "kilauea", "drift_check": {"angle_deg": angle, "consistent": True}}
+    steps = [(wind(10), 1), (wind(20), 1), (wind(30), 0)]
+    with conn:
+        for seq, (result, ok) in enumerate(steps, 1):
+            conn.execute("INSERT INTO agent_steps (run_id, seq, turn, kind, created_at, tool_name, result, ok) "
+                         "VALUES (7, ?, 1, 'tool', '2026-10-28T00:00:00Z', 'get_wind', ?, ?)",
+                         (seq, json.dumps(result), ok))
+
+    assert run_wind(conn, 7) == wind(20)
 
 
 def test_an_evidence_frame_is_drawn_with_its_targets_masks(conn, store, tmp_path):
@@ -186,6 +232,28 @@ def test_evidence_after_the_clock_or_beyond_three_frames_is_left_out(conn, store
     assert [e.frame_id for e in bulletin.evidence] == [early, early]
     assert bulletin.notes == [f"evidence frame {late} left out: no such frame captured by 2026-10-17T15:00:00Z",
                               "1 evidence frame(s) beyond 3 left out"]
+
+
+def test_evidence_whose_image_cannot_be_read_is_left_out_with_its_own_note(conn, store, tmp_path):
+    gone, kept = plume_frame(conn, store, minutes=-6), plume_frame(conn, store, minutes=-5)
+    (tmp_path / conn.execute("SELECT path FROM frames WHERE id = ?", (gone,)).fetchone()["path"]).unlink()
+    draft = BulletinDraft.model_validate({**DRAFT, "measurements": [],
+                                          "evidence": [shown(gone).model_dump(), shown(kept).model_dump()]})
+
+    bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
+
+    assert [e.frame_id for e in bulletin.evidence] == [kept]
+    assert bulletin.notes == [f"evidence frame {gone} left out: its image could not be read"]
+
+
+def test_an_evidence_folder_outside_the_data_dir_fails_without_writing_a_file(conn, store, tmp_path):
+    frame_id = plume_frame(conn, store)
+    outside = tmp_path.parent / f"{tmp_path.name}_outside"
+
+    with pytest.raises(ValueError):
+        draw_evidence(conn, tmp_path, outside, shown(frame_id), T0)
+
+    assert not outside.exists()
 
 
 def test_a_stored_bulletin_loads_back_with_its_id(conn, tmp_path):
