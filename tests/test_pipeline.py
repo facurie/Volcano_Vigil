@@ -1,3 +1,4 @@
+import dataclasses
 import subprocess
 from datetime import datetime, timedelta, timezone
 
@@ -6,10 +7,12 @@ import openai
 import pytest
 
 from test_agent_loop import SOURCES_YAML
-from test_agent_tools import T0, add_frame, add_run, context, store  # store is a fixture
+from test_agent_tools import SIZE, T0, add_frame, add_run, context, store  # store is a fixture
+from test_metrics import kp_calibration
 from vigia import tracking
 from vigia.agent.bulletin import Written
 from vigia.agent.loop import AgentRun
+from vigia.calibration import CameraCalibration, Preset, Site
 from vigia.meta.ledger import BudgetExceeded
 from vigia.metrics import MeasureReport
 from vigia.pipeline import Pipeline, PipelineConfig, floor_time, main
@@ -144,6 +147,25 @@ def test_only_calibrated_cameras_are_measured(conn, store, tmp_path, fakes):
 
     assert fakes.measured == [("kilauea-kp", START, START + H - timedelta(seconds=1))]  # only KPcam is calibrated
     assert report.measured == 2
+
+
+def test_a_camera_whose_preset_cannot_fix_a_view_is_not_measured(conn, store, tmp_path, fakes):
+    # K2cam's episode 55 preset has an image size but no references (docs/research/calibration_ep55.md)
+    calibration = kp_calibration()
+    k2 = CameraCalibration(volcano="kilauea", position=Site(lat=19.42, lon=-155.2889, elev_m=1245),
+                           presets=[Preset(name="ep55", valid_from="2026-10-17T00:00:00Z", image_size=SIZE)])
+    base = dataclasses.replace(context(conn, tmp_path, client="a Meta client", now=START), calibration=(
+        calibration.model_copy(update={"cameras": {**calibration.cameras, "kilauea-k2": k2}})))
+    runner = Pipeline(base, PipelineConfig(volcano="kilauea", cameras=("kilauea-kp", "kilauea-k2"),
+                                           bulletin_dir=tmp_path / "bulletins"),
+                      track=fakes.track, measure=fakes.measure, write=fakes.write)
+    frames(conn, store, "kilauea-kp", 0)
+    frames(conn, store, "kilauea-k2", 0)
+
+    report = runner.step(START + H + 5 * M)
+
+    assert [camera for camera, _, _ in fakes.measured] == ["kilauea-kp"]
+    assert not any("cannot fix a view" in error for error in report.errors)
 
 
 def test_the_agent_writes_at_each_full_hour_after_the_start(conn, tmp_path, fakes):

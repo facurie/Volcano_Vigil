@@ -40,7 +40,7 @@ import openai
 from vigia import db, tracking
 from vigia.agent.bulletin import write_bulletin
 from vigia.agent.loop import BUDGET_USD, context_from_settings
-from vigia.agent.tools import ToolContext
+from vigia.agent.tools import ToolContext, calibrated
 from vigia.config import Camera, load_sources
 from vigia.gate import QualityGate, SparkMode
 from vigia.meta.client import MetaClient
@@ -193,7 +193,7 @@ class Pipeline:
                     "camera_id": camera.id, "start": to_iso(start), "end": to_iso(end), "frames": result.frames,
                     "runs": [{"run_id": run.run_id, "target": run.target, "phrase": run.phrase, "tracks": run.tracks,
                               "detections": run.detections} for run in result.runs]})
-                if result.runs and camera.id in ctx.calibration.cameras:
+                if result.runs and calibrated(ctx, camera.id, start):
                     try:
                         measured = self._measure(ctx.conn, ctx.calibration, camera.id, start, end)
                     except ValueError as exc:
