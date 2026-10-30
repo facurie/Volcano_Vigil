@@ -303,6 +303,15 @@ def test_frames_older_than_the_lookback_are_not_assessed(conn, store, tmp_path, 
     assert conn.execute("SELECT COUNT(*) FROM frame_quality").fetchone()[0] == 1
 
 
+def test_frames_after_the_clock_are_not_assessed(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 1, count=2, every=30, usable=None)  # 14:00Z and 14:30Z
+
+    report = pipeline(conn, tmp_path, fakes, client=None).step(START + H + 15 * M)
+
+    assert report.assessed == 1
+    assert conn.execute("SELECT COUNT(*) FROM frame_quality").fetchone()[0] == 1
+
+
 @pytest.fixture
 def cli_env(monkeypatch, tmp_path):
     sources = tmp_path / "sources.yaml"
