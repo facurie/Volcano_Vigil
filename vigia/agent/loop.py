@@ -34,7 +34,7 @@ import openai
 from vigia import db
 from vigia.agent.tools import Tool, Toolbox, ToolContext
 from vigia.calibration import load_calibration
-from vigia.config import Volcano, load_sources
+from vigia.config import Sources, Volcano, load_sources
 from vigia.meta.client import MetaClient
 from vigia.meta.ledger import BudgetExceeded, CostLedger
 from vigia.prompts import load_prompts
@@ -65,8 +65,9 @@ drift_bearing; it compares that side with the mean wind between the vent and the
 - Call tools that do not depend on each other in the same turn.
 - Quote only numbers the tools returned, with their uncertainty; never invent one.
 
-Finish with a short report in English: what each camera shows now; the measurements with ± sigma, units, \
-capture times and frame ids; the drift against the wind; and what you could not measure and why."""
+{finish}"""
+REPORT = ("Finish with a short report in English: what each camera shows now; the measurements with ± sigma, units, "
+          "capture times and frame ids; the drift against the wind; and what you could not measure and why.")
 WRAP_UP = "No turns left: write your final report now with what you have, without calling tools."
 DEFAULT_TASK = ("Check {name} now: which cameras show activity? Measure the plume and any lava fountain you can, "
                 "compare the plume's drift with the forecast wind, and report.")
@@ -82,22 +83,27 @@ class AgentRun:
     error: str | None
 
 
-def instructions(volcano: Volcano, volcano_id: str, now: datetime) -> str:
+def instructions(volcano: Volcano, volcano_id: str, now: datetime, finish: str = REPORT) -> str:
     local = ""
     if volcano.utc_offset_hours is not None:
         offset = timedelta(hours=volcano.utc_offset_hours)
         local = f" ({(now + offset):%Y-%m-%d %H:%M} local time, UTC{volcano.utc_offset_hours:+g})"
     return INSTRUCTIONS.format(name=volcano.name, country=volcano.country, agency=volcano.official_agency,
                                url=volcano.official_url, now=f"{now.astimezone(timezone.utc):%Y-%m-%d %H:%M}",
-                               local=local, example=to_iso(now), volcano_id=volcano_id)
+                               local=local, example=to_iso(now), volcano_id=volcano_id, finish=finish)
 
 
 def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, *, max_turns: int = MAX_TURNS,
               budget_usd: float = BUDGET_USD, effort: str = "medium", tools: Sequence[Tool] | None = None,
+              finish: str = REPORT, text_format: dict[str, Any] | None = None,
               wall_clock: Callable[[], datetime] = utcnow) -> AgentRun:
-    """Run the agent on one task at the context's clock and store its trace."""
+    """Run the agent on one task at the context's clock and store its trace.
+
+    `finish` is the instructions' closing request; with `text_format` (a Responses text.format) every turn asks
+    for the final answer in that format.
+    """
     conn = ctx.conn
-    text = instructions(ctx.sources.volcanoes[volcano_id], volcano_id, ctx.now)
+    text = instructions(ctx.sources.volcanoes[volcano_id], volcano_id, ctx.now, finish)
     with conn:
         run_id = conn.execute(
             "INSERT INTO agent_runs (started_at, clock, volcano, task, model, status) VALUES (?, ?, ?, ?, ?, 'running')",
@@ -125,7 +131,8 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
             started = time.perf_counter()
             try:
                 reply = job.respond(input=pending, tools=definitions, instructions=text, purpose="turn",
-                                    previous_response_id=previous, effort=effort, context_tokens=context_tokens)
+                                    previous_response_id=previous, effort=effort, context_tokens=context_tokens,
+                                    text_format=text_format)
             except BudgetExceeded as exc:
                 status, error = "budget", str(exc)
                 break
@@ -196,6 +203,16 @@ def _short(text: str, limit: int = 160) -> str:
     return text if len(text) <= limit else text[:limit - 3] + "..."
 
 
+def context_from_settings(settings: Settings, conn, http: httpx.Client, now: datetime,
+                          client: MetaClient | None = None, sources: Sources | None = None) -> ToolContext:
+    """The tools' context from the config files the settings name, at clock `now`."""
+    sources = sources or load_sources(settings.sources_path)
+    return ToolContext(conn=conn, data_dir=settings.data_dir, sources=sources,
+                       calibration=load_calibration(settings.calibration_path),
+                       prompts=load_prompts(settings.prompts_path), winds=WindService(conn, http, sources), now=now,
+                       client=client)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run the Muse Spark agent on a volcano at a time: now, or a past "
                                                  "time to replay it.")
@@ -220,10 +237,7 @@ def main(argv: list[str] | None = None) -> None:
     task = args.task or DEFAULT_TASK.format(name=sources.volcanoes[args.volcano].name)
     with closing(db.connect(settings.db_path)) as conn, \
             httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
-        ctx = ToolContext(conn=conn, data_dir=settings.data_dir, sources=sources,
-                          calibration=load_calibration(settings.calibration_path),
-                          prompts=load_prompts(settings.prompts_path), winds=WindService(conn, http, sources),
-                          now=args.at or utcnow())
+        ctx = context_from_settings(settings, conn, http, args.at or utcnow(), sources=sources)
         client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
         result = run_agent(client, ctx, args.volcano, task, max_turns=args.max_turns, budget_usd=args.budget,
                            effort=args.effort)

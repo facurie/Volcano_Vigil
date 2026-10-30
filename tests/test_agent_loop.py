@@ -8,7 +8,7 @@ from conftest import NOW, make_jpeg
 from test_agent_tools import SOURCES, T0, context
 from test_meta_client import make_client, response_body, turn_body
 from test_sam import IMAGE_OUTPUT
-from vigia.agent.loop import WRAP_UP, instructions, main, run_agent, trace
+from vigia.agent.loop import REPORT, WRAP_UP, context_from_settings, instructions, main, run_agent, trace
 from vigia.agent.tools import Args, NoArgs, Tool
 from vigia.config import Volcano
 from vigia.meta.client import MetaClient
@@ -225,3 +225,37 @@ def test_an_unexpected_failure_still_closes_the_run(conn, tmp_path):
     row = conn.execute("SELECT status, error, finished_at FROM agent_runs").fetchone()
     assert (row["status"], row["finished_at"]) == ("error", to_iso(NOW))
     assert "TypeError" in row["error"]
+
+
+FORMAT = {"type": "json_schema", "name": "answer", "strict": True,
+          "schema": {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"],
+                     "additionalProperties": False}}
+
+
+def test_a_run_can_ask_for_its_final_answer_in_a_format(conn, tmp_path):
+    api = Script(turn_body([("echo", '{"n": 1}')], text="Checking.", rid="resp_1"), turn_body([], text='{"n": 1}'))
+
+    result = run(conn, tmp_path, api, finish="Answer with n as JSON.", text_format=FORMAT)
+
+    assert (result.status, result.final_text) == ("done", '{"n": 1}')
+    assert [request["text"] for request in api.requests] == [{"format": FORMAT}] * 2
+    assert all(request["instructions"].endswith("\n\nAnswer with n as JSON.") for request in api.requests)
+
+
+def test_by_default_a_run_asks_for_a_free_text_report(conn, tmp_path):
+    api = Script(turn_body([], text="All quiet."))
+
+    run(conn, tmp_path, api)
+
+    assert "text" not in api.requests[0]
+    assert api.requests[0]["instructions"].endswith("\n\n" + REPORT)
+
+
+def test_context_from_settings_reads_the_config_files(cli_env, conn):
+    from vigia.settings import Settings
+    settings = Settings.from_env()
+
+    ctx = context_from_settings(settings, conn, httpx.Client(), T0)
+
+    assert (ctx.now, ctx.client, ctx.data_dir) == (T0, None, settings.data_dir)
+    assert list(ctx.sources.volcanoes) == ["kilauea"]
