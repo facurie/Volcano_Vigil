@@ -239,3 +239,50 @@ def test_a_tagged_budget_refuses_a_call_before_sending_it(conn):
 def test_an_untagged_client_has_no_job_spend(conn):
     with pytest.raises(RuntimeError, match="tagged"):
         make_client(FakeApi(lambda r: httpx.Response(500)), conn).tag_spent()
+
+
+FORMAT = {"type": "json_schema", "name": "answer", "strict": True,
+          "schema": {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"],
+                     "additionalProperties": False}}
+
+
+def test_respond_can_shape_the_final_answer_with_a_text_format(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=turn_body([], text='{"n": 1}')))
+
+    turn = make_client(api, conn).respond(input=[{"role": "user", "content": "n?"}], tools=[TOOL],
+                                          instructions="Answer.", purpose="turn", text_format=FORMAT)
+
+    assert api.json_body()["text"] == {"format": FORMAT}
+    assert turn.text == '{"n": 1}'
+
+
+def test_respond_without_a_text_format_leaves_the_answer_free(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=turn_body([], text="Done.")))
+
+    make_client(api, conn).respond(input=[{"role": "user", "content": "Go."}], tools=[TOOL], instructions="Go.",
+                                   purpose="turn")
+
+    assert "text" not in api.json_body()
+
+
+def test_ask_json_sends_uploaded_videos_by_file_id(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=response_body("muse-spark-1.3", '{"n": 3}', SPARK_USAGE)))
+
+    answer = make_client(api, conn).ask_json(prompt="How many phases?", videos=["file-1"], schema_name="answer",
+                                             schema=FORMAT["schema"], purpose="phases")
+
+    assert answer == {"n": 3}
+    assert api.json_body()["input"][0]["content"] == [{"type": "input_text", "text": "How many phases?"},
+                                                     {"type": "input_video", "file_id": "file-1"}]
+
+
+def test_a_video_counts_in_the_budget_estimate_before_the_call(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=response_body("muse-spark-1.3", '{"n": 3}', SPARK_USAGE)))
+    client = make_client(api, conn, budget=0.06)
+
+    client.ask_json(prompt="n?", schema_name="answer", schema=FORMAT["schema"], purpose="text")  # estimated ~$0.017
+    with pytest.raises(BudgetExceeded):  # 40,000 video tokens and 4,000 output tokens: ~$0.067
+        client.ask_json(prompt="n?", videos=["file-1"], schema_name="answer", schema=FORMAT["schema"],
+                        purpose="video")
+
+    assert len(api.requests) == 1

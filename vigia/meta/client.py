@@ -28,6 +28,7 @@ SAM_MODEL = "sam-3.1"
 # Upper-bound guesses for the pre-call budget check (docs: ~1,300-1,500
 # tokens for a ~1280 px image; SAM bills at least 50 frames per video).
 _IMAGE_TOKENS_ESTIMATE = 1600
+_VIDEO_TOKENS_ESTIMATE = 40_000  # a 195-frame 1280x720 timelapse took 25,408 input tokens (Phase 5 probe)
 _PROMPT_OVERHEAD_TOKENS = 200
 _SAM_MIN_BILLED_FRAMES = 50
 
@@ -116,13 +117,16 @@ class MetaClient:
         schema: dict[str, Any],
         purpose: str,
         images: Sequence[bytes] = (),
+        videos: Sequence[str] = (),
         instructions: str | None = None,
         effort: str = "low",
         max_output_tokens: int = 4000,
     ) -> dict[str, Any]:
-        """Ask Muse Spark a question about zero or more images; the answer follows `schema`."""
+        """Ask Muse Spark a question about zero or more images and videos (Files API ids, from upload_video);
+        the answer follows `schema`."""
         content = [{"type": "input_text", "text": prompt}]
         content += [{"type": "input_image", "image_url": _data_url(image)} for image in images]
+        content += [{"type": "input_video", "file_id": file_id} for file_id in videos]
         request: dict[str, Any] = {
             "model": self.spark_model,
             "input": [{"role": "user", "content": content}],
@@ -132,8 +136,8 @@ class MetaClient:
         }
         if instructions:
             request["instructions"] = instructions
-        input_estimate = (len(images) * _IMAGE_TOKENS_ESTIMATE + _PROMPT_OVERHEAD_TOKENS
-                          + (len(prompt) + len(instructions or "")) // 3)
+        input_estimate = (len(images) * _IMAGE_TOKENS_ESTIMATE + len(videos) * _VIDEO_TOKENS_ESTIMATE
+                          + _PROMPT_OVERHEAD_TOKENS + (len(prompt) + len(instructions or "")) // 3)
         estimate = cost_usd(self.spark_model, {"input_tokens": input_estimate, "output_tokens": max_output_tokens})
         response = self._call(self.spark_model, purpose, estimate, lambda: self._sdk.responses.create(**request))
         return json.loads(response.output_text)
@@ -149,12 +153,14 @@ class MetaClient:
         effort: str = "medium",
         max_output_tokens: int = 6000,
         context_tokens: int = 0,
+        text_format: dict[str, Any] | None = None,
     ) -> Turn:
         """One agent turn of Muse Spark with function tools, chained to the previous turn.
 
         The server keeps the conversation of `previous_response_id` but not the request settings, so the
         tools, instructions and reasoning effort go with every turn. `context_tokens` (the previous turn's)
-        feeds the pre-call budget estimate.
+        feeds the pre-call budget estimate. `text_format` (a Responses `text.format`, e.g. a strict
+        json_schema) shapes the final answer; a turn that calls tools still writes its commentary as plain text.
         """
         request: dict[str, Any] = {
             "model": self.spark_model,
@@ -167,7 +173,10 @@ class MetaClient:
         }
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
-        sent = len(json.dumps(input)) + len(json.dumps(tools)) + len(instructions)
+        if text_format is not None:
+            request["text"] = {"format": text_format}
+        sent = (len(json.dumps(input)) + len(json.dumps(tools)) + len(instructions)
+                + len(json.dumps(text_format or {})))
         estimate = cost_usd(self.spark_model, {"input_tokens": context_tokens + sent // 3,
                                                "output_tokens": max_output_tokens})
         response = self._call(self.spark_model, purpose, estimate, lambda: self._sdk.responses.create(**request))
