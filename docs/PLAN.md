@@ -17,7 +17,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest` (342 passing at the end of Phase 4, session 5).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (492 passing at the end of Phase 5, session 6).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -108,9 +108,26 @@
   - The model has the low-level wind from N–NNW; HVO said NE.
 - **Agent** ([agent_ep55.md](research/agent_ep55.md)):
   - Nine strict tools (`vigia/agent/tools.py`) see only data captured up to the agent's clock. Arguments are validated, and Muse Spark has sent the string "null" for null.
-  - The loop (`vigia/agent/loop.py`, `vigia-agent`) chains turns with `previous_response_id`. Guards: 12 turns, with a wrap-up message on the last, and $0.30 per run through a tagged `MetaClient`. The trace goes to `agent_runs` and `agent_steps`.
+  - The loop (`vigia/agent/loop.py`, `vigia-agent`) resends the whole conversation on every turn, with `store: false`. Until Phase 5 it chained turns with `previous_response_id`, but Meta's response store failed on 4 of 39 replay turns (503, and 400 "referenced response not found"). A turn that gets a 5xx is sent again after 2 s and then 8 s.
+  - Guards: 12 turns, with a wrap-up message on the last, and $0.30 per run through a tagged `MetaClient`. The trace goes to `agent_runs` and `agent_steps`.
   - The replay at 05:00 HST took 5 turns and $0.03–0.06. It picked KPcam, measured 6,951 ± 429 m and found the drift consistent with the wind.
-  - Tools plus `text.format` work in one request, which matters for Phase 5's bulletins.
+- **Bulletins** (`vigia/agent/bulletin.py`, `vigia/agent/render.py`, `vigia-bulletin`):
+  - Muse Spark's final answer is a draft in a strict JSON format (`text.format` on every turn). Commentary before tool calls stays plain text.
+  - The code checks every quoted number against the stored measurements up to the clock. It adds the official agency, the link and the disclaimer from config, takes the wind check from the run's `get_wind`, and draws the evidence overlays.
+  - Output: HTML (both languages, escaped) and Markdown per language.
+  - `tool_choice` accepts only `"auto"` on the Meta API.
+- **Pipeline and replay** ([replay_ep55.md](research/replay_ep55.md)):
+  - `vigia/pipeline.py` (`vigia-pipeline` live) runs one step:
+    - the quality gate;
+    - one SAM window per camera per closed hour, led in by earlier frames up to the 50 billed, so a window that starts on a faint plume still tracks it;
+    - measuring;
+    - the agent's bulletin every hour.
+  - `vigia-replay --episode 55` replays 13:00–19:30Z on a 5-minute simulated clock in `data/replay/ep55/`:
+    - 7 bulletins, every number verified; 64 min and $1.03;
+    - the bulletins quote the plume top at −9 % (peak) and +1 % (06:02) of HVO's values;
+    - fountaining was first reported at 04:00 and no longer reported at 09:30 (hourly);
+    - end of fountaining: K2 −1.0 min, V1 +0.0 min.
+  - Muse Spark reading the K2cam timelapse (video input, $0.05) gets the end within 3 min, but puts the peak after sunrise (+110 min). SAM's fountain-box heights put the peak and the decline inside HVO's windows.
 
 ## Target module map
 
@@ -133,8 +150,12 @@ vigia/
   metrics.py              area, height, drift per detection; vigia-measure (exists, phase 3)
   wind.py                 Open-Meteo winds aloft; vigia-wind     (exists, phase 4)
   agent/tools.py loop.py  nine tools + tool loop; vigia-agent    (exist, phase 4)
-  agent/bulletin.py                                              (phase 5)
-  replay.py               episode replay on a simulated clock    (phase 5)
+  agent/bulletin.py       checked bilingual bulletins; vigia-bulletin (exists, phase 5)
+  agent/render.py         bulletins as Markdown and HTML         (exists, phase 5)
+  pipeline.py             quality, hourly tracking, bulletins; vigia-pipeline (exists, phase 5)
+  episodes.py             episode 55 and its official values    (exists, phase 5)
+  replay.py               episode replay on a simulated clock; vigia-replay (exists, phase 5)
+  phases.py               episode phases: SAM vs Muse Spark video (exists, phase 5)
   web/app.py web/static/  FastAPI + dashboard                    (phase 6)
 config/prompts.yaml       SAM phrases per target/camera kind     (exists, phase 1)
 config/calibration.yaml   per camera and PTZ preset              (exists, phase 3)
@@ -209,7 +230,7 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
   - Strict JSON-schema tools: `list_cameras_status`, `get_recent_frames(camera, hours)`, `assess_frame(frame_id)`, `segment_frame(frame_id, phrase)`, `track_window(camera, start, end, phrase)`, `measure_track(track_id)`, `get_wind(volcano, height_m, time)`, `compare_cameras(volcano, time)`, `get_history(camera, metric, hours)`.
   - Validate tool arguments; the API does not guarantee them.
 - [x] **`vigia/agent/loop.py`:**
-  - Responses API loop with `previous_response_id`, resending tools and instructions on every turn, and parallel tool calls.
+  - Responses API loop with `previous_response_id`, resending tools and instructions on every turn, and parallel tool calls. (Since Phase 5 every turn resends the whole conversation with `store: false` instead.)
   - Max-turn and budget guards.
   - Persist the trace in `agent_runs` and `agent_steps`; it will be shown in the dashboard.
 
@@ -217,18 +238,18 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 ## Phase 5: Sat Oct 31. Bulletins and replay
 
-- [ ] **`vigia/agent/bulletin.py`:**
+- [x] **`vigia/agent/bulletin.py`:** (the model writes the level, the texts, the measurements with camera and target, and the evidence frame ids; the code adds the official source, the disclaimer, the wind check and the overlays, and checks every number; rendering in `vigia/agent/render.py`)
   - Strict schema: descriptive activity level (never an official alert level), headline and body in ES and EN, `measurements[{metric, value, sigma, unit, frame_ids}]`, `evidence[{frame_id, overlay}]`, official source (agency and URL), disclaimer.
   - Render to HTML and Markdown.
-- [ ] **`vigia/replay.py` and the `vigia-replay --episode 55 --speed 60` CLI:**
+- [x] **`vigia/replay.py` and the `vigia-replay --episode 55 --speed 60` CLI:** (the runner is `vigia/pipeline.py`, with `vigia-pipeline` for live mode; the replay has its own database and resumes after an interruption)
   - Feed the AshCam episode-55 frames through the same pipeline on a simulated clock: quality, tracking, metrics, and the agent every N minutes.
   - Write a timeline JSON.
   - The pipeline runner also serves live mode:
     - it runs `QualityGate.assess_range(spark="uncertain")` on new frames;
     - it tracks one SAM window per camera per hour (the Phase 2 cost rule), off the request path, because mask decoding takes minutes.
-- [ ] **Muse Spark video understanding:** send the episode timelapse and ask for the phases (onset, peak, decline, end). Cross-check with the SAM-derived times.
+- [x] **Muse Spark video understanding:** send the episode timelapse and ask for the phases (onset, peak, decline, end). Cross-check with the SAM-derived times. (`vigia/phases.py`)
 
-**Acceptance:** the replay produces six or more bulletins across the episode, plus the comparison table against USGS.
+**Acceptance:** the replay produces six or more bulletins across the episode, plus the comparison table against USGS. Done: 7 bulletins, every number verified, the comparison tables in [replay_ep55.md](research/replay_ep55.md).
 
 ## Phase 6: Sun Nov 1. Dashboard
 
@@ -266,6 +287,7 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 - [ ] **Calibrate a fountain camera** so the validation's fountain rows get measured. Options:
   - K2cam needs a vertical reference: a clear sea horizon on a frame with the episode 55 framing, or a post-2018 DEM of the crater rim.
   - V1cam: the Moon for its view, plus a resection on the vent for its ±150 m position.
+- [ ] Name the Spanish vocabulary in the bulletin prompt ("columna", "boca", "fuente de lava"). In the replay Muse Spark wrote "pluma" and "ventín" ([replay_ep55.md](research/replay_ep55.md)).
 - [ ] Final `docs/VALIDATION.md`: errors, σ, limitations.
 - [ ] Final README: updated diagram, live URL, how to run, the "Built during the hackathon" section, disclaimer, credits, cost report.
 - [ ] Code review pass (`superpowers:requesting-code-review`) and fixes.
@@ -289,7 +311,7 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 ## Budget
 
-Spent so far: $0.91 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $3.19 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 

@@ -3230,3 +3230,24 @@ git commit -m "Read the episode's phases from Muse Spark's view of the timelapse
 
 - **Subagents:** one `implementer` per group: 1–2, 3–5, 6–7, 8 and 9–10, with one commit per task. One `reviewer` per group gets its BASE and HEAD. Findings go back to the same implementer by SendMessage. Task 11 is the orchestrator's.
 - **Money:** Tasks 1–10 call no paid API, because every test uses fakes. Task 11 spends about $0.05 on the smoke bulletin and about $1.0–1.2 on the replay.
+
+## Execution notes (2026-10-30)
+
+`implementer` subagents ran Tasks 1–10 in five groups (1–2, 3–5, 6–7, 8, 9–10), and `reviewer` subagents checked each group. The orchestrator ran Task 11. The suite went from 342 to 492 tests.
+
+1. **Review fixes.** Each group got its review findings back in one more commit:
+   - Tasks 3–5 (`c1cbd90`): tests pin the HTML escaping of every text the model writes, the tolerance edges, the clock edge and the choice of the last good `get_wind`. Markdown table cells are escaped. `EvidenceError` turns an unreadable image into a note.
+   - Task 8 (`a762ff4`): a bad window no longer stops a step (RuntimeError, OSError, CalledProcessError and APIError are caught per window). Retries are capped at 3. The live agent waits for the settle, so the hourly bulletin sees the hour just tracked. The flush window is capped at its hour.
+   - Tasks 9–10 (`645a899`): an interrupted replay can redo the bulletin it lost (`error` runs do not count, and it gives up after 2) or a half-tracked window (only the missing targets are tracked). Resuming on another grid is refused (`OffGridError`, `2520bda`).
+   - The orchestrator added small tests and, in `8d5c4ec`, the prompt line that makes the body round its numbers per language. A smoke bulletin had written "20610891 m2" and "5.9 km" in Spanish.
+2. **Replay run 1 found three problems,** fixed before run 2 (details in `docs/research/replay_ep55.md`):
+   - `f345e51`: the pipeline measures only cameras whose preset fixes a view.
+   - `f6c012b`: SAM windows are led in by earlier frames up to the billed 50, because KPcam's hourly windows lost the plume after 15:00Z.
+   - `9148bb9` and `9d7009c`: a turn that gets a 5xx is sent again, and every turn is stateless (`store: false`, the whole conversation resent), because Meta's response store failed on 4 of 39 turns.
+3. **Spend:**
+   - probes: $0.15 (bulletin format $0.010, timelapse $0.100, KP window $0.033, stateless turns $0.003);
+   - smoke bulletin: $0.053;
+   - replay run 1: $1.05, stopped after 19:00Z;
+   - replay run 2: $1.03.
+   - Phase 5 total: $2.28. Project total: $3.19.
+4. **Result:** 7 bulletins, every number verified. The bulletins quote the plume top at −9 % (peak) and +1 % (06:02) of HVO's values. End of fountaining: −1.0 min (K2cam) and +0.0 min (V1cam). Muse Spark's timelapse reading: end −3 min, peak +110 min.
