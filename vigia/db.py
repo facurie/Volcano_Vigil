@@ -183,6 +183,11 @@ CREATE TABLE IF NOT EXISTS bulletins (       -- one bulletin of an agent run (vi
     body           TEXT    NOT NULL   -- the whole bulletin as JSON (vigia.agent.bulletin.Bulletin)
 );
 CREATE INDEX IF NOT EXISTS idx_bulletins_clock ON bulletins (volcano, clock);
+
+CREATE TABLE IF NOT EXISTS replay_ticks (    -- one step of a replay's simulated clock (vigia.replay)
+    clock  TEXT PRIMARY KEY,  -- UTC simulated time
+    report TEXT NOT NULL      -- JSON: the pipeline's step report plus the frames fed
+);
 """
 
 
