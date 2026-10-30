@@ -8,7 +8,8 @@ exists for any of them. Each step's report goes to replay_ticks, so an interrupt
 stopped. With --speed S the simulated clock runs at most S times faster than the wall clock (it cannot run
 faster than tracking does).
 
-At the end it writes timeline.json (the steps, the bulletins and the comparisons with the official values) and
+At the end it writes timeline.json (the steps, the bulletins, the comparisons with the official values and the
+episode's phases as SAM's tracks and Muse Spark's reading of the timelapse give them (vigia.phases)) and
 report.md next to the database. Its Meta spend goes to that database's ledger.
 
     vigia-replay --episode 55 --speed 60
@@ -31,15 +32,17 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import openai
 
 from vigia import db
 from vigia.agent.bulletin import Bulletin
 from vigia.agent.loop import context_from_settings
-from vigia.agent.tools import ToolContext
+from vigia.agent.tools import ToolContext, ToolError
 from vigia.episodes import (DRIFT_HEADER, END_HEADER, EPISODES, HEIGHT_HEADER, Episode, drift_rows, end_rows,
                             height_row, local_time, table)
 from vigia.meta.client import MetaClient
-from vigia.meta.ledger import CostLedger
+from vigia.meta.ledger import BudgetExceeded, CostLedger
+from vigia.phases import HEADER as PHASES_HEADER, ask_phases, cross_check
 from vigia.pipeline import AGENT_EVERY, Pipeline, PipelineConfig
 from vigia.settings import Settings
 from vigia.timeutil import parse_utc, to_iso
@@ -83,7 +86,7 @@ def feed(source: sqlite3.Connection, conn: sqlite3.Connection, cameras: tuple[st
 
 def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, out_dir: Path, *,
                step: timedelta = STEP, agent_every: timedelta | None = AGENT_EVERY, speed: float = 0.0,
-               pipeline: Pipeline | None = None, sleep: Callable[[float], None] = time.sleep,
+               spark_video: bool = True, pipeline: Pipeline | None = None, sleep: Callable[[float], None] = time.sleep,
                monotonic: Callable[[], float] = time.monotonic) -> dict[str, Any]:
     """Replay the episode into base.conn, the replay's own database, and write timeline.json and report.md to
     out_dir (inside the data dir); returns the timeline."""
@@ -110,11 +113,30 @@ def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, 
             conn.execute("INSERT INTO replay_ticks (clock, report) VALUES (?, ?)",
                          (to_iso(tick), json.dumps({**report.as_json(), "new_frames": new})))
         log.info("%s", report.summary())
-    timeline = build_timeline(conn, episode, step, agent_every)
+    spark = _spark_phases(base, episode, out_dir) if spark_video else None
+    timeline = build_timeline(conn, episode, step, agent_every, cross_check(conn, episode, spark))
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "report.md").write_text(report_markdown(timeline, episode), encoding="utf-8")
     return timeline
+
+
+def _spark_phases(base: ToolContext, episode: Episode, out_dir: Path) -> dict[str, Any] | None:
+    """Muse Spark's reading of the episode's timelapse: asked once, then read from spark_phases.json."""
+    path = out_dir / "spark_phases.json"
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    if base.client is None:
+        return None
+    try:
+        answer = ask_phases(base.client, base.conn, base.data_dir, base.camera(episode.timelapse_camera),
+                            base.sources.volcanoes[episode.volcano], episode.start, episode.end)
+    except (openai.APIError, BudgetExceeded, ToolError, ValueError) as exc:
+        log.warning("Muse Spark did not read the timelapse: %s", exc)
+        return None
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(answer, ensure_ascii=False, indent=1), encoding="utf-8")
+    return answer
 
 
 def bulletin_rows(conn: sqlite3.Connection, episode: Episode) -> list[list[str]]:
@@ -197,7 +219,7 @@ def report_markdown(timeline: dict[str, Any], episode: Episode) -> str:
                   _cell(b["headline_es"]), "yes" if all(m["verified"] for m in b["measurements"]) else "no"]
                  for b in timeline["bulletins"]]
     agent = f"a bulletin every {every:g} min and at the end" if every else "no agent"
-    return "\n".join([
+    sections = [
         f"# Replay of episode {episode.key}: {episode.volcano}", "",
         f"From {local_time(timeline['start'], episode.local)} to {local_time(timeline['end'], episode.local)} local "
         f"time: {len(timeline['ticks'])} steps of {timeline['step_minutes']:g} min, {agent}. "
@@ -211,7 +233,13 @@ def report_markdown(timeline: dict[str, Any], episode: Episode) -> str:
         table(HEIGHT_HEADER, comparison["heights"]), "",
         "## End of fountaining", "", table(END_HEADER, comparison["ends"]), "",
         "## Drift", "", table(DRIFT_HEADER, comparison["drift"]), "",
-    ])
+    ]
+    if timeline["phases"]:
+        sections += ["## Episode phases", "",
+                     f"SAM's fountain tracks and Muse Spark's reading of the {timeline['phases']['camera_id']} "
+                     "timelapse, in local time, each with its minutes outside the official window.", "",
+                     table(PHASES_HEADER, timeline["phases"]["rows"]), ""]
+    return "\n".join(sections)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -225,6 +253,7 @@ def main(argv: list[str] | None = None) -> None:
                         help="simulated minutes per step (default 5)")
     parser.add_argument("--agent-every", type=float, default=AGENT_EVERY / timedelta(minutes=1),
                         help="simulated minutes between bulletins (default 60)")
+    parser.add_argument("--no-video", action="store_true", help="do not ask Muse Spark to read the timelapse")
     parser.add_argument("--no-agent", action="store_true", help="no agent runs and no bulletins")
     args = parser.parse_args(argv)
     if args.step <= 0 or args.agent_every <= 0 or args.speed < 0:
@@ -244,7 +273,7 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(f"{settings.db_path} has no frames of episode {episode.key}; backfill them with vigia-backfill")
         client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
         run_replay(source, context_from_settings(settings, conn, http, episode.start, client), episode, out_dir,
-                   step=timedelta(minutes=args.step), speed=args.speed,
+                   step=timedelta(minutes=args.step), speed=args.speed, spark_video=not args.no_video,
                    agent_every=None if args.no_agent else timedelta(minutes=args.agent_every))
     print((out_dir / "report.md").read_text(encoding="utf-8"))
     print(f"timeline: {out_dir / 'timeline.json'}")

@@ -10,6 +10,7 @@ from vigia import db
 from vigia.agent.bulletin import BulletinDraft, CitedMeasurement, build_bulletin, store_bulletin
 from vigia.episodes import EP55
 from vigia.ingest.store import FrameStore
+from vigia.phases import PHASES
 from vigia.pipeline import StepReport
 from vigia.replay import activity_rows, bulletin_rows, feed, main, run_replay, ticks
 from vigia.timeutil import parse_utc, to_iso
@@ -152,3 +153,23 @@ def test_cli_knows_only_the_stored_episodes(capsys):
         main(["--episode", "54"])
 
     assert "invalid choice" in capsys.readouterr().err
+
+
+def test_the_replay_reuses_muse_sparks_stored_reading_of_the_timelapse(source, conn, tmp_path):
+    stored = {phase: {"seen": False, "time": None} for phase in PHASES} | {"summary": "Nothing."}
+    (tmp_path / "replay").mkdir()
+    (tmp_path / "replay" / "spark_phases.json").write_text(json.dumps(stored), encoding="utf-8")
+
+    timeline = run_replay(source, context(conn, tmp_path), episode(T0, T0 + 10 * M), tmp_path / "replay",
+                          step=10 * M, pipeline=FakePipeline(conn))
+
+    assert timeline["phases"]["muse_spark"] == stored
+    assert [row[4] for row in timeline["phases"]["rows"]] == ["-"] * 4
+    assert "## Episode phases" in (tmp_path / "replay" / "report.md").read_text(encoding="utf-8")
+
+
+def test_without_a_client_or_a_stored_reading_muse_spark_is_not_asked(source, conn, tmp_path):
+    timeline = run_replay(source, context(conn, tmp_path), episode(T0, T0 + 10 * M), tmp_path / "replay",
+                          step=10 * M, pipeline=FakePipeline(conn))
+
+    assert timeline["phases"]["muse_spark"] is None and timeline["phases"]["rows"][0][4] == "not asked"
