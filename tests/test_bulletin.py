@@ -283,7 +283,7 @@ QUIET = {**DRAFT, "activity_level": "no_view", "measurements": [], "evidence": [
 
 def write(conn, tmp_path, api):
     return write_bulletin(make_client(api, conn), context(conn, tmp_path), "kilauea", tmp_path / "bulletins",
-                          tools=FAKE_TOOLS, wall_clock=lambda: NOW)
+                          tools=FAKE_TOOLS, wall_clock=lambda: NOW, sleep=lambda seconds: None)
 
 
 def test_the_agent_writes_the_bulletin_in_its_format_and_it_is_stored_and_published(conn, store, tmp_path):
@@ -316,7 +316,7 @@ def test_a_failed_run_writes_no_bulletin(conn, tmp_path):
     failure = httpx.Response(500, json={"error": {"message": "boom", "type": "server_error", "param": None,
                                                   "code": None}})
 
-    written = write(conn, tmp_path, Script(failure))
+    written = write(conn, tmp_path, Script(*[failure] * 3))  # the first try and two retries
 
     assert written.bulletin is None and written.problem.startswith("the agent run ended with error")
 

@@ -8,7 +8,8 @@ from conftest import NOW, make_jpeg
 from test_agent_tools import SOURCES, T0, context
 from test_meta_client import make_client, response_body, turn_body
 from test_sam import IMAGE_OUTPUT
-from vigia.agent.loop import REPORT, WRAP_UP, context_from_settings, instructions, main, run_agent, trace
+from vigia.agent.loop import (REPORT, TURN_RETRY_PAUSES, WRAP_UP, context_from_settings, instructions, main, run_agent,
+                              trace)
 from vigia.agent.tools import Args, NoArgs, Tool
 from vigia.config import Volcano
 from vigia.meta.client import MetaClient
@@ -45,6 +46,7 @@ TURN = 1800 * 1.25e-6 + 300 * 4.25e-6  # the cost of one scripted turn
 
 
 def run(conn, tmp_path, api, **kwargs):
+    kwargs.setdefault("sleep", lambda seconds: None)  # a retried turn does not wait in tests
     return run_agent(make_client(api, conn), context(conn, tmp_path), "kilauea", "Echo twice.", tools=FAKE_TOOLS,
                      wall_clock=lambda: NOW, **kwargs)
 
@@ -128,10 +130,44 @@ def test_an_api_failure_ends_the_run_with_an_error(conn, tmp_path):
     failure = httpx.Response(500, json={"error": {"message": "boom", "type": "server_error", "param": None,
                                                   "code": None}})
 
-    result = run(conn, tmp_path, Script(failure))
+    result = run(conn, tmp_path, Script(*[failure] * (len(TURN_RETRY_PAUSES) + 1)))
 
     assert result.status == "error" and "boom" in result.error
     assert conn.execute("SELECT status FROM agent_runs WHERE id = ?", (result.run_id,)).fetchone()[0] == "error"
+
+
+SERVER_DOWN = httpx.Response(503, json={"error": {"message": "persistence service error", "type": "server_error",
+                                                  "param": None, "code": None}})
+
+
+def test_a_turn_the_server_failed_is_sent_again_after_a_pause(conn, tmp_path):
+    api = Script(turn_body([("echo", '{"n": 1}')], rid="resp_1"), SERVER_DOWN, SERVER_DOWN, turn_body([], text="Done."))
+    pauses = []
+
+    result = run(conn, tmp_path, api, sleep=pauses.append)
+
+    assert (result.status, result.turns, result.final_text) == ("done", 2, "Done.")
+    assert pauses == list(TURN_RETRY_PAUSES)
+    assert api.requests[1] == api.requests[2] == api.requests[3]  # the same turn, chained to resp_1
+
+
+def test_a_turn_the_server_keeps_failing_ends_the_run(conn, tmp_path):
+    api = Script(*[SERVER_DOWN] * (len(TURN_RETRY_PAUSES) + 1))
+
+    result = run(conn, tmp_path, api, sleep=lambda seconds: None)
+
+    assert result.status == "error" and "persistence service error" in result.error
+    assert len(api.requests) == len(TURN_RETRY_PAUSES) + 1
+
+
+def test_a_refused_request_is_not_sent_again(conn, tmp_path):
+    refused = httpx.Response(400, json={"error": {"message": "bad request", "type": "invalid_request_error",
+                                                  "param": None, "code": None}})
+    api = Script(refused)
+
+    result = run(conn, tmp_path, api, sleep=lambda seconds: pytest.fail("a 400 must not be retried"))
+
+    assert result.status == "error" and len(api.requests) == 1
 
 
 def test_an_answer_cut_off_by_the_token_limit_is_an_error(conn, tmp_path):

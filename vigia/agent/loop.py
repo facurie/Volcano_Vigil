@@ -42,8 +42,11 @@ from vigia.settings import Settings
 from vigia.timeutil import parse_utc, to_iso, utcnow
 from vigia.wind import WindService
 
+log = logging.getLogger(__name__)
+
 MAX_TURNS = 12
 BUDGET_USD = 0.30
+TURN_RETRY_PAUSES = (2.0, 8.0)  # seconds before sending again a turn the server failed (HTTP 5xx: nothing billed)
 INSTRUCTIONS = """\
 You are Vigía Andino, an agent that watches the public webcams of {name} ({country}) and measures what they \
 show. The official source for this volcano is {agency} ({url}). You never issue alerts or alert levels: you \
@@ -96,11 +99,12 @@ def instructions(volcano: Volcano, volcano_id: str, now: datetime, finish: str =
 def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, *, max_turns: int = MAX_TURNS,
               budget_usd: float = BUDGET_USD, effort: str = "medium", tools: Sequence[Tool] | None = None,
               finish: str = REPORT, text_format: dict[str, Any] | None = None,
-              wall_clock: Callable[[], datetime] = utcnow) -> AgentRun:
+              wall_clock: Callable[[], datetime] = utcnow, sleep: Callable[[float], None] = time.sleep) -> AgentRun:
     """Run the agent on one task at the context's clock and store its trace.
 
     `finish` is the instructions' closing request; with `text_format` (a Responses text.format) every turn asks
-    for the final answer in that format.
+    for the final answer in that format. A turn the server fails (HTTP 5xx, e.g. Meta's 503 "persistence service
+    error" on chained turns) is sent again after each pause of TURN_RETRY_PAUSES before the run ends in error.
     """
     conn = ctx.conn
     text = instructions(ctx.sources.volcanoes[volcano_id], volcano_id, ctx.now, finish)
@@ -130,9 +134,17 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
                 pending.append({"role": "user", "content": WRAP_UP})
             started = time.perf_counter()
             try:
-                reply = job.respond(input=pending, tools=definitions, instructions=text, purpose="turn",
-                                    previous_response_id=previous, effort=effort, context_tokens=context_tokens,
-                                    text_format=text_format)
+                for pause in (*TURN_RETRY_PAUSES, None):
+                    try:
+                        reply = job.respond(input=pending, tools=definitions, instructions=text, purpose="turn",
+                                            previous_response_id=previous, effort=effort,
+                                            context_tokens=context_tokens, text_format=text_format)
+                        break
+                    except openai.InternalServerError as exc:
+                        if pause is None:
+                            raise
+                        log.warning("run %d, turn %d: %s; sending it again in %g s", run_id, turn, exc, pause)
+                        sleep(pause)
             except BudgetExceeded as exc:
                 status, error = "budget", str(exc)
                 break
