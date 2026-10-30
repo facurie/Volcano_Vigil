@@ -182,7 +182,7 @@ class MetaClient:
             request["store"] = False
         if text_format is not None:
             request["text"] = {"format": text_format}
-        sent =(len(json.dumps(input)) + len(json.dumps(tools)) + len(instructions)
+        sent = (len(json.dumps(input)) + len(json.dumps(tools)) + len(instructions)
                 + len(json.dumps(text_format or {})))
         estimate = cost_usd(self.spark_model, {"input_tokens": context_tokens + sent // 3,
                                                "output_tokens": max_output_tokens})

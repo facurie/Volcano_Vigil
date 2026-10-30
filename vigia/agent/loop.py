@@ -136,10 +136,10 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
         for turn in range(1, max_turns + 1):
             if turn == max_turns:
                 conversation.append({"role": "user", "content": WRAP_UP})
-            started = time.perf_counter()
             try:
                 for pause in (*TURN_RETRY_PAUSES, None):
                     try:
+                        started = time.perf_counter()
                         reply = job.respond(input=conversation, tools=definitions, instructions=text, purpose="turn",
                                             store=False, effort=effort, context_tokens=0, text_format=text_format)
                         break
