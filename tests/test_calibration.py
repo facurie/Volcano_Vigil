@@ -4,11 +4,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from vigia.calibration import (Calibration, CameraCalibration, Celestial, Distortion, FieldOfView, HorizonPixel,
+from vigil.calibration import (Calibration, CameraCalibration, Celestial, Distortion, FieldOfView, HorizonPixel,
                                Landmark, Preset, Roll, Site, VentPixel, load_calibration, sample_geometry)
-from vigia.config import ConfigError
-from vigia.geometry import View, direction, horizon_dip, local_en, sight
-from vigia.settings import Settings
+from vigil.config import ConfigError
+from vigil.geometry import View, direction, horizon_dip, local_en, sight
+from vigil.settings import Settings
 
 REPO = Path(__file__).resolve().parents[1]
 UTC = timezone.utc
@@ -63,7 +63,7 @@ def test_overlapping_presets_are_refused(tmp_path):
 
 def test_a_camera_whose_volcano_has_no_vent_is_refused(tmp_path):
     with pytest.raises(ConfigError, match="no vent"):
-        load_calibration(write(tmp_path, TWO_PRESETS.replace("volcano: kilauea", "volcano: nevado-del-ruiz")))
+        load_calibration(write(tmp_path, TWO_PRESETS.replace("volcano: kilauea", "volcano: mauna-loa")))
 
 
 def test_times_must_state_their_offset(tmp_path):
@@ -191,7 +191,7 @@ def test_a_roll_the_references_cannot_measure_follows_its_prior():
 
 
 def test_samples_that_did_not_converge_are_refused(monkeypatch):
-    from vigia import calibration as module
+    from vigil import calibration as module
     solve = module.solve_view
 
     def one_sample_lost(refs, size):

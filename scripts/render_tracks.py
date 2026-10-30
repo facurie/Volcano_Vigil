@@ -22,12 +22,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from vigia import db
-from vigia.overlay import Layer, draw_layers
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso
-from vigia.tracking import VIDEO_FPS, detection_mask
-from vigia.video import assemble
+from vigil import db
+from vigil.overlay import Layer, draw_layers
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso
+from vigil.tracking import VIDEO_FPS, detection_mask
+from vigil.video import assemble
 
 HST = timezone(timedelta(hours=-10))
 COLORS = {"plume": (0, 200, 255), "fountain": (255, 120, 0), "incandescence": (255, 0, 160)}

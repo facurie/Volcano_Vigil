@@ -1,6 +1,6 @@
 # Kīlauea summit episode 55 (2026-10-17): media, official values, timeline
 
-Research for the Vigía Andino "replay" mode. Everything was retrieved live on **2026-10-26**.
+Research for the Volcano Vigil "replay" mode. Everything was retrieved live on **2026-10-26**.
 
 - **Time zone.** HST = UTC−10 (Hawaiʻi has no daylight saving time). HVO's own headers confirm the offset, for example "Saturday, October 17, 2026, 9:50 AM HST (Saturday, October 17, 2026, 19:50 UTC)" ([DU 10-17][DU17]). Webcam overlays and webcam file names are in HST. AshCam file names are Unix epoch seconds (UTC).
 - **Local data.** `data/raw/usgs_ep55/manifest.json` has 31 items. `data/raw/usgs_ep55/ashcam/manifest_ashcam.json` has 857 archived webcam frames. Both use the requested schema.
@@ -362,15 +362,6 @@ The MK2 frames show the Kīlauea plume rising beside Mauna Loa, whose summit cou
 - Kīlauea webcams: https://www.usgs.gov/volcanoes/kilauea/webcams
 
 All returned HTTP 200 on 2026-10-26.
-
-**Servicio Geológico Colombiano (Nevado del Ruiz):**
-
-- Weekly bulletin list: https://www2.sgc.gov.co/Noticias/Paginas/Boletines-semanales.aspx. It lists "Boletín semanal de actividad del volcán Nevado del Ruiz del 13 al 19 de octubre de 2026", published 20/10/2026 17:30, level "Amarilla".
-- That bulletin's PDF: https://www2.sgc.gov.co/Noticias/boletinesDocumentos/Boletin_semanal_de_actividad_del_volcan_Nevado_del_Ruiz_del_13_de_octubre_al_19_de_octubre_de_2026.pdf (HTTP 200).
-- Extraordinary bulletins: https://www2.sgc.gov.co/Noticias/Paginas/Boletines-extraordinarios.aspx
-- Monthly bulletins: https://www2.sgc.gov.co/Noticias/Paginas/Boletines-mensuales.aspx
-- The SGC "Volcanes" portal is https://www.sgc.gov.co/volcanes. It is a JavaScript app, so I could not verify its contents with curl.
-- Caution: the list shows "Verde" for the Ruiz bulletin of 6–12 Oct. Check the PDF before taking an alert level from that column.
 
 **AVO webcams and "Public Domain": no** on AVO's own page.
 

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from vigia.timeutil import parse_utc, to_iso
+from vigil.timeutil import parse_utc, to_iso
 
 
 def test_parse_utc_reads_a_z_suffix_without_seconds():

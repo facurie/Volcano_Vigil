@@ -6,8 +6,8 @@ import pytest
 
 from conftest import NOW, make_jpeg
 from test_sam import IMAGE_OUTPUT, OBJ_0
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import BudgetExceeded, CostLedger
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import BudgetExceeded, CostLedger
 
 SPARK_USAGE = {"input_tokens": 1800, "input_tokens_details": {"cached_tokens": 0},
                "output_tokens": 300, "output_tokens_details": {"reasoning_tokens": 120}, "total_tokens": 2100}

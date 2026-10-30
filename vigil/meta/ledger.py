@@ -8,7 +8,7 @@ import sqlite3
 from collections.abc import Callable
 from datetime import datetime
 
-from vigia.timeutil import to_iso, utcnow
+from vigil.timeutil import to_iso, utcnow
 
 
 class BudgetExceeded(RuntimeError):

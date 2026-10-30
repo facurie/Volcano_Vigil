@@ -17,9 +17,9 @@ from typing import Any
 
 import openai
 
-from vigia.meta.ledger import CostLedger
-from vigia.meta.pricing import cost_usd
-from vigia.meta.sam import SamObject, parse_output
+from vigil.meta.ledger import CostLedger
+from vigil.meta.pricing import cost_usd
+from vigil.meta.sam import SamObject, parse_output
 
 DEFAULT_BASE_URL = "https://api.meta.ai/v1"
 SPARK_MODEL = "muse-spark-1.3"

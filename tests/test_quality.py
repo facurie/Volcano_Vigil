@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
-from vigia.quality import ImageStats, LocalVerdict, check_local, difference, fingerprint, measure
+from vigil.quality import ImageStats, LocalVerdict, check_local, difference, fingerprint, measure
 
 DAY = datetime(2026, 10, 17, 22, 0, tzinfo=timezone.utc)
 CLEAR = ImageStats(brightness=120, contrast=50, edge_density=0.10, glow_fraction=0.0)

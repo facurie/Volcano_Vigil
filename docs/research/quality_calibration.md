@@ -1,6 +1,6 @@
 # Local quality checks: calibration
 
-Run on 2026-10-28 UTC with `scripts/calibrate_quality.py` over 984 stored frames. The thresholds are in `Thresholds` in [`vigia/quality.py`](../../vigia/quality.py), and the quality gate ([`vigia/gate.py`](../../vigia/gate.py)) applies them. Results: `data/calibration/20261028T013408Z/` (`stats.csv`, `summary.md`, contact sheets per camera, window and decision).
+Run on 2026-10-28 UTC with `scripts/calibrate_quality.py` over 984 stored frames. The thresholds are in `Thresholds` in [`vigil/quality.py`](../../vigil/quality.py), and the quality gate ([`vigil/gate.py`](../../vigil/gate.py)) applies them. Results: `data/calibration/20261028T013408Z/` (`stats.csv`, `summary.md`, contact sheets per camera, window and decision).
 
 ## Method
 
@@ -19,7 +19,7 @@ Run on 2026-10-28 UTC with `scripts/calibrate_quality.py` over 984 stored frames
   - Warm and bright is orange lava. Nearly white is lava that saturates the sensor (K2), or KPcam in monochrome night mode.
   - Lone hot blocks, such as stars and K2's path lamps, do not count.
 - **Change:** the mean absolute luminance difference of 128-px block-averaged fingerprints. It is measured against the camera's previous stored frame.
-- **Sun elevation:** computed at the volcano's position (`vigia/sun.py`).
+- **Sun elevation:** computed at the volcano's position (`vigil/sun.py`).
 
 **Command:**
 
@@ -107,8 +107,8 @@ Episode 55 passes entirely with no Muse Spark call. The foggy afternoon sends 39
   - SAM finds little in those frames.
   - Phase 3 keeps only masks attached to the vent.
   - The agent can ask Muse Spark about any frame (the Phase 4 `assess_frame` tool).
-- **By default Muse Spark sees only hazy frames.** `vigia-quality --spark all` sends it every frame the local checks let through, to read printed times and PTZ readouts.
+- **By default Muse Spark sees only hazy frames.** `vigil-quality --spark all` sends it every frame the local checks let through, to read printed times and PTZ readouts.
 - **A quiet night's vent glow is kept on purpose:** it is incandescence.
 - **The 2×2 rule needs a glow at least two blocks wide**, about 30 px on a 4K frame. A tiny distant glow, such as KP at the very start of an episode, could be missed; the episode 55 minimum has a 1.9× margin.
 - **Thermal cameras (F1) skip the night and fog checks.** Only stale and frozen apply to them.
-- **Limited calibration data:** one day per condition, and only the USGS overlay layout. Edge density depends on scene content, so a new camera (for example an SGC camera) needs its own check with this script.
+- **Limited calibration data:** one day per condition, and only the USGS overlay layout. Edge density depends on scene content, so a new camera (for example one at another volcano) needs its own check with this script.

@@ -7,9 +7,9 @@ import httpx
 import pytest
 
 from conftest import make_jpeg
-from vigia.config import Camera
-from vigia.ingest.ashcam import AshcamClient, AshcamIngestor, ChecksumMismatch, IndexFormatError, backfill, main
-from vigia.ingest.store import FrameStore
+from vigil.config import Camera
+from vigil.ingest.ashcam import AshcamClient, AshcamIngestor, ChecksumMismatch, IndexFormatError, backfill, main
+from vigil.ingest.store import FrameStore
 
 INDEX = Path(__file__).parent / "fixtures" / "ashcam_index_kp.json"
 START = datetime(2026, 10, 17, 14, 50, tzinfo=timezone.utc)  # 04:50 HST
@@ -263,7 +263,7 @@ def cli_env(monkeypatch, tmp_path):
     sources.write_text(SOURCES, encoding="utf-8")
     monkeypatch.setenv("SOURCES_PATH", str(sources))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
 
 
 def test_cli_refuses_a_camera_without_an_ashcam_code(cli_env, capsys):

@@ -28,7 +28,7 @@ from typing import Literal
 import numpy as np
 from PIL import Image, ImageFilter
 
-from vigia.config import CameraKind
+from vigil.config import CameraKind
 
 OVERLAY_TOP = 0.05     # share of the frame height taken by the printed timestamp
 OVERLAY_BOTTOM = 0.08  # share taken by the logo and the PTZ readout

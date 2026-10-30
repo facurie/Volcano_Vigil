@@ -1,4 +1,4 @@
-"""The agent loop: Muse Spark calls the tools of vigia.agent.tools until it can answer.
+"""The agent loop: Muse Spark calls the tools of vigil.agent.tools until it can answer.
 
 Every turn resends the whole conversation (the task, each reply's output items
 but its reasoning, and the tool results) with store=false, instead of chaining
@@ -15,7 +15,7 @@ tools make) past `budget_usd` or the day past the daily cap (budget), or when
 the API fails (error). Every turn and tool call is a row of `agent_steps`
 under one `agent_runs` row: the trace the dashboard shows.
 
-    vigia-agent --volcano kilauea --at 2026-10-17T05:00-10:00
+    vigil-agent --volcano kilauea --at 2026-10-17T05:00-10:00
 """
 
 from __future__ import annotations
@@ -35,16 +35,16 @@ from typing import Any
 import httpx
 import openai
 
-from vigia import db
-from vigia.agent.tools import Tool, Toolbox, ToolContext
-from vigia.calibration import load_calibration
-from vigia.config import Sources, Volcano, load_sources
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import BudgetExceeded, CostLedger
-from vigia.prompts import load_prompts
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso, utcnow
-from vigia.wind import WindService
+from vigil import db
+from vigil.agent.tools import Tool, Toolbox, ToolContext
+from vigil.calibration import load_calibration
+from vigil.config import Sources, Volcano, load_sources
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import BudgetExceeded, CostLedger
+from vigil.prompts import load_prompts
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso, utcnow
+from vigil.wind import WindService
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ MAX_TURNS = 12
 BUDGET_USD = 0.30
 TURN_RETRY_PAUSES = (2.0, 8.0)  # seconds before sending again a turn the server failed (HTTP 5xx: nothing billed)
 INSTRUCTIONS = """\
-You are Vigía Andino, an agent that watches the public webcams of {name} ({country}) and measures what they \
+You are Volcano Vigil, an agent that watches the public webcams of {name} ({country}) and measures what they \
 show. The official source for this volcano is {agency} ({url}). You never issue alerts or alert levels: you \
 describe what the cameras show, with numbers and the frame ids that support them.
 

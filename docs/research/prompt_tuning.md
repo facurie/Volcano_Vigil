@@ -1,6 +1,6 @@
 # SAM 3.1 prompt tuning on episode 55 frames
 
-Run on 2026-10-27 with `scripts/tune_prompts.py`, which applies every candidate phrase for a target to each frame where that target is visible. The chosen phrases are in [`config/prompts.yaml`](../../config/prompts.yaml), which `vigia/prompts.py` reads.
+Run on 2026-10-27 with `scripts/tune_prompts.py`, which applies every candidate phrase for a target to each frame where that target is visible. The chosen phrases are in [`config/prompts.yaml`](../../config/prompts.yaml), which `vigil/prompts.py` reads.
 
 ## Method
 
@@ -28,7 +28,7 @@ Run on 2026-10-27 with `scripts/tune_prompts.py`, which applies every candidate 
 **Runs.** Overlays, one contact sheet per frame, `results.json` and `summary.md` are in these runs:
 - `data/tuning/20261027T171313Z`: 57 calls, the six original frames.
 - `data/tuning/20261027T172002Z`: 3 calls, the fountain follow-up on `v1_0459_night`.
-- `data/tuning/20261027T171058Z`: 1 call, aborted. It exposed that SAM sends large masks at reduced resolution; `vigia/meta/sam.py` now scales them to their box, see [META_API_NOTES §4](../META_API_NOTES.md).
+- `data/tuning/20261027T171058Z`: 1 call, aborted. It exposed that SAM sends large masks at reduced resolution; `vigil/meta/sam.py` now scales them to their box, see [META_API_NOTES §4](../META_API_NOTES.md).
 
 **Cost.** 61 SAM image calls, **$0.1525**.
 

@@ -1,9 +1,9 @@
-# Camera sources for Vigía Andino.
+# Camera sources for Volcano Vigil.
 #
 # Every camera declares its license and attribution. A camera is fetched only
-# when `enabled: true`; sources without permission stay configured but disabled.
+# when `enabled: true`.
 # `ashcam_code` names the camera in the USGS AshCam archive (about 31 days of
-# frames with exact capture times); `vigia-backfill` downloads from it.
+# frames with exact capture times); `vigil-backfill` downloads from it.
 # `live_source: ashcam` polls the archive instead of M.jpg: every 2-min (KPcam
 # 5-min) frame with its exact capture time (docs/research/ashcam_latency.md).
 # Each volcano's lat/lon (summit area, east positive) sets the sun's elevation
@@ -19,14 +19,6 @@ volcanoes:
     lat: 19.405    # Halemaʻumaʻu north vent (19.40496 N, 155.29022 W)
     lon: -155.290
     utc_offset_hours: -10   # HST
-  nevado-del-ruiz:
-    name: Nevado del Ruiz
-    country: Colombia
-    official_agency: Servicio Geológico Colombiano (SGC)
-    official_url: https://www2.sgc.gov.co/Noticias/Paginas/Boletines-semanales.aspx
-    lat: 4.895     # Arenas crater
-    lon: -75.323
-    utc_offset_hours: -5    # Colombia
 
 cameras:
   # --- USGS HVO, Kīlauea summit. Public domain; credit "U.S. Geological Survey". ---
@@ -107,56 +99,3 @@ cameras:
     enabled: true
     poll_minutes: 2
     kind: thermal
-
-  # --- SGC, Nevado del Ruiz. DISABLED: the SGC site terms grant no license to
-  # reproduce these images; permission has been requested and is pending. ---
-  - id: ruiz-azufrado
-    name: Azufrado (vnr04)
-    volcano: nevado-del-ruiz
-    url: http://amenazas.sgc.gov.co/ovsm/camip-azufrado/vnr04-2.jpg
-    license: All rights reserved by SGC; permission requested, pending
-    attribution: Servicio Geológico Colombiano
-    enabled: false
-  - id: ruiz-balcones
-    name: Balcones (vnr05)
-    volcano: nevado-del-ruiz
-    url: http://amenazas.sgc.gov.co/ovsm/camip-balcones/vnr05-2.jpg
-    license: All rights reserved by SGC; permission requested, pending
-    attribution: Servicio Geológico Colombiano
-    enabled: false
-  - id: ruiz-guali
-    name: Gualí (vnr01)
-    volcano: nevado-del-ruiz
-    url: http://amenazas.sgc.gov.co/ovsm/camip-guali/vnr01-2.jpg
-    license: All rights reserved by SGC; permission requested, pending
-    attribution: Servicio Geológico Colombiano
-    enabled: false
-  - id: ruiz-ovsm
-    name: OVSM (vnr03)
-    volcano: nevado-del-ruiz
-    url: http://amenazas.sgc.gov.co/ovsm/camip-ovsm/vnr03-2.jpg
-    license: All rights reserved by SGC; permission requested, pending
-    attribution: Servicio Geológico Colombiano
-    enabled: false
-  - id: ruiz-pirana
-    name: Piraña (vnr02)
-    volcano: nevado-del-ruiz
-    url: http://amenazas.sgc.gov.co/ovsm/camip-pirana/vnr02-2.jpg
-    license: All rights reserved by SGC; permission requested, pending
-    attribution: Servicio Geológico Colombiano
-    enabled: false
-  - id: ruiz-pitayo
-    name: Pitayó (vnr06)
-    volcano: nevado-del-ruiz
-    url: http://amenazas.sgc.gov.co/ovsm/camip-pitayo/vnr06-2.jpg
-    license: All rights reserved by SGC; permission requested, pending
-    attribution: Servicio Geológico Colombiano
-    enabled: false
-  - id: ruiz-rio-guali
-    name: Río Gualí (vnr07)
-    volcano: nevado-del-ruiz
-    url: http://amenazas.sgc.gov.co/ovsm/camip-rio_guali/vnr07-2.jpg
-    license: All rights reserved by SGC; permission requested, pending
-    attribution: Servicio Geológico Colombiano
-    enabled: false
-    notes: Points at the Gualí river; candidate for the river/lahar module.

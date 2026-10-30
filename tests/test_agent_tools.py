@@ -17,18 +17,18 @@ from test_metrics import kp_calibration
 from test_sam import IMAGE_OUTPUT, OBJ_0
 from test_tracking import FakeMeta, needs_ffmpeg
 from test_wind import open_meteo_day
-from vigia import masks
-from vigia.calibration import CameraCalibration, Preset, Site
-from vigia.agent.tools import (TOOLS, Args, CompareArgs, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs,
+from vigil import masks
+from vigil.calibration import CameraCalibration, Preset, Site
+from vigil.agent.tools import (TOOLS, Args, CompareArgs, FrameArgs, HistoryArgs, NoArgs, RecentFramesArgs,
                                SegmentArgs, Tool, ToolContext, ToolError, Toolbox, TrackArgs, TrackIdArgs, WindArgs,
                                _wind_json, assess_frame, compare_cameras, get_history, get_recent_frames, get_wind,
                                list_cameras_status, measure_track, segment_frame, strict_schema, track_window_tool)
-from vigia.config import Camera, Sources, Volcano
-from vigia.ingest.store import FrameStore
-from vigia.meta.ledger import BudgetExceeded
-from vigia.prompts import Prompts
-from vigia.timeutil import to_iso
-from vigia.wind import Wind, WindService
+from vigil.config import Camera, Sources, Volcano
+from vigil.ingest.store import FrameStore
+from vigil.meta.ledger import BudgetExceeded
+from vigil.prompts import Prompts
+from vigil.timeutil import to_iso
+from vigil.wind import Wind, WindService
 
 NOW = datetime(2026, 10, 28, 18, 0, tzinfo=timezone.utc)   # wall clock: Oct 17 is history for Open-Meteo
 T0 = datetime(2026, 10, 17, 15, 0, 0, tzinfo=timezone.utc)  # the agent's clock: 05:00 HST in episode 55

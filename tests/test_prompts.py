@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from vigia.config import ConfigError
-from vigia.prompts import load_prompts
+from vigil.config import ConfigError
+from vigil.prompts import load_prompts
 
 REPO = Path(__file__).resolve().parent.parent
 

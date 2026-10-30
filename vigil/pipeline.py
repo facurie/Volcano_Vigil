@@ -16,7 +16,7 @@ step looks past `now`.
 Tracking and measuring take minutes (mask decoding), so a server runs the steps in a background thread, never in
 a request.
 
-    vigia-pipeline --volcano kilauea
+    vigil-pipeline --volcano kilauea
 """
 
 from __future__ import annotations
@@ -37,18 +37,18 @@ from typing import Any
 import httpx
 import openai
 
-from vigia import db, tracking
-from vigia.agent.bulletin import write_bulletin
-from vigia.agent.loop import BUDGET_USD, context_from_settings
-from vigia.agent.tools import ToolContext, calibrated
-from vigia.config import Camera, load_sources
-from vigia.gate import QualityGate, SparkMode
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import BudgetExceeded, CostLedger
-from vigia.metrics import measure_window
-from vigia.prompts import Target
-from vigia.settings import Settings
-from vigia.timeutil import to_iso, utcnow
+from vigil import db, tracking
+from vigil.agent.bulletin import write_bulletin
+from vigil.agent.loop import BUDGET_USD, context_from_settings
+from vigil.agent.tools import ToolContext, calibrated
+from vigil.config import Camera, load_sources
+from vigil.gate import QualityGate, SparkMode
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import BudgetExceeded, CostLedger
+from vigil.metrics import measure_window
+from vigil.prompts import Target
+from vigil.settings import Settings
+from vigil.timeutil import to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -253,7 +253,7 @@ class Pipeline:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run the pipeline live for one volcano: quality verdicts, hourly "
                                                  "SAM tracking and measuring, and an hourly bulletin. Run "
-                                                 "vigia-ingest alongside it.")
+                                                 "vigil-ingest alongside it.")
     parser.add_argument("--volcano", required=True, help="volcano id from the sources file, e.g. kilauea")
     parser.add_argument("--interval", type=float, default=5, help="minutes between steps (default 5)")
     parser.add_argument("--agent-every", type=float, default=60,

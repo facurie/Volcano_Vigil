@@ -4,8 +4,8 @@ import httpx
 import pytest
 
 from conftest import CAM_URL, NOW, make_jpeg, make_noisy_jpeg
-from vigia.ingest.fetch import Ingestor
-from vigia.ingest.store import FrameStore
+from vigil.ingest.fetch import Ingestor
+from vigil.ingest.store import FrameStore
 
 LAST_MODIFIED = "Mon, 26 Oct 2026 18:25:00 GMT"
 

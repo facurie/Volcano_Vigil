@@ -9,15 +9,15 @@ import pytest
 from test_agent_loop import SOURCES_YAML
 from test_agent_tools import SIZE, T0, add_frame, add_run, context, store  # store is a fixture
 from test_metrics import kp_calibration
-from vigia import tracking
-from vigia.agent.bulletin import Written
-from vigia.agent.loop import AgentRun
-from vigia.calibration import CameraCalibration, Preset, Site
-from vigia.meta.ledger import BudgetExceeded
-from vigia.metrics import MeasureReport
-from vigia.pipeline import Pipeline, PipelineConfig, floor_time, main
-from vigia.timeutil import to_iso
-from vigia.tracking import RunSummary, TrackingReport
+from vigil import tracking
+from vigil.agent.bulletin import Written
+from vigil.agent.loop import AgentRun
+from vigil.calibration import CameraCalibration, Preset, Site
+from vigil.meta.ledger import BudgetExceeded
+from vigil.metrics import MeasureReport
+from vigil.pipeline import Pipeline, PipelineConfig, floor_time, main
+from vigil.timeutil import to_iso
+from vigil.tracking import RunSummary, TrackingReport
 
 START = T0 - timedelta(hours=2)  # 13:00Z: the pipeline starts here
 H = timedelta(hours=1)
@@ -354,7 +354,7 @@ def cli_env(monkeypatch, tmp_path):
     sources.write_text(SOURCES_YAML, encoding="utf-8")
     monkeypatch.setenv("SOURCES_PATH", str(sources))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
 
 
 @pytest.mark.parametrize("argv, message", [(["--volcano", "etna"], "etna"),

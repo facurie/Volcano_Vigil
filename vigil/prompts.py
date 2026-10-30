@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from vigia.config import CameraKind, ConfigError
+from vigil.config import CameraKind, ConfigError
 
 Target = Literal["plume", "fountain", "incandescence"]
 Phrase = Annotated[str, Field(min_length=1)]

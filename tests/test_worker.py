@@ -4,9 +4,9 @@ import httpx
 
 from conftest import NOW, make_jpeg
 from test_ashcam import FakeAshcam, kp_camera
-from vigia.config import Camera
-from vigia.ingest.store import FrameStore, IngestResult
-from vigia.ingest.worker import Fallback, SourceRouter, Worker, build_router
+from vigil.config import Camera
+from vigil.ingest.store import FrameStore, IngestResult
+from vigil.ingest.worker import Fallback, SourceRouter, Worker, build_router
 
 
 def cam(camera_id, enabled=True, poll_minutes=5):
@@ -31,7 +31,7 @@ class RecordingIngestor:
 
 def test_only_enabled_cameras_are_polled():
     ingestor = RecordingIngestor()
-    worker = Worker(ingestor, [cam("a"), cam("sgc", enabled=False)])
+    worker = Worker(ingestor, [cam("a"), cam("off", enabled=False)])
 
     worker.run_once(NOW)
 

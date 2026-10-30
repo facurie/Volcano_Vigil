@@ -1,6 +1,6 @@
 import pytest
 
-from vigia.meta.pricing import cost_usd
+from vigil.meta.pricing import cost_usd
 
 
 def test_muse_spark_cost_uses_input_and_output_token_rates():

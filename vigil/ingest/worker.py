@@ -3,7 +3,7 @@
 Cameras on the AshCam archive fall back to their public image URL whenever the
 archive fails, so they keep getting frames (every 10 min instead of 2).
 
-Run it standalone with `vigia-ingest` (or `python -m vigia.ingest.worker`);
+Run it standalone with `vigil-ingest` (or `python -m vigil.ingest.worker`);
 `--once` polls every enabled camera a single time and exits.
 """
 
@@ -18,13 +18,13 @@ from typing import Protocol
 
 import httpx
 
-from vigia import db
-from vigia.config import Camera, load_sources
-from vigia.ingest.ashcam import AshcamClient, AshcamIngestor
-from vigia.ingest.fetch import Ingestor
-from vigia.ingest.store import FrameStore, IngestResult
-from vigia.settings import Settings
-from vigia.timeutil import utcnow
+from vigil import db
+from vigil.config import Camera, load_sources
+from vigil.ingest.ashcam import AshcamClient, AshcamIngestor
+from vigil.ingest.fetch import Ingestor
+from vigil.ingest.store import FrameStore, IngestResult
+from vigil.settings import Settings
+from vigil.timeutil import utcnow
 
 log = logging.getLogger(__name__)
 

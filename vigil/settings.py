@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-DEFAULT_USER_AGENT = "VigiaAndino/0.1 (volcano webcam monitor; hackathon project)"
+DEFAULT_USER_AGENT = "VolcanoVigil/0.1 (volcano webcam monitor; hackathon project)"
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class Settings:
         data_dir = Path(os.getenv("DATA_DIR", "data"))
         return cls(
             data_dir=data_dir,
-            db_path=Path(os.getenv("DB_PATH", str(data_dir / "vigia.sqlite"))),
+            db_path=Path(os.getenv("DB_PATH", str(data_dir / "vigil.sqlite"))),
             sources_path=Path(os.getenv("SOURCES_PATH", "config/sources.yaml")),
             prompts_path=Path(os.getenv("PROMPTS_PATH", "config/prompts.yaml")),
             calibration_path=Path(os.getenv("CALIBRATION_PATH", "config/calibration.yaml")),

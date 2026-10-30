@@ -1,8 +1,8 @@
 import pytest
 
 from test_agent_tools import add_frame, add_measurement, add_run, add_track, detection_ids, store  # store: fixture
-from vigia.episodes import EP55, EPISODES, drift_rows, end_rows, height_row, local_time, table
-from vigia.timeutil import parse_utc
+from vigil.episodes import EP55, EPISODES, drift_rows, end_rows, height_row, local_time, table
+from vigil.timeutil import parse_utc
 
 
 def measured(conn, store, camera_id, minutes, target, metric, value, sigma, unit="m"):

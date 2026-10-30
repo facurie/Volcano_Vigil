@@ -1,8 +1,8 @@
 """Measurements of tracked objects: top height and altitude, area and plume drift, each with sigma.
 
-Every stored detection (vigia.tracking) on a frame its camera's calibration
+Every stored detection (vigil.tracking) on a frame its camera's calibration
 covers is placed on the vertical plane through the vent, square to the line
-of sight (vigia.geometry.on_vent_plane):
+of sight (vigil.geometry.on_vent_plane):
 - top_height: metres above the vent, and top_altitude: metres above sea
   level, of the mask's highest pixel. A mask that reaches the frame's top
   edge is cut off, so it gets neither.
@@ -13,12 +13,12 @@ of sight (vigia.geometry.on_vent_plane):
   right) and the bearing of that side. One camera sees only the part of the
   drift across its line of sight.
 
-Each value is sample 0 of the calibration's Monte Carlo (vigia.calibration)
+Each value is sample 0 of the calibration's Monte Carlo (vigil.calibration)
 and its sigma the spread of the other samples, which also move the top pixel
 by the mask edge's uncertainty and lean the object along the line of sight.
 Results go to the `measurements` table.
 
-    vigia-measure --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+    vigil-measure --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
 """
 
 from __future__ import annotations
@@ -33,11 +33,11 @@ from datetime import datetime
 
 import numpy as np
 
-from vigia import db, masks
-from vigia.calibration import Calibration, Geometry, load_calibration, sample_geometry
-from vigia.geometry import on_vent_plane
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso, utcnow
+from vigil import db, masks
+from vigil.calibration import Calibration, Geometry, load_calibration, sample_geometry
+from vigil.geometry import on_vent_plane
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso, utcnow
 
 SAMPLES = 1000
 MASK_EDGE_PX = 3.0  # uncertainty of a SAM mask's edge, in frame pixels

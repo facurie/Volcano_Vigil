@@ -21,12 +21,12 @@ from typing import Any
 import numpy as np
 import openai
 
-from vigia import tracking
-from vigia.config import Camera, Volcano
-from vigia.episodes import Episode, local_time
-from vigia.meta.client import MetaClient
-from vigia.timeutil import parse_utc, to_iso
-from vigia.video import assemble
+from vigil import tracking
+from vigil.config import Camera, Volcano
+from vigil.episodes import Episode, local_time
+from vigil.meta.client import MetaClient
+from vigil.timeutil import parse_utc, to_iso
+from vigil.video import assemble
 
 log = logging.getLogger(__name__)
 

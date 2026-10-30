@@ -1,12 +1,12 @@
 # Camera calibration for measuring heights: where each camera stands and
-# where it points (vigia/calibration.py, vigia/geometry.py).
+# where it points (vigil/calibration.py, vigil/geometry.py).
 #
 # - vents: the point each volcano's heights are measured from.
 # - cameras: the lens position (lat/lon and elevation, with one-sigma
 #   uncertainties) and one preset per view. A PTZ camera gets a new preset
 #   whenever its framing changes; a camera's presets must not overlap in time.
 # - A preset's references fix the camera's azimuth, tilt, roll, focal length
-#   and lens distortion by least squares (vigia.geometry.solve_view):
+#   and lens distortion by least squares (vigil.geometry.solve_view):
 #     vent_pixel  where the vent appears: the fountain's axis and foot;
 #     landmarks   pixels of points with published positions (GNIS, USGS);
 #     celestial   pixels of the Moon's centre, with its apparent azimuth and

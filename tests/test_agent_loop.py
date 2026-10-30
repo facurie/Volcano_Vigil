@@ -8,12 +8,12 @@ from conftest import NOW, make_jpeg
 from test_agent_tools import SOURCES, T0, context
 from test_meta_client import make_client, response_body, turn_body
 from test_sam import IMAGE_OUTPUT
-from vigia.agent.loop import (REPORT, TURN_RETRY_PAUSES, WRAP_UP, context_from_settings, instructions, main, run_agent,
+from vigil.agent.loop import (REPORT, TURN_RETRY_PAUSES, WRAP_UP, context_from_settings, instructions, main, run_agent,
                               trace)
-from vigia.agent.tools import Args, NoArgs, Tool
-from vigia.config import Volcano
-from vigia.meta.client import MetaClient
-from vigia.timeutil import to_iso
+from vigil.agent.tools import Args, NoArgs, Tool
+from vigil.config import Volcano
+from vigil.meta.client import MetaClient
+from vigil.timeutil import to_iso
 
 
 class Script:
@@ -236,7 +236,7 @@ def cli_env(monkeypatch, tmp_path):
     sources.write_text(SOURCES_YAML, encoding="utf-8")
     monkeypatch.setenv("SOURCES_PATH", str(sources))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
     return tmp_path
 
 
@@ -255,7 +255,7 @@ def test_cli_runs_the_agent_at_the_given_clock_and_prints_its_trace(cli_env, mon
                             http_client=httpx.Client(transport=httpx.MockTransport(api)))
         return MetaClient(sdk, ledger)
 
-    monkeypatch.setattr("vigia.agent.loop.MetaClient.from_env", fake_from_env)
+    monkeypatch.setattr("vigil.agent.loop.MetaClient.from_env", fake_from_env)
 
     main(["--volcano", "kilauea", "--at", "2026-10-17T05:00-10:00"])
 
@@ -311,7 +311,7 @@ def test_by_default_a_run_asks_for_a_free_text_report(conn, tmp_path):
 
 
 def test_context_from_settings_reads_the_config_files(cli_env, conn):
-    from vigia.settings import Settings
+    from vigil.settings import Settings
     settings = Settings.from_env()
 
     ctx = context_from_settings(settings, conn, httpx.Client(), T0)

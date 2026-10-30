@@ -42,7 +42,7 @@ An earlier spot check at 16:48 UTC agrees. The newest AshCam frame was 1–3 min
 | V1cam | yes (0.3) | yes (2.0 ≤ 10.0) | **AshCam** (the camera stays disabled for live polling; the setting applies if it is enabled) |
 | F1cam | no (6.3) | no (20.0 > 10.2) | **M.jpg** (AshCam archives F1 sparsely) |
 
-`config/sources.yaml` sets `live_source: ashcam` on KPcam, K2cam and V1cam. The worker sends those cameras to `AshcamIngestor`, which stores every frame archived since the newest stored one, reaching back at most one hour. Longer gaps are filled with `vigia-backfill`. If AshCam fails, those cameras fall back to `M.jpg` automatically (see Caveats). F1cam keeps the conditional-GET `M.jpg` poller.
+`config/sources.yaml` sets `live_source: ashcam` on KPcam, K2cam and V1cam. The worker sends those cameras to `AshcamIngestor`, which stores every frame archived since the newest stored one, reaching back at most one hour. Longer gaps are filled with `vigil-backfill`. If AshCam fails, those cameras fall back to `M.jpg` automatically (see Caveats). F1cam keeps the conditional-GET `M.jpg` poller.
 
 ## Caveats
 

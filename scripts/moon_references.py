@@ -23,9 +23,9 @@ import httpx
 import numpy as np
 from PIL import Image, ImageFilter
 
-from vigia.calibration import load_calibration
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc
+from vigil.calibration import load_calibration
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc
 
 HORIZONS = "https://ssd.jpl.nasa.gov/api/horizons.api"
 

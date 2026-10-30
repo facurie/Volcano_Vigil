@@ -1,6 +1,6 @@
 """The quality gate: local checks on every frame, Muse Spark when they cannot decide.
 
-Local checks (vigia/quality.py) cost nothing: they reject stale, frozen,
+Local checks (vigil/quality.py) cost nothing: they reject stale, frozen,
 dark-night and foggy frames, pass clear ones and leave hazy ones uncertain.
 Muse Spark looks at the uncertain frames, or on request at every frame the
 local checks let through: is the view usable, and which timestamp and
@@ -9,7 +9,7 @@ from the stored capture time makes a frame unusable, since its measurements
 would land at the wrong time. An uncertain frame that Muse Spark did not see
 is not used. Each frame's verdict is one row of `frame_quality`.
 
-    vigia-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+    vigil-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
 """
 
 from __future__ import annotations
@@ -32,15 +32,15 @@ import numpy as np
 import openai
 from PIL import Image
 
-from vigia import db
-from vigia.config import Sources, load_sources
-from vigia.imaging import load_for_upload
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import CostLedger
-from vigia.settings import Settings
-from vigia.quality import ImageStats, LocalVerdict, Thresholds, check_local, difference, fingerprint, measure
-from vigia.sun import solar_elevation
-from vigia.timeutil import parse_utc, to_iso, utcnow
+from vigil import db
+from vigil.config import Sources, load_sources
+from vigil.imaging import load_for_upload
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import CostLedger
+from vigil.settings import Settings
+from vigil.quality import ImageStats, LocalVerdict, Thresholds, check_local, difference, fingerprint, measure
+from vigil.sun import solar_elevation
+from vigil.timeutil import parse_utc, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 

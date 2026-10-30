@@ -1,4 +1,4 @@
-# Kīlauea (Hawaiʻi) USGS webcams: research for Vigía Andino
+# Kīlauea (Hawaiʻi) USGS webcams: research for Volcano Vigil
 
 Research date: 2026-10-26/27 (UTC). All HTTP facts were measured live from Windows/curl during 2026-10-26 20:19 to 2026-10-27 00:20 UTC.
 Status context: the Halemaʻumaʻu eruption is paused after episode 55 (2026-10-17, 03:19–09:03 HST, north vent, fountain ~220 m, plume ~7,600 m asl). On 2026-10-26 08:10 HST, HVO forecast episode 56 for **Oct 31 – Nov 6, 2026**, and reported glow from the west and north vents ([S8](https://www.usgs.gov/volcanoes/kilauea/volcano-updates), [S7](https://www.usgs.gov/observatories/hvo/news/photo-video-chronology-kilauea-summit-episode-55-0)).

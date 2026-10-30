@@ -10,14 +10,14 @@ import pytest
 from conftest import make_jpeg
 from test_meta_client import make_client, response_body, sse
 from test_sam import OBJ_0
-from vigia import db, masks, tracking
-from vigia.config import Camera
-from vigia.ingest.store import FrameStore
-from vigia.prompts import Prompts
-from vigia.settings import Settings
-from vigia.timeutil import to_iso
-from vigia.tracking import detection_mask, main, track_window, unassessed_frames, usable_frames
-from vigia.video import probe as real_probe
+from vigil import db, masks, tracking
+from vigil.config import Camera
+from vigil.ingest.store import FrameStore
+from vigil.prompts import Prompts
+from vigil.settings import Settings
+from vigil.timeutil import to_iso
+from vigil.tracking import detection_mask, main, track_window, unassessed_frames, usable_frames
+from vigil.video import probe as real_probe
 
 T0 = datetime(2026, 10, 17, 18, 0, 2, tzinfo=timezone.utc)
 
@@ -335,12 +335,12 @@ def cli_env(monkeypatch, tmp_path):
     sources.write_text(SOURCES_YAML, encoding="utf-8")
     monkeypatch.setenv("SOURCES_PATH", str(sources))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
     return tmp_path / "data"
 
 
 def test_cli_refuses_a_window_under_the_billed_minimum(cli_env, capsys):
-    conn = db.connect(cli_env / "vigia.sqlite")
+    conn = db.connect(cli_env / "vigil.sqlite")
     store = FrameStore(conn, cli_env)
     add_frame(store, conn, 0)
     add_frame(store, conn, 2, usable=None)
@@ -350,7 +350,7 @@ def test_cli_refuses_a_window_under_the_billed_minimum(cli_env, capsys):
         main(["--camera", "kilauea-k2", *WINDOW])
 
     err = capsys.readouterr().err
-    assert "1 usable frames" in err and "50" in err and "vigia-quality" in err
+    assert "1 usable frames" in err and "50" in err and "vigil-quality" in err
 
 
 def test_cli_refuses_an_unknown_camera(cli_env, capsys):

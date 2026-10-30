@@ -1,18 +1,18 @@
 """Replay a past episode through the live pipeline on a simulated clock, and set what it says against the record.
 
-The replay has its own database, data/replay/ep<key>/vigia.sqlite. Every `step` of simulated time it copies
+The replay has its own database, data/replay/ep<key>/vigil.sqlite. Every `step` of simulated time it copies
 into it the episode's frames captured by then, as live ingest would have, and runs one pipeline step at that
-time (vigia.pipeline): quality verdicts, one SAM window per camera per closed hour with its measurements, and
+time (vigil.pipeline): quality verdicts, one SAM window per camera per closed hour with its measurements, and
 the agent's bulletin at every full hour and once more at the end. Nothing captured after the simulated clock
 exists for any of them. Each step's report goes to replay_ticks, so an interrupted replay resumes where it
 stopped. With --speed S the simulated clock runs at most S times faster than the wall clock (it cannot run
 faster than tracking does).
 
 At the end it writes timeline.json (the steps, the bulletins, the comparisons with the official values and the
-episode's phases as SAM's tracks and Muse Spark's reading of the timelapse give them (vigia.phases)) and
+episode's phases as SAM's tracks and Muse Spark's reading of the timelapse give them (vigil.phases)) and
 report.md next to the database. Its Meta spend goes to that database's ledger.
 
-    vigia-replay --episode 55 --speed 60
+    vigil-replay --episode 55 --speed 60
 """
 
 from __future__ import annotations
@@ -35,18 +35,18 @@ from typing import Any
 import httpx
 import openai
 
-from vigia import db
-from vigia.agent.bulletin import Bulletin
-from vigia.agent.loop import context_from_settings
-from vigia.agent.tools import ToolContext, ToolError
-from vigia.episodes import (DRIFT_HEADER, END_HEADER, EPISODES, HEIGHT_HEADER, Episode, drift_rows, end_rows,
+from vigil import db
+from vigil.agent.bulletin import Bulletin
+from vigil.agent.loop import context_from_settings
+from vigil.agent.tools import ToolContext, ToolError
+from vigil.episodes import (DRIFT_HEADER, END_HEADER, EPISODES, HEIGHT_HEADER, Episode, drift_rows, end_rows,
                             height_row, local_time, table)
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import BudgetExceeded, CostLedger
-from vigia.phases import HEADER as PHASES_HEADER, ask_phases, cross_check
-from vigia.pipeline import AGENT_EVERY, Pipeline, PipelineConfig
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import BudgetExceeded, CostLedger
+from vigil.phases import HEADER as PHASES_HEADER, ask_phases, cross_check
+from vigil.pipeline import AGENT_EVERY, Pipeline, PipelineConfig
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso
 
 log = logging.getLogger(__name__)
 
@@ -286,8 +286,8 @@ def main(argv: list[str] | None = None) -> None:
         stored = source.execute(f"SELECT COUNT(*) FROM frames WHERE camera_id IN ({marks}) AND captured_at "
                                 "BETWEEN ? AND ?", (*episode.cameras, to_iso(episode.start), to_iso(episode.end)))
         if not stored.fetchone()[0]:
-            parser.error(f"{settings.db_path} has no frames of episode {episode.key}; backfill them with vigia-backfill")
-        with closing(db.connect(out_dir / "vigia.sqlite")) as conn, \
+            parser.error(f"{settings.db_path} has no frames of episode {episode.key}; backfill them with vigil-backfill")
+        with closing(db.connect(out_dir / "vigil.sqlite")) as conn, \
                 httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
             client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
             try:

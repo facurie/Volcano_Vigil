@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from vigia.meta.sam import SamParseError, fit_mask, parse_output
+from vigil.meta.sam import SamParseError, fit_mask, parse_output
 
 # Real sam-3.1 output published in the docs (320x334 source, lossless masks):
 # https://dev.meta.ai/docs/sam/reading-segmentation (confidence values added by us)

@@ -1,13 +1,13 @@
-# Vigía Andino
+# Volcano Vigil
 
 **An agent that watches public volcano webcams and turns every frame into measurements and plain-language bulletins.**
 
-Volcano observatories publish webcam images every few minutes, but nobody can look at every frame all day. Vigía Andino does: it segments plumes and lava fountains with **SAM 3.1**, measures them with camera geometry (height in meters with uncertainty, drift direction), checks the drift against forecast winds, tracks each plume over time, and lets a **Muse Spark** agent decide what to look at and write a bilingual (ES/EN) bulletin that cites its evidence: frames, masks and numbers.
+Volcano observatories publish webcam images every few minutes, but nobody can look at every frame all day. Volcano Vigil does: it segments plumes and lava fountains with **SAM 3.1**, measures them with camera geometry (height in meters with uncertainty, drift direction), checks the drift against forecast winds, tracks each plume over time, and lets a **Muse Spark** agent decide what to look at and write a bilingual (ES/EN) bulletin that cites its evidence: frames, masks and numbers.
 
-It is built for Andean volcanoes such as **Nevado del Ruiz** (Colombia), the volcano of the 1985 Armero tragedy, and works with any camera. It is developed and validated on **Kīlauea** (Hawaiʻi), whose USGS webcams are public domain and whose official reports give reference values to check the agent against.
+It is built and validated on **Kīlauea** (Hawaiʻi), whose USGS webcams are public domain and whose official reports give reference values to check the agent against. Cameras, vents and their geometry live in configuration (`config/sources.yaml`, `config/calibration.yaml`), so another volcano with openly licensed webcams can be added there.
 
 > [!IMPORTANT]
-> **Vigía Andino does not replace official volcano alerts.** It is an experimental monitoring aid. Always follow the official agency for each volcano: [USGS Hawaiian Volcano Observatory](https://www.usgs.gov/observatories/hvo) for Kīlauea, [Servicio Geológico Colombiano](https://www2.sgc.gov.co/Noticias/Paginas/Boletines-semanales.aspx) for Nevado del Ruiz. Every bulletin links to the official source.
+> **Volcano Vigil does not replace official volcano alerts.** It is an experimental monitoring aid. Always follow the official agency: the [USGS Hawaiian Volcano Observatory](https://www.usgs.gov/observatories/hvo) for Kīlauea. Every bulletin links to the official source.
 
 ## What makes it more than an image analyzer
 
@@ -22,10 +22,8 @@ It is built for Andean volcanoes such as **Nevado del Ruiz** (Colombia), the vol
 flowchart LR
     subgraph sources["Public webcams (config/sources.yaml)"]
         usgs["USGS HVO Kīlauea cams<br/>public domain"]
-        sgc["SGC Nevado del Ruiz cams<br/>disabled until permission"]
     end
     usgs --> ingest["Ingest worker<br/>M.jpg or AshCam archive, SHA-256 de-dup"]
-    sgc -. "enabled: false" .-> ingest
     ingest --> store[("SQLite + data/frames")]
     replay["Replay: episode 55<br/>USGS media"] --> quality
     store --> quality["Quality gate<br/>fresh? night? cloud? frozen?"]
@@ -47,7 +45,7 @@ Work in progress during the hackathon. Implemented so far:
 
 - [x] Camera sources config with mandatory license and opt-in `enabled` flag
 - [x] Ingest worker: per-camera polling of the public image (conditional GET) or of the USGS AshCam archive (every frame, exact capture times, automatic fallback to the public image), image validation, SHA-256 de-duplication, SQLite + disk storage, camera health state
-- [x] AshCam archive backfill with exact capture times (`vigia-backfill`)
+- [x] AshCam archive backfill with exact capture times (`vigil-backfill`)
 - [x] SAM 3.1 phrases tuned per target on episode 55 frames ([evidence](docs/research/prompt_tuning.md))
 - [x] API cost ledger with daily budget cap
 - [x] Mask overlay renderer with a legend strip below the frame
@@ -70,21 +68,21 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 cp .env.example .env               # then set MODEL_API_KEY
 
-vigia-ingest --once                # poll every enabled camera once
-vigia-ingest                       # keep polling on each camera's interval
-vigia-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+vigil-ingest --once                # poll every enabled camera once
+vigil-ingest                       # keep polling on each camera's interval
+vigil-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
                                    # download archived frames (USGS AshCam keeps ~31 days)
-vigia-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+vigil-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
                                    # judge frames: local checks, Muse Spark for hazy ones
-vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+vigil-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
                                    # SAM 3.1 video tracks over the usable frames
-vigia-measure --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+vigil-measure --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
                                    # heights ± σ, area and drift of the tracked objects
 python scripts/validate_ep55.py    # compare with the official USGS values: docs/VALIDATION.md
 pytest                             # run the test suite
 ```
 
-Frames are stored under `data/frames/<camera>/<day>/` and indexed in `data/vigia.sqlite`. The `data/` folder is never committed.
+Frames are stored under `data/frames/<camera>/<day>/` and indexed in `data/vigil.sqlite`. The `data/` folder is never committed.
 
 ## Built during the hackathon (Oct 26 – Nov 4, 2026)
 
@@ -93,7 +91,6 @@ Everything in this repository was written from scratch during the [Meta Global A
 ## Data sources and credits
 
 - Kīlauea webcam images and episode 55 media: **U.S. Geological Survey** (public domain).
-- Nevado del Ruiz webcams: Servicio Geológico Colombiano. Configured but **disabled** until SGC grants permission.
 - Wind forecasts: [Open-Meteo](https://open-meteo.com).
 
 See [DATA_SOURCES.md](DATA_SOURCES.md) for every source, its license and how it is used. No images are stored in this repository.

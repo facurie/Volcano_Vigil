@@ -4,7 +4,7 @@ The file holds the vent each volcano's heights are measured from, and per
 camera its position and one preset per view: a PTZ camera gets a new preset
 whenever its framing changes, each valid for a span of capture times. A
 preset lists the references that fix where the camera points (see
-vigia.geometry): landmarks with published positions, the vent where it
+vigil.geometry): landmarks with published positions, the vent where it
 appears, celestial bodies in known directions (the Moon), pixels on the sea
 horizon, and priors on the lens's field of view (from its datasheet), on
 the roll of a level pan-tilt-zoom mount and on the radial distortion.
@@ -27,8 +27,8 @@ import numpy as np
 import yaml
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from vigia.config import ConfigError
-from vigia.geometry import (REFRACTION_K, References, View, direction, horizon_dip, local_en, sight,
+from vigil.config import ConfigError
+from vigil.geometry import (REFRACTION_K, References, View, direction, horizon_dip, local_en, sight,
                             solve_view)
 
 REFRACTION_SIGMA = 0.05  # the refraction coefficient near the ground varies by about this much
@@ -89,7 +89,7 @@ class FieldOfView(BaseModel):
 
 
 class Distortion(BaseModel):
-    """A prior on the lens's radial distortion k1 (vigia.geometry.View); a wide sigma leaves it to the references."""
+    """A prior on the lens's radial distortion k1 (vigil.geometry.View); a wide sigma leaves it to the references."""
 
     model_config = ConfigDict(extra="forbid")
 

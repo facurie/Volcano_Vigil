@@ -27,17 +27,17 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
-from vigia import tracking
-from vigia.calibration import Calibration, sample_geometry
-from vigia.config import Camera, Sources
-from vigia.gate import QualityGate
-from vigia.imaging import load_for_upload
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import BudgetExceeded
-from vigia.metrics import measure_window
-from vigia.prompts import Prompts, Target
-from vigia.timeutil import parse_utc, to_iso
-from vigia.wind import SOURCE_NAMES, SOURCE_URLS, Wind, WindService, WindUnavailable, compare_drift
+from vigil import tracking
+from vigil.calibration import Calibration, sample_geometry
+from vigil.config import Camera, Sources
+from vigil.gate import QualityGate
+from vigil.imaging import load_for_upload
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import BudgetExceeded
+from vigil.metrics import measure_window
+from vigil.prompts import Prompts, Target
+from vigil.timeutil import parse_utc, to_iso
+from vigil.wind import SOURCE_NAMES, SOURCE_URLS, Wind, WindService, WindUnavailable, compare_drift
 
 log = logging.getLogger(__name__)
 

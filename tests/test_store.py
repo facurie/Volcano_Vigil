@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from conftest import NOW, make_jpeg
-from vigia.ingest.store import FrameStore
+from vigil.ingest.store import FrameStore
 
 CAPTURED = datetime(2026, 10, 17, 14, 50, 5, tzinfo=timezone.utc)
 

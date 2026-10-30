@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 
-from vigia import db
-from vigia.config import Sources, Volcano
-from vigia.wind import Level, Wind, WindProfile, WindService, WindUnavailable, compare_drift, main
+from vigil import db
+from vigil.config import Sources, Volcano
+from vigil.wind import Level, Wind, WindProfile, WindService, WindUnavailable, compare_drift, main
 
 T = datetime(2026, 10, 17, 15, tzinfo=timezone.utc)
 # Open-Meteo's profile over Kilauea's north vent at 2026-10-17 15:00Z (Historical Forecast API):
@@ -225,12 +225,12 @@ def cli_env(monkeypatch, tmp_path):
     sources.write_text(SOURCES_YAML, encoding="utf-8")
     monkeypatch.setenv("SOURCES_PATH", str(sources))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
     return tmp_path / "data"
 
 
 def test_cli_prints_the_profile_and_the_drift_check(cli_env, capsys):
-    conn = db.connect(cli_env / "vigia.sqlite")
+    conn = db.connect(cli_env / "vigil.sqlite")
     service(conn, OpenMeteo(open_meteo_day())).profile("kilauea", datetime(2026, 10, 17, 15, tzinfo=timezone.utc))
     conn.close()  # the day is cached, so the CLI makes no request
 

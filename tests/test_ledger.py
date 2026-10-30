@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 
 from conftest import NOW
-from vigia.meta.ledger import BudgetExceeded, CostLedger
+from vigil.meta.ledger import BudgetExceeded, CostLedger
 
 
 @pytest.fixture

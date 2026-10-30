@@ -20,7 +20,7 @@ from typing import Literal
 
 from PIL import Image
 
-from vigia.timeutil import parse_utc, to_iso
+from vigil.timeutil import parse_utc, to_iso
 
 log = logging.getLogger(__name__)
 

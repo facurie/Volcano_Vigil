@@ -3,7 +3,7 @@ import pytest
 from meta_sam_parser import CompletedOutcome, decode_mask_to_raster, decode_mask_to_rle, image_segmentation_format
 
 from test_sam import IMAGE_OUTPUT
-from vigia.masks import decode, encode
+from vigil.masks import decode, encode
 
 
 def sam_masks():

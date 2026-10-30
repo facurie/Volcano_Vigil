@@ -5,8 +5,8 @@ import httpx
 import pytest
 from PIL import Image
 
-from vigia import db
-from vigia.config import Camera
+from vigil import db
+from vigil.config import Camera
 
 NOW = datetime(2026, 10, 26, 18, 30, 5, tzinfo=timezone.utc)
 CAM_URL = "https://cams.example.org/V1cam/images/M.jpg"
@@ -53,7 +53,7 @@ def server():
 
 @pytest.fixture
 def conn(tmp_path):
-    connection = db.connect(tmp_path / "vigia.sqlite")
+    connection = db.connect(tmp_path / "vigil.sqlite")
     yield connection
     connection.close()
 

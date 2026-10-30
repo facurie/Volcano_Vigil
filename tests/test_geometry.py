@@ -3,7 +3,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from vigia.geometry import (References, View, direction, horizon_dip, local_en, on_vent_plane, sight,
+from vigil.geometry import (References, View, direction, horizon_dip, local_en, on_vent_plane, sight,
                             solve_view)
 
 KP = (19.492709, -155.385281)

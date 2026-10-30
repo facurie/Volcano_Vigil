@@ -2,7 +2,7 @@
 
 Episode 55 of Kīlauea's summit eruption, on 2026-10-17. The official values and their sources are in
 docs/research/episode55.md; they are compared with, never fitted. scripts/validate_ep55.py writes
-docs/VALIDATION.md from these rows, and vigia.replay compares a replay with them.
+docs/VALIDATION.md from these rows, and vigil.replay compares a replay with them.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from vigia.timeutil import parse_utc, to_iso
+from vigil.timeutil import parse_utc, to_iso
 
 FT = 0.3048
 HST = timezone(timedelta(hours=-10))

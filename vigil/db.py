@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS detections (      -- one tracked object on one frame
 );
 CREATE INDEX IF NOT EXISTS idx_detections_frame ON detections (frame_id);
 CREATE INDEX IF NOT EXISTS idx_detections_track ON detections (track_id);
-CREATE TABLE IF NOT EXISTS measurements (    -- one metric of one detection (vigia.metrics)
+CREATE TABLE IF NOT EXISTS measurements (    -- one metric of one detection (vigil.metrics)
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     detection_id INTEGER NOT NULL REFERENCES detections (id),
     frame_id     INTEGER NOT NULL REFERENCES frames (id),
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS measurements (    -- one metric of one detection (vig
 );
 CREATE INDEX IF NOT EXISTS idx_measurements_series ON measurements (camera_id, metric, captured_at);
 
-CREATE TABLE IF NOT EXISTS wind_profiles (   -- Open-Meteo winds aloft over a volcano, one row per model hour (vigia.wind)
+CREATE TABLE IF NOT EXISTS wind_profiles (   -- Open-Meteo winds aloft over a volcano, one row per model hour (vigil.wind)
     volcano     TEXT NOT NULL,
     valid_at    TEXT NOT NULL,  -- UTC model hour
     source      TEXT NOT NULL,  -- forecast | historical_forecast
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS wind_profiles (   -- Open-Meteo winds aloft over a vo
     PRIMARY KEY (volcano, valid_at)
 );
 
-CREATE TABLE IF NOT EXISTS agent_runs (      -- one run of the Muse Spark agent (vigia.agent.loop)
+CREATE TABLE IF NOT EXISTS agent_runs (      -- one run of the Muse Spark agent (vigil.agent.loop)
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at  TEXT    NOT NULL,  -- UTC wall clock
     finished_at TEXT,
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS agent_steps (     -- one model turn or tool call of a
     UNIQUE (run_id, seq)
 );
 
-CREATE TABLE IF NOT EXISTS bulletins (       -- one bulletin of an agent run (vigia.agent.bulletin)
+CREATE TABLE IF NOT EXISTS bulletins (       -- one bulletin of an agent run (vigil.agent.bulletin)
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id         INTEGER NOT NULL REFERENCES agent_runs (id),
     volcano        TEXT    NOT NULL,
@@ -180,11 +180,11 @@ CREATE TABLE IF NOT EXISTS bulletins (       -- one bulletin of an agent run (vi
     headline_en    TEXT    NOT NULL,
     headline_es    TEXT    NOT NULL,
     verified       INTEGER NOT NULL,  -- 1 if every quoted number matched a stored measurement
-    body           TEXT    NOT NULL   -- the whole bulletin as JSON (vigia.agent.bulletin.Bulletin)
+    body           TEXT    NOT NULL   -- the whole bulletin as JSON (vigil.agent.bulletin.Bulletin)
 );
 CREATE INDEX IF NOT EXISTS idx_bulletins_clock ON bulletins (volcano, clock);
 
-CREATE TABLE IF NOT EXISTS replay_ticks (    -- one step of a replay's simulated clock (vigia.replay)
+CREATE TABLE IF NOT EXISTS replay_ticks (    -- one step of a replay's simulated clock (vigil.replay)
     clock  TEXT PRIMARY KEY,  -- UTC simulated time
     report TEXT NOT NULL      -- JSON: the pipeline's step report plus the frames fed
 );

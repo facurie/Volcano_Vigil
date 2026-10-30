@@ -21,11 +21,11 @@ import argparse
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from vigia import db
-from vigia.calibration import load_calibration, sample_geometry
-from vigia.geometry import REFRACTION_K, View, direction, horizon_dip, local_en, sight
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso
+from vigil import db
+from vigil.calibration import load_calibration, sample_geometry
+from vigil.geometry import REFRACTION_K, View, direction, horizon_dip, local_en, sight
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso
 
 
 def main(argv: list[str] | None = None) -> None:

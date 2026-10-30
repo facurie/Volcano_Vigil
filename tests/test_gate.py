@@ -8,11 +8,11 @@ import pytest
 from PIL import Image, ImageDraw
 
 from test_meta_client import SPARK_USAGE, FakeApi, make_client, response_body
-from vigia import db
-from vigia.config import Camera, Sources, Volcano
-from vigia.gate import GATE_SCHEMA, QualityGate, main, parse_ptz, read_answer
-from vigia.ingest.store import FrameStore
-from vigia.quality import Thresholds
+from vigil import db
+from vigil.config import Camera, Sources, Volcano
+from vigil.gate import GATE_SCHEMA, QualityGate, main, parse_ptz, read_answer
+from vigil.ingest.store import FrameStore
+from vigil.quality import Thresholds
 
 DAY = datetime(2026, 10, 17, 22, 0, 5, tzinfo=timezone.utc)    # 12:00 HST, sun at +61 degrees
 NIGHT = datetime(2026, 10, 17, 13, 0, 5, tzinfo=timezone.utc)  # 03:00 HST, sun at -47 degrees
@@ -286,12 +286,12 @@ def cli_env(monkeypatch, tmp_path):
     sources.write_text(SOURCES_YAML, encoding="utf-8")
     monkeypatch.setenv("SOURCES_PATH", str(sources))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
     return tmp_path / "data"
 
 
 def test_cli_assesses_the_window_locally_and_prints_a_summary(cli_env, capsys):
-    conn = db.connect(cli_env / "vigia.sqlite")
+    conn = db.connect(cli_env / "vigil.sqlite")
     store = FrameStore(conn, cli_env)
     add(store, sharp(), DAY)
     add(store, flat(150), DAY + timedelta(minutes=2))

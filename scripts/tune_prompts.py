@@ -21,15 +21,15 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from vigia import db
-from vigia.imaging import load_for_upload
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import CostLedger
-from vigia.meta.pricing import cost_usd
-from vigia.meta.sam import SamObject
-from vigia.overlay import Layer, draw_layers
-from vigia.settings import Settings
-from vigia.timeutil import to_iso, utcnow
+from vigil import db
+from vigil.imaging import load_for_upload
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import CostLedger
+from vigil.meta.pricing import cost_usd
+from vigil.meta.sam import SamObject
+from vigil.overlay import Layer, draw_layers
+from vigil.settings import Settings
+from vigil.timeutil import to_iso, utcnow
 
 EP55 = Path("data/raw/usgs_ep55")
 ASHCAM = EP55 / "ashcam"

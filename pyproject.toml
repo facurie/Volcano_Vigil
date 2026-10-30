@@ -3,7 +3,7 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vigia-andino"
+name = "volcano-vigil"
 version = "0.1.0"
 description = "An agent that watches public volcano webcams and turns frames into measurements and bilingual bulletins, using Meta's Muse Spark and SAM 3.1."
 readme = "README.md"
@@ -26,19 +26,19 @@ dev = [
 ]
 
 [project.scripts]
-vigia-track = "vigia.tracking:main"
-vigia-ingest = "vigia.ingest.worker:main"
-vigia-backfill = "vigia.ingest.ashcam:main"
-vigia-quality = "vigia.gate:main"
-vigia-measure = "vigia.metrics:main"
-vigia-wind = "vigia.wind:main"
-vigia-agent = "vigia.agent.loop:main"
-vigia-bulletin = "vigia.agent.bulletin:main"
-vigia-pipeline = "vigia.pipeline:main"
-vigia-replay = "vigia.replay:main"
+vigil-track = "vigil.tracking:main"
+vigil-ingest = "vigil.ingest.worker:main"
+vigil-backfill = "vigil.ingest.ashcam:main"
+vigil-quality = "vigil.gate:main"
+vigil-measure = "vigil.metrics:main"
+vigil-wind = "vigil.wind:main"
+vigil-agent = "vigil.agent.loop:main"
+vigil-bulletin = "vigil.agent.bulletin:main"
+vigil-pipeline = "vigil.pipeline:main"
+vigil-replay = "vigil.replay:main"
 
 [tool.setuptools.packages.find]
-include = ["vigia*"]
+include = ["vigil*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

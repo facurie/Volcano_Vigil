@@ -1,4 +1,4 @@
-# Vigia Andino - Kilauea camera geometry (DRAFT, 2026-10-27)
+# Volcano Vigil - Kilauea camera geometry (DRAFT, 2026-10-27)
 # Labels: "published (<url>)" = stated by USGS; "estimated (<method>, +/- unc)" = derived here.
 # Distances/bearings: haversine, R = 6371008.8 m, from camera to target vent (deg true, clockwise from N).
 # Ground elevations "EPQS" = USGS 3DEP point query (https://epqs.nationalmap.gov/v1/json), checked against

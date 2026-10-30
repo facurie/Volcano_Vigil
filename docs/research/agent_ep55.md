@@ -5,14 +5,14 @@ Phase 4 acceptance, run on 2026-10-28:
 > Replayed at 05:00 HST on Oct 17, the agent picks KPcam, measures the plume, checks it against the wind (SW drift) and leaves a full trace.
 
 ```
-vigia-agent --volcano kilauea --at 2026-10-17T05:00-10:00
+vigil-agent --volcano kilauea --at 2026-10-17T05:00-10:00
 ```
 
 - **Clock:** 2026-10-17T15:00:00Z.
 - **Model:** `muse-spark-1.3`, reasoning effort medium.
 - **Budget:** 12 turns and $0.30 per run.
 - **Task:** the default one: "Check Kīlauea now: which cameras show activity? Measure the plume and any lava fountain you can, compare the plume's drift with the forecast wind, and report."
-- **Trace:** in the `agent_runs` and `agent_steps` tables of `data/vigia.sqlite`. Run 2 is the clean run (below); run 1 found a bug.
+- **Trace:** in the `agent_runs` and `agent_steps` tables of `data/vigil.sqlite`. Run 2 is the clean run (below); run 1 found a bug.
 
 ## Run 2: done in 5 turns, $0.0302, 66 s
 
@@ -72,7 +72,7 @@ Two live probes while planning ($0.0082 in total) and the two runs showed:
 
 ## The wind check
 
-`vigia/wind.py` uses Open-Meteo's Historical Forecast API for hours more than two days old. For the hour 2026-10-17 15:00Z it returned levels from 850 to 300 hPa, from a model cell 4 km north-east of the vent.
+`vigil/wind.py` uses Open-Meteo's Historical Forecast API for hours more than two days old. For the hour 2026-10-17 15:00Z it returned levels from 850 to 300 hPa, from a model cell 4 km north-east of the vent.
 
 The drift is compared with the **mean wind between the vent and the plume top**, not with the wind at the top. Over the 75 KPcam plume frames of the episode ([VALIDATION.md](../VALIDATION.md)):
 

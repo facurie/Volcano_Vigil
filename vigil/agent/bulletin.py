@@ -6,7 +6,7 @@ language, the measurements the body quotes and the frames that show them. The co
 on the model: the volcano's official agency and link, the disclaimer, the wind check as the get_wind tool
 returned it, an overlay of each evidence frame with its masks, and a check of every quoted number against the
 stored measurements up to the agent's clock (a number nothing stored supports is marked unverified). Bulletins
-are stored in the `bulletins` table; vigia.agent.render turns them into Markdown and HTML. Evidence overlays are
+are stored in the `bulletins` table; vigil.agent.render turns them into Markdown and HTML. Evidence overlays are
 JPEGs at most 1,280 pixels wide, in the bulletin's folder.
 """
 
@@ -29,19 +29,19 @@ import numpy as np
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from vigia import db
-from vigia.agent.loop import (BUDGET_USD, DEFAULT_TASK, MAX_TURNS, AgentRun, context_from_settings, run_agent,
+from vigil import db
+from vigil.agent.loop import (BUDGET_USD, DEFAULT_TASK, MAX_TURNS, AgentRun, context_from_settings, run_agent,
                               trace)
-from vigia.agent.render import local_time, publish, to_markdown
-from vigia.agent.tools import Metric, ToolContext
-from vigia.config import load_sources
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import CostLedger
-from vigia.overlay import Layer, draw_layers
-from vigia.prompts import Target
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso, utcnow
-from vigia.tracking import detection_mask
+from vigil.agent.render import local_time, publish, to_markdown
+from vigil.agent.tools import Metric, ToolContext
+from vigil.config import load_sources
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import CostLedger
+from vigil.overlay import Layer, draw_layers
+from vigil.prompts import Target
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso, utcnow
+from vigil.tracking import detection_mask
 
 ActivityLevel = Literal["no_view", "quiet", "degassing", "incandescence", "fountaining"]
 Unit = Literal["m", "m2", "deg"]
@@ -49,9 +49,9 @@ EVIDENCE_MAX = 3
 OVERLAY_WIDTH = 1280  # evidence overlays are scaled down to this width
 COLORS = {"plume": (80, 200, 255), "fountain": (255, 90, 30), "incandescence": (255, 210, 0)}
 TOLERANCE = {"m": 1.0, "m2": 1.0, "deg": 0.1}  # what rounding can change in a quoted number, besides 1 %
-DISCLAIMER_EN = ("Automated, experimental reading of public webcams by Vigía Andino. It does not replace official "
+DISCLAIMER_EN = ("Automated, experimental reading of public webcams by Volcano Vigil. It does not replace official "
                  "alerts or warnings. For the official status of {name}, see {agency}: {url}")
-DISCLAIMER_ES = ("Lectura automática y experimental de cámaras públicas hecha por Vigía Andino. No reemplaza las "
+DISCLAIMER_ES = ("Lectura automática y experimental de cámaras públicas hecha por Volcano Vigil. No reemplaza las "
                  "alertas ni los avisos oficiales. Para el estado oficial de {name}, consulte a {agency}: {url}")
 
 BULLETIN_FINISH = """\

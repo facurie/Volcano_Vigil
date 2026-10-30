@@ -14,9 +14,9 @@ from datetime import datetime
 
 import httpx
 
-from vigia.config import Camera
-from vigia.ingest.store import FrameStore, IngestResult
-from vigia.timeutil import parse_http_date, utcnow
+from vigil.config import Camera
+from vigil.ingest.store import FrameStore, IngestResult
+from vigil.timeutil import parse_http_date, utcnow
 
 log = logging.getLogger(__name__)
 

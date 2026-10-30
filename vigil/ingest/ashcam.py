@@ -21,12 +21,12 @@ from typing import Any
 
 import httpx
 
-from vigia import db
-from vigia.config import Camera, load_sources
-from vigia.ingest.fetch import describe_error
-from vigia.ingest.store import FrameStore, IngestResult
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, utcnow
+from vigil import db
+from vigil.config import Camera, load_sources
+from vigil.ingest.fetch import describe_error
+from vigil.ingest.store import FrameStore, IngestResult
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class AshcamIngestor:
     """Live polling through AshCam: store every frame archived since the newest one stored.
 
     A poll reaches back at most `lookback`: the first poll stores that window,
-    and a longer gap (after downtime) is left to `vigia-backfill`.
+    and a longer gap (after downtime) is left to `vigil-backfill`.
     """
 
     def __init__(

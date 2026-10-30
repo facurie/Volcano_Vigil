@@ -1,7 +1,7 @@
 # Camera calibration for episode 55
 
 Done on 2026-10-28 for Phase 3. It covers how each camera's view was fixed, the evidence, and what is still missing.
-- Code: `vigia/geometry.py` and `vigia/calibration.py`.
+- Code: `vigil/geometry.py` and `vigil/calibration.py`.
 - Data: `config/calibration.yaml`.
 - Tools: `scripts/moon_references.py` and `scripts/check_calibration.py`.
 

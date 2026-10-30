@@ -1,12 +1,12 @@
 # Episode 55: quality verdicts and SAM 3.1 tracks
 
-Run on 2026-10-28 UTC with `vigia-quality` and `vigia-track` (Phase 2) on the AshCam frames of Kīlauea episode 55. Window: 2026-10-17 13:00–19:30Z, which is 03:00–09:30 HST. Official values are in [episode55.md](episode55.md): onset at 03:19 HST, end at 09:03 HST.
+Run on 2026-10-28 UTC with `vigil-quality` and `vigil-track` (Phase 2) on the AshCam frames of Kīlauea episode 55. Window: 2026-10-17 13:00–19:30Z, which is 03:00–09:30 HST. Official values are in [episode55.md](episode55.md): onset at 03:19 HST, end at 09:03 HST.
 
 ## Method
 
 ```bash
-vigia-quality --camera kilauea-kp --camera kilauea-k2 --camera kilauea-v1 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
-vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z   # likewise for kilauea-v1 and kilauea-kp
+vigil-quality --camera kilauea-kp --camera kilauea-k2 --camera kilauea-v1 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+vigil-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z   # likewise for kilauea-v1 and kilauea-kp
 python scripts/render_tracks.py --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
 ```
 
@@ -23,7 +23,7 @@ python scripts/render_tracks.py --camera kilauea-k2 --start 2026-10-17T13:00Z --
 | KP | 78 | 3 | 0.0468 |
 | **total** | | 9 | **0.2808** |
 
-The `cost:` line that `vigia-track` prints sums every `track:` call made since the run started. V1 and KP ran in parallel, so each printed line also included the other's calls. The ledger itself is exact.
+The `cost:` line that `vigil-track` prints sums every `track:` call made since the run started. V1 and KP ran in parallel, so each printed line also included the other's calls. The ledger itself is exact.
 
 ## Quality gate
 

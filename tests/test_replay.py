@@ -7,21 +7,21 @@ import pytest
 
 from test_agent_tools import T0, context, frame_jpeg
 from test_bulletin import DRAFT
-from vigia import db, replay
-from vigia.agent.bulletin import BulletinDraft, CitedMeasurement, build_bulletin, store_bulletin
-from vigia.episodes import EP55
-from vigia.ingest.store import FrameStore
-from vigia.phases import PHASES
-from vigia.pipeline import StepReport
-from vigia.replay import OffGridError, activity_rows, bulletin_rows, feed, main, run_replay, ticks
-from vigia.timeutil import parse_utc, to_iso
+from vigil import db, replay
+from vigil.agent.bulletin import BulletinDraft, CitedMeasurement, build_bulletin, store_bulletin
+from vigil.episodes import EP55
+from vigil.ingest.store import FrameStore
+from vigil.phases import PHASES
+from vigil.pipeline import StepReport
+from vigil.replay import OffGridError, activity_rows, bulletin_rows, feed, main, run_replay, ticks
+from vigil.timeutil import parse_utc, to_iso
 
 M = timedelta(minutes=1)
 
 
 @pytest.fixture
 def source(tmp_path):
-    """The database the episode's frames come from (live: data/vigia.sqlite)."""
+    """The database the episode's frames come from (live: data/vigil.sqlite)."""
     connection = db.connect(tmp_path / "source.sqlite")
     yield connection
     connection.close()
@@ -249,7 +249,7 @@ def test_a_replay_stored_on_another_grid_is_not_resumed(source, conn, tmp_path):
 @pytest.fixture
 def cli_env(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
     monkeypatch.setenv("MODEL_API_KEY", "test-key")
     return tmp_path / "data"
 
@@ -263,10 +263,10 @@ def test_cli_refuses_an_episode_with_no_stored_frames_and_leaves_no_replay_datab
 
 
 def test_cli_turns_a_replay_on_another_grid_into_a_usage_error(cli_env, capsys):
-    with db.connect(cli_env / "vigia.sqlite") as source:
+    with db.connect(cli_env / "vigil.sqlite") as source:
         FrameStore(source, cli_env).add("kilauea-kp", frame_jpeg(1), captured_at=EP55.start + 30 * M,
                                         timestamp_source="ashcam", fetched_at=EP55.start + 30 * M)
-    with db.connect(cli_env / "replay" / "ep55" / "vigia.sqlite") as stored:
+    with db.connect(cli_env / "replay" / "ep55" / "vigil.sqlite") as stored:
         stored.execute("INSERT INTO replay_ticks (clock, report) VALUES (?, '{}')", (to_iso(EP55.start + 7 * M),))
 
     with pytest.raises(SystemExit):

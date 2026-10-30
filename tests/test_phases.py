@@ -9,8 +9,8 @@ import pytest
 from test_agent_tools import SOURCES, T0, add_frame, add_run, add_track, context, store  # store is a fixture
 from test_meta_client import SPARK_USAGE, make_client, response_body
 from test_tracking import UPLOADED, needs_ffmpeg
-from vigia.episodes import EP55
-from vigia.phases import PHASES, ask_phases, cross_check, sam_phases
+from vigil.episodes import EP55
+from vigil.phases import PHASES, ask_phases, cross_check, sam_phases
 
 M = timedelta(minutes=1)
 HEIGHTS = [10, 20, 40, 60, 70, 72, 70, 66, 62, 58, 40, 20]  # running medians: 20 30 40 60 70 70 70 66 62 58 49 40

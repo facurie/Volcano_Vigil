@@ -5,12 +5,12 @@ import numpy as np
 import pytest
 
 from conftest import make_jpeg
-from vigia import db, masks
-from vigia.calibration import Calibration, CameraCalibration, Geometry, HorizonPixel, Preset, Site, VentPixel
-from vigia.geometry import View, direction, horizon_dip, local_en, sight
-from vigia.ingest.store import FrameStore
-from vigia.metrics import main, measure_mask, measure_window
-from vigia.timeutil import to_iso
+from vigil import db, masks
+from vigil.calibration import Calibration, CameraCalibration, Geometry, HorizonPixel, Preset, Site, VentPixel
+from vigil.geometry import View, direction, horizon_dip, local_en, sight
+from vigil.ingest.store import FrameStore
+from vigil.metrics import main, measure_mask, measure_window
+from vigil.timeutil import to_iso
 
 T0 = datetime(2026, 10, 17, 15, 0, 5, tzinfo=timezone.utc)
 
@@ -227,12 +227,12 @@ def cli_env(monkeypatch, tmp_path):
     path.write_text(CALIBRATION_YAML, encoding="utf-8")
     monkeypatch.setenv("CALIBRATION_PATH", str(path))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
     return tmp_path / "data"
 
 
 def test_cli_reports_the_window(cli_env, capsys):
-    conn = db.connect(cli_env / "vigia.sqlite")
+    conn = db.connect(cli_env / "vigil.sqlite")
     add_detection(conn, FrameStore(conn, cli_env), 0)  # Oct 17, before the only preset (Oct 20)
     conn.close()
 

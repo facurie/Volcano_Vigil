@@ -11,10 +11,10 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from vigia.timeutil import parse_utc
+from vigil.timeutil import parse_utc
 
 if TYPE_CHECKING:
-    from vigia.agent.bulletin import Bulletin, CitedMeasurement
+    from vigil.agent.bulletin import Bulletin, CitedMeasurement
 
 Lang = Literal["en", "es"]
 LEVELS = {  # activity level: (English, Spanish); what the cameras show, never an alert level

@@ -24,10 +24,10 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from vigia.config import Camera, load_sources
-from vigia.ingest.ashcam import AshcamClient
-from vigia.settings import Settings
-from vigia.timeutil import to_iso, utcnow
+from vigil.config import Camera, load_sources
+from vigil.ingest.ashcam import AshcamClient
+from vigil.settings import Settings
+from vigil.timeutil import to_iso, utcnow
 
 HST = timezone(timedelta(hours=-10))
 JS_DATETIME = re.compile(r'var datetime\s*=\s*"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) \(HST\)"')

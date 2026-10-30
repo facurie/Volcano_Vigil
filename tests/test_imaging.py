@@ -2,7 +2,7 @@ import io
 
 from PIL import Image
 
-from vigia.imaging import load_for_upload
+from vigil.imaging import load_for_upload
 
 
 def test_load_for_upload_caps_the_longest_side_and_encodes_jpeg(tmp_path):

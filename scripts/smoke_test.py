@@ -26,20 +26,20 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-from vigia import db
-from vigia.config import load_sources
-from vigia.gate import GATE_INSTRUCTIONS, GATE_PROMPT, GATE_SCHEMA
-from vigia.imaging import load_for_upload
-from vigia.ingest.fetch import Ingestor
-from vigia.ingest.store import FrameStore
-from vigia.meta.client import MetaClient
-from vigia.meta.ledger import CostLedger
-from vigia.meta.pricing import cost_usd
-from vigia.meta.sam import SamObject
-from vigia.overlay import Layer, draw_layers
-from vigia.settings import Settings
-from vigia.timeutil import to_iso, utcnow
-from vigia.video import assemble, cut_clip, extract_frames, probe
+from vigil import db
+from vigil.config import load_sources
+from vigil.gate import GATE_INSTRUCTIONS, GATE_PROMPT, GATE_SCHEMA
+from vigil.imaging import load_for_upload
+from vigil.ingest.fetch import Ingestor
+from vigil.ingest.store import FrameStore
+from vigil.meta.client import MetaClient
+from vigil.meta.ledger import CostLedger
+from vigil.meta.pricing import cost_usd
+from vigil.meta.sam import SamObject
+from vigil.overlay import Layer, draw_layers
+from vigil.settings import Settings
+from vigil.timeutil import to_iso, utcnow
+from vigil.video import assemble, cut_clip, extract_frames, probe
 
 PHRASES = {"lava fountain": (255, 120, 0), "volcanic plume": (0, 200, 255), "steam": (190, 0, 255)}
 TRACK_COLORS = [(255, 120, 0), (0, 200, 255), (190, 0, 255), (0, 220, 120), (255, 60, 60), (255, 230, 0)]

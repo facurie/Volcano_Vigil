@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from vigia.sun import solar_elevation
+from vigil.sun import solar_elevation
 
 UTC = timezone.utc
 HST = timezone(timedelta(hours=-10))

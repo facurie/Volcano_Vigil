@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from vigia.overlay import Layer, draw_layers
+from vigil.overlay import Layer, draw_layers
 
 SIZE = (400, 300)  # width, height
 INSIDE = (220, 170)  # x, y: inside the mask, away from its outline

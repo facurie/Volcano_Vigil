@@ -1,7 +1,7 @@
 """Measure the local quality checks on stored frames, to calibrate their thresholds.
 
 For each camera and time window, every stored frame gets the local
-measurements of vigia.quality (edge density, contrast, glow, difference from
+measurements of vigil.quality (edge density, contrast, glow, difference from
 the camera's previous frame), the sun's elevation at its volcano and the
 decision under the current thresholds. Results go to
 data/calibration/<UTC time>/:
@@ -26,12 +26,12 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from vigia import db
-from vigia.config import Camera, Sources, load_sources
-from vigia.quality import check_local, difference, fingerprint, measure
-from vigia.settings import Settings
-from vigia.sun import solar_elevation
-from vigia.timeutil import parse_utc, to_iso, utcnow
+from vigil import db
+from vigil.config import Camera, Sources, load_sources
+from vigil.quality import check_local, difference, fingerprint, measure
+from vigil.settings import Settings
+from vigil.sun import solar_elevation
+from vigil.timeutil import parse_utc, to_iso, utcnow
 
 HST = timezone(timedelta(hours=-10))
 FIELDS = ["camera_id", "window", "captured_at", "hst", "path", "sun_elevation", "brightness", "contrast",

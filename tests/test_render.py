@@ -1,9 +1,9 @@
 from typing import get_args
 
-from vigia.agent.bulletin import ActivityLevel, Bulletin, CitedMeasurement, Evidence
-from vigia.agent.render import LEVELS, METRICS, TARGETS, local_time, number, publish, to_html, to_markdown
-from vigia.agent.tools import Metric
-from vigia.prompts import Target
+from vigil.agent.bulletin import ActivityLevel, Bulletin, CitedMeasurement, Evidence
+from vigil.agent.render import LEVELS, METRICS, TARGETS, local_time, number, publish, to_html, to_markdown
+from vigil.agent.tools import Metric
+from vigil.prompts import Target
 
 WIND = {"volcano": "kilauea", "model_hour": "2026-10-17T15:00:00Z", "source": "Open-Meteo Historical Forecast API",
         "altitude_m": 6951, "layer_mean": {"bottom_m": 1080, "top_m": 6951, "from_deg": 331, "toward_deg": 151,

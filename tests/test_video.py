@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from vigia.video import assemble, cut_clip, extract_frames, probe
+from vigil.video import assemble, cut_clip, extract_frames, probe
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 

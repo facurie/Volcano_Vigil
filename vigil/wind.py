@@ -13,11 +13,11 @@ with the mean wind between the vent and its top (`WindProfile.layer_mean`),
 not with the wind at the top alone: on episode 55 the layer mean blows to the
 side KPcam saw the plume on in 74 of 75 frames, the wind at the top in 58.
 One camera measures only the side of its line of sight the plume sits on
-(vigia.metrics drift_bearing), so `compare_drift` gives the angle between that
+(vigil.metrics drift_bearing), so `compare_drift` gives the angle between that
 side and where the wind blows: under 90 degrees the wind pushes the plume to
 the side it was seen on.
 
-    vigia-wind --volcano kilauea --at 2026-10-17T15:00Z --altitude 6951 --bottom 1080 --side 224.4
+    vigil-wind --volcano kilauea --at 2026-10-17T15:00Z --altitude 6951 --bottom 1080 --side 224.4
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import numpy as np
 
-from vigia import db
-from vigia.config import Sources, Volcano, load_sources
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso, utcnow
+from vigil import db
+from vigil.config import Sources, Volcano, load_sources
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso, utcnow
 
 CALM_MS = 1.0  # under this mean speed the wind's direction says nothing about the drift
 LEVELS_HPA = (850, 700, 600, 500, 400, 300)
@@ -122,7 +122,7 @@ class DriftCheck:
 
 
 def compare_drift(side_deg: float, wind: Wind) -> DriftCheck:
-    """Compare a measured drift side (vigia.metrics drift_bearing) with a wind."""
+    """Compare a measured drift side (vigil.metrics drift_bearing) with a wind."""
     angle = abs((wind.toward_deg - side_deg + 180.0) % 360.0 - 180.0)
     consistent = None if wind.speed_ms < CALM_MS else angle < 90.0
     return DriftCheck(side_deg % 360.0, wind.toward_deg, wind.speed_ms, angle, consistent)

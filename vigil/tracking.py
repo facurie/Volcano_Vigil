@@ -1,20 +1,20 @@
 """Track plumes and fountains through timelapses of usable frames with SAM 3.1 video.
 
-A window is a camera's usable frames (see vigia.gate) between two capture
+A window is a camera's usable frames (see vigil.gate) between two capture
 times, oldest first. It is encoded into one MP4 (10 fps, at most 1080 px
 high), uploaded once and tracked once per phrase of config/prompts.yaml. Each
 SAM request is a tracking run; each SAM object in a run is a track; each
 object on one frame is a detection, stored in that frame's own pixels with its
-mask as COCO RLE (vigia.masks).
+mask as COCO RLE (vigil.masks).
 
 Cost rule: SAM bills at least 50 frames per video request, so backfills send
-windows of 50 frames or more (vigia-track refuses fewer by default); live
+windows of 50 frames or more (vigil-track refuses fewer by default); live
 tracking uses one window per camera per hour. A window shorter than that is led
 in with the camera's earlier usable frames, which cost nothing extra: SAM video
 picks up an object it would miss starting cold (KPcam's plume after 15:00Z on
 episode 55), and only the window's own frames are stored.
 
-    vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
+    vigil-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
 """
 
 from __future__ import annotations
@@ -35,15 +35,15 @@ from typing import Any
 import numpy as np
 import openai
 
-from vigia import db, masks
-from vigia.config import Camera, load_sources
-from vigia.meta.client import MetaClient, SamStreamError
-from vigia.meta.ledger import CostLedger
-from vigia.meta.sam import SamObject, SamParseError, fit_mask
-from vigia.prompts import Prompts, Target, load_prompts
-from vigia.settings import Settings
-from vigia.timeutil import parse_utc, to_iso, utcnow
-from vigia.video import VideoInfo, assemble, probe
+from vigil import db, masks
+from vigil.config import Camera, load_sources
+from vigil.meta.client import MetaClient, SamStreamError
+from vigil.meta.ledger import CostLedger
+from vigil.meta.sam import SamObject, SamParseError, fit_mask
+from vigil.prompts import Prompts, Target, load_prompts
+from vigil.settings import Settings
+from vigil.timeutil import parse_utc, to_iso, utcnow
+from vigil.video import VideoInfo, assemble, probe
 
 log = logging.getLogger(__name__)
 
@@ -299,7 +299,7 @@ def main(argv: list[str] | None = None) -> None:
             pending = unassessed_frames(conn, args.camera, args.start, args.end)
             parser.error(f"{usable} usable frames in the window, fewer than {args.min_frames}: SAM bills "
                          f"{MIN_BILLED_FRAMES} frames per request, so widen the window"
-                         + (f"; {pending} frames have no quality verdict yet, run vigia-quality first"
+                         + (f"; {pending} frames have no quality verdict yet, run vigil-quality first"
                             if pending else ""))
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))

@@ -3,7 +3,7 @@
 Every camera must declare its license and attribution. Cameras are disabled
 unless explicitly enabled, so a source without permission can live in the
 config without ever being fetched. USGS cameras also name their AshCam
-archive (`ashcam_code`), from which `vigia-backfill` downloads past frames.
+archive (`ashcam_code`), from which `vigil-backfill` downloads past frames.
 """
 
 from __future__ import annotations

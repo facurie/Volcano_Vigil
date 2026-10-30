@@ -24,7 +24,7 @@ least squares:
   k1, pinned at 0 unless the references can measure it.
 
 Arrays carry a leading axis of N samples, so the Monte Carlo of
-vigia.calibration re-solves every perturbed sample at once.
+vigil.calibration re-solves every perturbed sample at once.
 """
 
 from __future__ import annotations

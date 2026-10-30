@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from vigia.config import ConfigError, load_sources
+from vigil.config import ConfigError, load_sources
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -93,10 +93,9 @@ def test_live_polling_through_ashcam_needs_an_ashcam_code(tmp_path):
         load_sources(write(tmp_path, text))
 
 
-def test_committed_sources_keep_sgc_disabled_and_name_every_usgs_archive():
+def test_committed_sources_name_every_usgs_archive():
     sources = load_sources(REPO / "config" / "sources.yaml")
 
-    assert [c.id for c in sources.cameras if c.volcano == "nevado-del-ruiz" and c.enabled] == []
     assert [c.id for c in sources.cameras if c.volcano == "kilauea" and not c.ashcam_code] == []
 
 
@@ -128,4 +127,3 @@ def test_the_repo_sources_give_each_volcanos_local_time():
     sources = load_sources(REPO / "config" / "sources.yaml")
 
     assert sources.volcanoes["kilauea"].utc_offset_hours == -10      # HST, no daylight saving
-    assert sources.volcanoes["nevado-del-ruiz"].utc_offset_hours == -5

@@ -12,11 +12,11 @@ from test_agent_loop import FAKE_TOOLS, SOURCES_YAML, Script
 from test_agent_tools import (SIZE, T0, add_frame, add_measurement, add_run, add_track, context, detection_ids,
                               store)  # store is a fixture
 from test_meta_client import make_client, turn_body
-from vigia.agent.bulletin import (BULLETIN_FINISH, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
+from vigil.agent.bulletin import (BULLETIN_FINISH, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
                                   DraftEvidence, DraftMeasurement, build_bulletin, draw_evidence, load_bulletin, main,
                                   run_wind, store_bulletin, verify, write_bulletin)
-from vigia.meta.client import MetaClient
-from vigia.timeutil import to_iso
+from vigil.meta.client import MetaClient
+from vigil.timeutil import to_iso
 
 
 DRAFT = {  # the shape of Muse Spark's answer in the Phase 5 planning probe
@@ -340,7 +340,7 @@ def test_a_run_out_of_turns_still_gives_its_bulletin(conn, tmp_path):
 def test_the_task_recalls_the_last_bulletin_before_the_clock_only(conn, tmp_path):
     draft = BulletinDraft.model_validate(QUIET)
     for volcano, clock, headline in (("kilauea", "2026-10-17T14:00:00Z", "Fountain rising"),
-                                     ("nevado-del-ruiz", "2026-10-17T14:30:00Z", "Elsewhere"),
+                                     ("mauna-loa", "2026-10-17T14:30:00Z", "Elsewhere"),
                                      ("kilauea", "2026-10-17T15:00:00Z", "At the clock"),
                                      ("kilauea", "2026-10-17T16:00:00Z", "From later")):
         bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 1, draft, tmp_path / "bulletins")
@@ -361,7 +361,7 @@ def cli_env(monkeypatch, tmp_path):
     sources.write_text(SOURCES_YAML, encoding="utf-8")
     monkeypatch.setenv("SOURCES_PATH", str(sources))
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
     return tmp_path
 
 
@@ -371,7 +371,7 @@ def fake_meta(monkeypatch, api):
                             http_client=httpx.Client(transport=httpx.MockTransport(api)))
         return MetaClient(sdk, ledger)
 
-    monkeypatch.setattr("vigia.agent.bulletin.MetaClient.from_env", from_env)
+    monkeypatch.setattr("vigil.agent.bulletin.MetaClient.from_env", from_env)
 
 
 def test_cli_prints_the_trace_and_the_bulletin_in_both_languages(cli_env, monkeypatch, capsys):

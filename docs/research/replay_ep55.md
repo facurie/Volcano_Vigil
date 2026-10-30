@@ -5,11 +5,11 @@ Phase 5 acceptance, run on 2026-10-30:
 > The replay produces six or more bulletins across the episode, plus the comparison table against USGS.
 
 ```
-vigia-replay --episode 55
+vigil-replay --episode 55
 ```
 
 **Where the output is:**
-- The replay's own database is `data/replay/ep55/vigia.sqlite`, with `timeline.json` and `report.md` next to it.
+- The replay's own database is `data/replay/ep55/vigil.sqlite`, with `timeline.json` and `report.md` next to it.
 - Each bulletin is in `data/replay/ep55/bulletins/run<N>/`: one HTML page, Markdown in each language, and its evidence overlays.
 
 **The run:**
