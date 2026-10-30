@@ -169,6 +169,20 @@ CREATE TABLE IF NOT EXISTS agent_steps (     -- one model turn or tool call of a
     latency_ms  INTEGER,
     UNIQUE (run_id, seq)
 );
+
+CREATE TABLE IF NOT EXISTS bulletins (       -- one bulletin of an agent run (vigia.agent.bulletin)
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id         INTEGER NOT NULL REFERENCES agent_runs (id),
+    volcano        TEXT    NOT NULL,
+    clock          TEXT    NOT NULL,  -- UTC time it describes: the agent's clock
+    created_at     TEXT    NOT NULL,  -- UTC wall clock
+    activity_level TEXT    NOT NULL,  -- no_view | quiet | degassing | incandescence | fountaining (never an alert level)
+    headline_en    TEXT    NOT NULL,
+    headline_es    TEXT    NOT NULL,
+    verified       INTEGER NOT NULL,  -- 1 if every quoted number matched a stored measurement
+    body           TEXT    NOT NULL   -- the whole bulletin as JSON (vigia.agent.bulletin.Bulletin)
+);
+CREATE INDEX IF NOT EXISTS idx_bulletins_clock ON bulletins (volcano, clock);
 """
 
 
