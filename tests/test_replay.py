@@ -13,7 +13,7 @@ from vigia.episodes import EP55
 from vigia.ingest.store import FrameStore
 from vigia.phases import PHASES
 from vigia.pipeline import StepReport
-from vigia.replay import activity_rows, bulletin_rows, feed, main, run_replay, ticks
+from vigia.replay import OffGridError, activity_rows, bulletin_rows, feed, main, run_replay, ticks
 from vigia.timeutil import parse_utc, to_iso
 
 M = timedelta(minutes=1)
@@ -239,7 +239,7 @@ def test_a_replay_stored_on_another_grid_is_not_resumed(source, conn, tmp_path):
         conn.execute("INSERT INTO replay_ticks (clock, report) VALUES (?, '{}')", (to_iso(T0 + 7 * M),))
     fake = FakePipeline(conn)
 
-    with pytest.raises(ValueError, match=r"replay in .*delete that folder"):
+    with pytest.raises(OffGridError, match=r"replay in .*delete that folder"):
         run_replay(source, context(conn, tmp_path), episode(T0, T0 + 30 * M), tmp_path / "replay", step=10 * M,
                    pipeline=fake)
 

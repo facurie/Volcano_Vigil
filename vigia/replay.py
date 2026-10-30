@@ -57,6 +57,10 @@ BULLETIN_HEADER = ["Quantity", "Official", "Bulletin (local)", "It quoted", "Err
 ACTIVITY_HEADER = ["Event", "Bulletins (local)", "Official (local)", "Difference"]
 
 
+class OffGridError(ValueError):
+    """The replay's database holds steps from another grid, so it cannot be resumed."""
+
+
 def ticks(start: datetime, end: datetime, step: timedelta) -> list[datetime]:
     """The simulated clock's steps: every `step` after start, and the end itself."""
     out, tick = [], start + step
@@ -90,13 +94,13 @@ def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, 
                spark_video: bool = True, pipeline: Pipeline | None = None, sleep: Callable[[float], None] = time.sleep,
                monotonic: Callable[[], float] = time.monotonic) -> dict[str, Any]:
     """Replay the episode into base.conn, the replay's own database, and write timeline.json and report.md to
-    out_dir (inside the data dir); returns the timeline. Raises ValueError if the database holds steps from another
-    grid (another --step): they cannot be resumed."""
+    out_dir (inside the data dir); returns the timeline. Raises OffGridError if the database holds steps from
+    another grid (another --step): they cannot be resumed."""
     conn = base.conn
     grid = {to_iso(tick) for tick in ticks(episode.start, episode.end, step)}
     off_grid = sorted(row[0] for row in conn.execute("SELECT clock FROM replay_ticks") if row[0] not in grid)
     if off_grid:
-        raise ValueError(f"the replay in {out_dir} has a step at {off_grid[0]}, which is not on this run's grid of "
+        raise OffGridError(f"the replay in {out_dir} has a step at {off_grid[0]}, which is not on this run's grid of "
                          f"{step / timedelta(minutes=1):g} min from {to_iso(episode.start)}; delete that folder to "
                          "start over, or run it with the step it used")
     if pipeline is None:
@@ -291,7 +295,7 @@ def main(argv: list[str] | None = None) -> None:
                            out_dir, step=timedelta(minutes=args.step), speed=args.speed,
                            spark_video=not args.no_video,
                            agent_every=None if args.no_agent else timedelta(minutes=args.agent_every))
-            except ValueError as exc:
+            except OffGridError as exc:
                 parser.error(str(exc))
     print((out_dir / "report.md").read_text(encoding="utf-8"))
     print(f"timeline: {out_dir / 'timeline.json'}")
