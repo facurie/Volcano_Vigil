@@ -1,5 +1,8 @@
+import subprocess
 from datetime import datetime, timedelta, timezone
 
+import httpx
+import openai
 import pytest
 
 from test_agent_loop import SOURCES_YAML
@@ -22,24 +25,35 @@ class Fakes:
     """Tracking, measuring and the agent, recording their calls and storing the rows the pipeline looks for."""
 
     def __init__(self):
-        self.tracked, self.measured, self.agent_clocks = [], [], []
+        self.tracked, self.measured, self.agent_clocks, self.events = [], [], [], []
         self.budget_spent = False
+        self.raises = {}          # camera id -> exception its tracking raises
+        self.stores_runs = True   # False: tracking returns without storing a run
+        self.measure_error = None
 
     def track(self, client, conn, data_dir, camera, prompts, start, end):
         if self.budget_spent:
             raise BudgetExceeded("daily budget $5.00 would be exceeded")
         self.tracked.append((camera.id, start, end))
+        self.events.append(f"track {camera.id}")
+        if camera.id in self.raises:
+            raise self.raises[camera.id]
         frame_ids = [frame.id for frame in tracking.usable_frames(conn, data_dir, camera.id, start, end)]
+        if not self.stores_runs:
+            return TrackingReport(camera.id, len(frame_ids))
         run_id = add_run(conn, camera.id, "plume", frame_ids)
         return TrackingReport(camera.id, len(frame_ids),
                               runs=[RunSummary(run_id, "plume", "steam", 1, len(frame_ids), start, end)])
 
     def measure(self, conn, calibration, camera_id, start, end):
         self.measured.append((camera_id, start, end))
+        if self.measure_error:
+            raise self.measure_error
         return MeasureReport(camera_id, measured=2)
 
     def write(self, client, ctx, volcano_id, out_dir, **agent):
         self.agent_clocks.append(ctx.now)
+        self.events.append("write")
         with ctx.conn:
             run_id = ctx.conn.execute(
                 "INSERT INTO agent_runs (started_at, clock, volcano, task, model, status) "
@@ -129,13 +143,37 @@ def test_only_calibrated_cameras_are_measured(conn, store, tmp_path, fakes):
 
 
 def test_the_agent_writes_at_each_full_hour_after_the_start(conn, tmp_path, fakes):
-    runner = pipeline(conn, tmp_path, fakes)
+    runner = pipeline(conn, tmp_path, fakes, settle=timedelta(0))
 
     reports = [runner.step(START + minutes * M) for minutes in (30, 60, 65, 120)]
 
     assert fakes.agent_clocks == [START + H, START + 2 * H]
     assert reports[1].agent_run_id == 1 and reports[1].bulletin_id is None
     assert reports[1].errors == ["agent run 1: no bulletin in this test"]
+
+
+def test_the_agent_waits_for_the_hour_just_ended_to_be_tracked(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+    runner = pipeline(conn, tmp_path, fakes)
+
+    runner.step(START + H)
+    assert fakes.events == []
+    runner.step(START + H + 5 * M)
+
+    assert fakes.events == ["track kilauea-kp", "write"]
+    assert fakes.agent_clocks == [START + H + 5 * M]
+
+
+def test_the_agent_of_another_volcano_does_not_hold_this_ones_back(conn, tmp_path, fakes):
+    with conn:
+        conn.execute("INSERT INTO agent_runs (started_at, clock, volcano, task, model, status) "
+                     "VALUES ('2026-10-28T00:00:00Z', ?, 'etna', 'task', 'muse-spark-1.3', 'done')",
+                     (to_iso(START + H),))
+
+    pipeline(conn, tmp_path, fakes, settle=timedelta(0)).step(START + H)
+    pipeline(conn, tmp_path, fakes, settle=timedelta(0)).step(START + H, agent=True)
+
+    assert fakes.agent_clocks == [START + H]  # the second step finds this volcano's own run at that clock
 
 
 def test_a_forced_agent_runs_once_per_clock_and_can_be_held_back(conn, tmp_path, fakes):
@@ -178,6 +216,93 @@ def test_a_report_reads_as_one_line_per_step(conn, store, tmp_path, fakes):
                                        "13:00-13:59 (6 detections); 2 detections measured")
 
 
+@pytest.mark.parametrize("error", [ValueError("bad frames"), RuntimeError("video has 3 frames"),
+                                   subprocess.CalledProcessError(1, "ffmpeg"), OSError("frame file is missing"),
+                                   openai.APIError("upload failed", request=httpx.Request("POST", "http://x"),
+                                                   body=None)])
+def test_a_window_that_fails_does_not_stop_the_step(conn, store, tmp_path, fakes, error):
+    frames(conn, store, "kilauea-kp", 0)
+    frames(conn, store, "kilauea-k2", 0)
+    fakes.raises["kilauea-kp"] = error
+
+    report = pipeline(conn, tmp_path, fakes).step(START + H + 5 * M)
+
+    end = START + H - timedelta(seconds=1)
+    assert fakes.tracked == [("kilauea-kp", START, end), ("kilauea-k2", START, end)]
+    assert [w["camera_id"] for w in report.tracked] == ["kilauea-k2"]
+    assert any(message.startswith("kilauea-kp 2026-10-17T13:00:00Z: ") for message in report.errors)
+    assert fakes.agent_clocks == [START + H + 5 * M]
+
+
+def test_a_window_with_no_run_is_tried_three_times_and_then_given_up(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+    fakes.stores_runs = False
+    runner = pipeline(conn, tmp_path, fakes)
+
+    reports = [runner.step(START + H + minutes * M) for minutes in (5, 10, 15, 20)]
+
+    assert len(fakes.tracked) == 3
+    gave_up = "kilauea-kp 2026-10-17T13:00:00Z: gave up after 3 attempts"
+    assert [gave_up in report.errors for report in reports] == [False, False, True, False]
+
+
+def test_a_window_that_keeps_failing_is_given_up_too(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+    fakes.raises["kilauea-kp"] = RuntimeError("video has 3 frames")
+    runner = pipeline(conn, tmp_path, fakes)
+
+    reports = [runner.step(START + H + minutes * M) for minutes in (5, 10, 15, 20)]
+
+    assert len(fakes.tracked) == 3
+    assert reports[2].errors[-1] == "kilauea-kp 2026-10-17T13:00:00Z: gave up after 3 attempts"
+    assert reports[3].errors == []
+
+
+def test_a_failed_measuring_is_reported_and_the_step_goes_on(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+    fakes.measure_error = ValueError("no preset covers the view")
+
+    report = pipeline(conn, tmp_path, fakes).step(START + H + 5 * M)
+
+    assert "kilauea-kp 2026-10-17T13:00:00Z: no preset covers the view" in report.errors
+    assert len(report.tracked) == 1 and fakes.agent_clocks == [START + H + 5 * M]
+
+
+def test_a_tracking_with_no_runs_is_not_measured(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+    fakes.stores_runs = False
+
+    report = pipeline(conn, tmp_path, fakes).step(START + H + 5 * M)
+
+    assert len(report.tracked) == 1 and fakes.measured == []
+
+
+def test_the_open_window_of_a_flush_ends_with_its_hour(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+
+    pipeline(conn, tmp_path, fakes).step(START + H + 3 * M, flush=True)
+
+    assert fakes.tracked == [("kilauea-kp", START, START + H - timedelta(seconds=1))]
+
+
+def test_a_window_with_exactly_the_minimum_of_frames_is_tracked(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0, count=5)
+
+    pipeline(conn, tmp_path, fakes).step(START + H + 5 * M)
+
+    assert len(fakes.tracked) == 1
+
+
+def test_frames_older_than_the_lookback_are_not_assessed(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 1, count=1, usable=None)  # 14:00Z
+    frames(conn, store, "kilauea-kp", 3, count=1, usable=None)  # 16:00Z
+
+    report = pipeline(conn, tmp_path, fakes, client=None).step(START + 5 * H)  # looks back to 15:00Z
+
+    assert report.assessed == 1
+    assert conn.execute("SELECT COUNT(*) FROM frame_quality").fetchone()[0] == 1
+
+
 @pytest.fixture
 def cli_env(monkeypatch, tmp_path):
     sources = tmp_path / "sources.yaml"
@@ -189,7 +314,10 @@ def cli_env(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("argv, message", [(["--volcano", "etna"], "etna"),
                                            (["--volcano", "kilauea"], "no enabled camera"),
-                                           (["--volcano", "kilauea", "--interval", "0"], "--interval")])
+                                           (["--volcano", "kilauea", "--interval", "0"],
+                                            "--interval must be positive"),
+                                           (["--volcano", "kilauea", "--agent-every", "-5"],
+                                            "--agent-every must not be negative")])
 def test_cli_refuses_what_it_cannot_run(cli_env, capsys, argv, message):
     with pytest.raises(SystemExit):
         main(argv)

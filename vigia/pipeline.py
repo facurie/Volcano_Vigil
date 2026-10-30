@@ -7,8 +7,11 @@ One step at time `now`, for one volcano's cameras:
    tracking run yet is tracked with SAM 3.1 video, and a calibrated camera's new detections are measured;
 3. at each full `agent_every` after the pipeline started, the agent writes a bulletin.
 A window counts as closed once `settle` has passed after its end, so that late frames are in; the replay, whose
-frames are all on time, settles for nothing. Nothing in a step looks past `now`. Tracking and measuring take
-minutes (mask decoding), so a server runs the steps in a background thread, never in a request.
+frames are all on time, settles for nothing. The agent waits for the same `settle`: live, the 14:00 bulletin runs
+at 14:05, after the step has tracked the 13:00-14:00 window. A window that fails is reported and the step goes
+on; one that gives no run is tried at most `MAX_WINDOW_ATTEMPTS` times. Nothing in a step looks past `now`.
+Tracking and measuring take minutes (mask decoding), so a server runs the steps in a background thread, never in
+a request.
 
     vigia-pipeline --volcano kilauea
 """
@@ -18,6 +21,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
+import subprocess
 import sys
 import time
 from collections.abc import Callable
@@ -48,6 +52,7 @@ TRACK_WINDOW = timedelta(hours=1)
 LOOKBACK = timedelta(hours=3)
 SETTLE = timedelta(minutes=5)
 MIN_WINDOW_FRAMES = 5
+MAX_WINDOW_ATTEMPTS = 3
 AGENT_EVERY = timedelta(hours=1)
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -109,6 +114,7 @@ class Pipeline:
         self.started_at = base.now
         self._cameras = [base.camera(camera_id) for camera_id in config.cameras]
         self._track, self._measure, self._write = track, measure, write
+        self._attempts: dict[tuple[str, datetime], int] = {}  # windows tracked without storing a run
 
     def step(self, now: datetime, *, flush: bool = False, agent: bool | None = None) -> StepReport:
         """One step at `now`. `flush` also tracks the open window up to now (the end of a replay). `agent`: None
@@ -146,7 +152,7 @@ class Pipeline:
             windows.append((start, start + every - timedelta(seconds=1)))
             start += every
         if flush and start < now:
-            windows.append((start, now))
+            windows.append((start, min(now, start + every - timedelta(seconds=1))))
         return windows
 
     def _tracked(self, camera_id: str, start: datetime) -> bool:
@@ -157,7 +163,7 @@ class Pipeline:
     def _track_windows(self, ctx: ToolContext, report: StepReport, flush: bool) -> None:
         for camera in self._cameras:
             for start, end in self._windows(ctx.now, flush):
-                if self._tracked(camera.id, start):
+                if self._tracked(camera.id, start) or self._attempts.get((camera.id, start), 0) >= MAX_WINDOW_ATTEMPTS:
                     continue
                 if len(tracking.usable_frames(ctx.conn, ctx.data_dir, camera.id, start, end)) < self.config.min_frames:
                     continue
@@ -166,24 +172,38 @@ class Pipeline:
                 except BudgetExceeded as exc:
                     report.errors.append(f"tracking stopped: {exc}")
                     return
-                except (ValueError, openai.APIError) as exc:  # e.g. the upload failed: the next step tries again
+                except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, openai.APIError) as exc:
+                    # e.g. the upload or ffmpeg failed, a frame file is gone: the next step tries again
                     report.errors.append(f"{camera.id} {to_iso(start)}: {exc}")
+                    self._count_attempt(camera.id, start, report)
                     continue
                 report.errors += result.errors
                 report.tracked.append({
                     "camera_id": camera.id, "start": to_iso(start), "end": to_iso(end), "frames": result.frames,
                     "runs": [{"run_id": run.run_id, "target": run.target, "phrase": run.phrase, "tracks": run.tracks,
                               "detections": run.detections} for run in result.runs]})
-                if camera.id in ctx.calibration.cameras and result.runs:
-                    measured = self._measure(ctx.conn, ctx.calibration, camera.id, start, end)
+                if not result.runs:
+                    self._count_attempt(camera.id, start, report)
+                elif camera.id in ctx.calibration.cameras:
+                    try:
+                        measured = self._measure(ctx.conn, ctx.calibration, camera.id, start, end)
+                    except ValueError as exc:
+                        report.errors.append(f"{camera.id} {to_iso(start)}: {exc}")
+                        continue
                     report.measured += measured.measured
                     report.errors += measured.errors
+
+    def _count_attempt(self, camera_id: str, start: datetime, report: StepReport) -> None:
+        key = (camera_id, start)
+        self._attempts[key] = self._attempts.get(key, 0) + 1
+        if self._attempts[key] == MAX_WINDOW_ATTEMPTS:
+            report.errors.append(f"{camera_id} {to_iso(start)}: gave up after {MAX_WINDOW_ATTEMPTS} attempts")
 
     def _agent_due(self, now: datetime) -> bool:
         every = self.config.agent_every
         if every is None:
             return False
-        boundary = floor_time(now, every)
+        boundary = floor_time(now - self.config.settle, every)
         if boundary <= self.started_at:
             return False
         return self.base.conn.execute(
@@ -216,6 +236,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.interval <= 0:
         parser.error("--interval must be positive")
+    if args.agent_every < 0:
+        parser.error("--agent-every must not be negative")
     settings = Settings.from_env()
     sources = load_sources(settings.sources_path)
     if args.volcano not in sources.volcanoes:
