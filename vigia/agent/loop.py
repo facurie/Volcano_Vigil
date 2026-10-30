@@ -1,7 +1,11 @@
 """The agent loop: Muse Spark calls the tools of vigia.agent.tools until it can answer.
 
-Turns are chained with previous_response_id. The server keeps the
-conversation but not the request settings, so the instructions, tools and
+Every turn resends the whole conversation (the task, each reply's output items
+but its reasoning, and the tool results) with store=false, instead of chaining
+turns with previous_response_id: Meta's response store failed in 4 of the 39
+turns of one replay (503 "persistence service error", and a 400 "referenced
+response not found or expired" on a chained turn), and each failure ended a
+run. The input tokens cost the same either way. The instructions, tools and
 reasoning effort go with every turn. Muse Spark may call several tools in one
 turn; they run one after another, in order. A run ends when Muse Spark
 answers without calling a tool (done), when it still calls tools on its last
@@ -104,7 +108,7 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
 
     `finish` is the instructions' closing request; with `text_format` (a Responses text.format) every turn asks
     for the final answer in that format. A turn the server fails (HTTP 5xx, e.g. Meta's 503 "persistence service
-    error" on chained turns) is sent again after each pause of TURN_RETRY_PAUSES before the run ends in error.
+    error") is sent again after each pause of TURN_RETRY_PAUSES before the run ends in error.
     """
     conn = ctx.conn
     text = instructions(ctx.sources.volcanoes[volcano_id], volcano_id, ctx.now, finish)
@@ -115,8 +119,8 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
     job = client.tagged(f"agent:{run_id}", budget_usd)
     toolbox = Toolbox(dataclasses.replace(ctx, client=job), tools)
     definitions = toolbox.definitions()
-    pending: list[dict[str, Any]] = [{"role": "user", "content": task}]
-    previous, context_tokens, seq, turns = None, 0, 0, 0
+    conversation: list[dict[str, Any]] = [{"role": "user", "content": task}]
+    seq, turns = 0, 0
     status, final, error = "max_turns", "", None
 
     def step(kind: str, **columns: Any) -> None:
@@ -131,14 +135,13 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
     try:
         for turn in range(1, max_turns + 1):
             if turn == max_turns:
-                pending.append({"role": "user", "content": WRAP_UP})
+                conversation.append({"role": "user", "content": WRAP_UP})
             started = time.perf_counter()
             try:
                 for pause in (*TURN_RETRY_PAUSES, None):
                     try:
-                        reply = job.respond(input=pending, tools=definitions, instructions=text, purpose="turn",
-                                            previous_response_id=previous, effort=effort,
-                                            context_tokens=context_tokens, text_format=text_format)
+                        reply = job.respond(input=conversation, tools=definitions, instructions=text, purpose="turn",
+                                            store=False, effort=effort, context_tokens=0, text_format=text_format)
                         break
                     except openai.InternalServerError as exc:
                         if pause is None:
@@ -166,15 +169,14 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
             if turn == max_turns:
                 final = reply.text
                 break
-            pending = []
+            conversation.extend(reply.items)
             for call in reply.calls:
                 spent, started = job.tag_spent(), time.perf_counter()
                 result, ok = toolbox.call(call.name, call.arguments)
                 output = json.dumps(result, ensure_ascii=False)
                 step("tool", tool_name=call.name, call_id=call.call_id, arguments=call.arguments, result=output,
                      ok=int(ok), cost_usd=job.tag_spent() - spent, latency_ms=_ms(started))
-                pending.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
-            previous, context_tokens = reply.response_id, reply.context_tokens
+                conversation.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
     except BaseException as exc:  # Ctrl-C or a bug: the run must not stay 'running'
         status, error = "error", f"{type(exc).__name__}: {exc}"[:500]
         raise

@@ -197,6 +197,30 @@ def test_respond_sends_tools_and_instructions_every_turn_and_chains_the_previous
         assert body["parallel_tool_calls"] is True
 
 
+def test_respond_asks_the_server_not_to_store_the_response_when_told_to(conn):
+    api = FakeApi(lambda r: httpx.Response(200, json=turn_body([])))
+    client = make_client(api, conn)
+
+    client.respond(input=[], tools=[TOOL], instructions="x", purpose="agent")
+    client.respond(input=[], tools=[TOOL], instructions="x", purpose="agent", store=False)
+
+    assert "store" not in api.json_body(0)
+    assert api.json_body(1)["store"] is False
+
+
+def test_a_turn_keeps_its_output_items_but_not_the_reasoning_to_resend_them(conn):
+    body = turn_body([("get_wind", '{"volcano": "kilauea"}')], text="First the wind.", reasoning="One check.")
+    api = FakeApi(lambda r: httpx.Response(200, json=body))
+
+    turn = make_client(api, conn).respond(input=[], tools=[TOOL], instructions="x", purpose="agent")
+
+    assert [item["type"] for item in turn.items] == ["message", "function_call"]
+    assert turn.items[0]["content"][0]["text"] == "First the wind."
+    assert (turn.items[1]["call_id"], turn.items[1]["name"], turn.items[1]["arguments"]) == (
+        "call_0", "get_wind", '{"volcano": "kilauea"}')
+    assert all(None not in item.values() for item in turn.items)
+
+
 def test_respond_returns_the_tool_calls_the_commentary_and_the_reasoning(conn):
     body = turn_body([("get_wind", '{"volcano": "kilauea"}'), ("list_cameras_status", "{}")],
                      text="First the cameras.", reasoning="Two independent checks.")

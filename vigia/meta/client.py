@@ -59,6 +59,7 @@ class Turn:
     calls: tuple[ToolCall, ...]
     cost_usd: float
     context_tokens: int          # input plus output tokens: what the next chained turn starts from
+    items: tuple[dict[str, Any], ...] = ()  # output items but reasoning, to resend as input in a stateless conversation
 
 
 class MetaClient:
@@ -154,13 +155,17 @@ class MetaClient:
         max_output_tokens: int = 6000,
         context_tokens: int = 0,
         text_format: dict[str, Any] | None = None,
+        store: bool = True,
     ) -> Turn:
-        """One agent turn of Muse Spark with function tools, chained to the previous turn.
+        """One agent turn of Muse Spark with function tools, optionally chained to the previous turn.
 
         The server keeps the conversation of `previous_response_id` but not the request settings, so the
-        tools, instructions and reasoning effort go with every turn. `context_tokens` (the previous turn's)
-        feeds the pre-call budget estimate. `text_format` (a Responses `text.format`, e.g. a strict
-        json_schema) shapes the final answer; a turn that calls tools still writes its commentary as plain text.
+        tools, instructions and reasoning effort go with every turn. With `store=False` the server keeps
+        nothing: the caller resends the whole conversation as `input` (the user messages, `Turn.items` of
+        each reply and the function_call_output items). `context_tokens` (the previous turn's) feeds the
+        pre-call budget estimate and is 0 when `input` already holds the conversation. `text_format` (a
+        Responses `text.format`, e.g. a strict json_schema) shapes the final answer; a turn that calls tools
+        still writes its commentary as plain text.
         """
         request: dict[str, Any] = {
             "model": self.spark_model,
@@ -173,23 +178,27 @@ class MetaClient:
         }
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
+        if not store:
+            request["store"] = False
         if text_format is not None:
             request["text"] = {"format": text_format}
-        sent = (len(json.dumps(input)) + len(json.dumps(tools)) + len(instructions)
+        sent =(len(json.dumps(input)) + len(json.dumps(tools)) + len(instructions)
                 + len(json.dumps(text_format or {})))
         estimate = cost_usd(self.spark_model, {"input_tokens": context_tokens + sent // 3,
                                                "output_tokens": max_output_tokens})
         response = self._call(self.spark_model, purpose, estimate, lambda: self._sdk.responses.create(**request))
-        calls, reasoning = [], []
+        calls, reasoning, items = [], [], []
         for item in response.output:
+            if item.type == "reasoning":
+                reasoning += [part.text for part in item.summary or []]
+                continue
             if item.type == "function_call":
                 calls.append(ToolCall(item.call_id, item.name, item.arguments))
-            elif item.type == "reasoning":
-                reasoning += [part.text for part in item.summary or []]
+            items.append(item.model_dump(exclude_none=True))
         usage = response.usage.model_dump() if response.usage else {}
         return Turn(response.id, response.status or "", response.output_text, "\n".join(reasoning), tuple(calls),
                     cost_usd(self.spark_model, usage),
-                    (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0))
+                    (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0), tuple(items))
 
     def segment_image(self, image: bytes, phrase: str, *, purpose: str, mime: str = "image/jpeg") -> list[SamObject]:
         """Segment every instance of ONE noun phrase in an image."""

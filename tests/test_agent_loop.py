@@ -64,10 +64,15 @@ def test_a_run_calls_tools_until_muse_spark_answers_and_stores_the_trace(conn, t
 
     assert (result.status, result.turns, result.final_text, result.error) == ("done", 2, "n was 1 and 2.", None)
     first, second = api.requests
-    assert first["input"] == [{"role": "user", "content": "Echo twice."}] and "previous_response_id" not in first
-    assert second["previous_response_id"] == "resp_1"
-    assert [item["call_id"] for item in second["input"]] == ["call_0", "call_1"]
-    assert json.loads(second["input"][1]["output"]) == {"n": 2, "now": "2026-10-17T15:00:00Z"}
+    for body in (first, second):
+        assert "previous_response_id" not in body and body["store"] is False
+    assert first["input"] == [{"role": "user", "content": "Echo twice."}]
+    assert [item.get("type") or item["role"] for item in second["input"]] == [
+        "user", "message", "function_call", "function_call", "function_call_output", "function_call_output"]
+    assert second["input"][0] == {"role": "user", "content": "Echo twice."}
+    assert second["input"][1]["content"][0]["text"] == "Checking."
+    assert [item["call_id"] for item in second["input"][2:]] == ["call_0", "call_1", "call_0", "call_1"]
+    assert json.loads(second["input"][5]["output"]) == {"n": 2, "now": "2026-10-17T15:00:00Z"}
     assert (second["tools"], second["instructions"]) == (first["tools"], first["instructions"])
     trace_rows = steps(conn, result.run_id)
     assert [(s["kind"], s["turn"], s["tool_name"]) for s in trace_rows] == [
@@ -81,13 +86,31 @@ def test_a_run_calls_tools_until_muse_spark_answers_and_stores_the_trace(conn, t
     assert row["cost_usd"] == pytest.approx(2 * TURN) == result.cost_usd
 
 
+def test_every_turn_sends_the_whole_conversation_so_far(conn, tmp_path):
+    api = Script(turn_body([("echo", '{"n": 1}')], text="One.", rid="resp_1"),
+                 turn_body([("echo", '{"n": 2}')], text="Two.", rid="resp_2"),
+                 turn_body([], text="Done.", rid="resp_3"))
+
+    result = run(conn, tmp_path, api)
+
+    assert (result.status, result.turns) == ("done", 3)
+    third = api.requests[2]
+    assert "previous_response_id" not in third and third["store"] is False
+    assert third["input"][:4] == api.requests[1]["input"]  # the second turn's input is a prefix of the third's
+    assert [item.get("type") or item["role"] for item in third["input"]] == [
+        "user", "message", "function_call", "function_call_output",
+        "message", "function_call", "function_call_output"]
+    assert json.loads(third["input"][3]["output"])["n"] == 1 and json.loads(third["input"][6]["output"])["n"] == 2
+
+
 def test_a_bad_tool_call_goes_back_to_muse_spark_as_an_error(conn, tmp_path):
     api = Script(turn_body([("echo", '{"n": "x"}'), ("nope", "{}")], rid="resp_1"), turn_body([], text="Sorry."))
 
     result = run(conn, tmp_path, api)
 
     assert result.status == "done"
-    outputs = [json.loads(item["output"]) for item in api.requests[1]["input"]]
+    outputs = [json.loads(item["output"]) for item in api.requests[1]["input"]
+               if item.get("type") == "function_call_output"]
     assert "invalid arguments" in outputs[0]["error"] and "unknown tool" in outputs[1]["error"]
     assert [s["ok"] for s in steps(conn, result.run_id) if s["kind"] == "tool"] == [0, 0]
 
@@ -148,7 +171,7 @@ def test_a_turn_the_server_failed_is_sent_again_after_a_pause(conn, tmp_path):
 
     assert (result.status, result.turns, result.final_text) == ("done", 2, "Done.")
     assert pauses == list(TURN_RETRY_PAUSES)
-    assert api.requests[1] == api.requests[2] == api.requests[3]  # the same turn, chained to resp_1
+    assert api.requests[1] == api.requests[2] == api.requests[3]  # the same turn, with the whole conversation
 
 
 def test_a_turn_the_server_keeps_failing_ends_the_run(conn, tmp_path):
