@@ -33,6 +33,7 @@ vigia-quality = "vigia.gate:main"
 vigia-measure = "vigia.metrics:main"
 vigia-wind = "vigia.wind:main"
 vigia-agent = "vigia.agent.loop:main"
+vigia-bulletin = "vigia.agent.bulletin:main"
 
 [tool.setuptools.packages.find]
 include = ["vigia*"]

@@ -12,21 +12,35 @@ JPEGs at most 1,280 pixels wide, in the bulletin's folder.
 
 from __future__ import annotations
 
+import argparse
 import json
+import logging
 import sqlite3
+import sys
 from collections.abc import Callable
+from contextlib import closing
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, get_args
 
+import httpx
 import numpy as np
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from vigia import db
+from vigia.agent.loop import (BUDGET_USD, DEFAULT_TASK, MAX_TURNS, AgentRun, context_from_settings, run_agent,
+                              trace)
+from vigia.agent.render import local_time, publish, to_markdown
 from vigia.agent.tools import Metric, ToolContext
+from vigia.config import load_sources
+from vigia.meta.client import MetaClient
+from vigia.meta.ledger import CostLedger
 from vigia.overlay import Layer, draw_layers
 from vigia.prompts import Target
-from vigia.timeutil import to_iso, utcnow
+from vigia.settings import Settings
+from vigia.timeutil import parse_utc, to_iso, utcnow
 from vigia.tracking import detection_mask
 
 ActivityLevel = Literal["no_view", "quiet", "degassing", "incandescence", "fountaining"]
@@ -39,6 +53,23 @@ DISCLAIMER_EN = ("Automated, experimental reading of public webcams by Vigía An
                  "alerts or warnings. For the official status of {name}, see {agency}: {url}")
 DISCLAIMER_ES = ("Lectura automática y experimental de cámaras públicas hecha por Vigía Andino. No reemplaza las "
                  "alertas ni los avisos oficiales. Para el estado oficial de {name}, consulte a {agency}: {url}")
+
+BULLETIN_FINISH = """\
+Finish with a bulletin for the public, as the JSON your answer format describes, in English and in Spanish (natural \
+Spanish with all its accents and ñ, not a word-for-word translation):
+- activity_level: what the cameras show now. It describes, it never sets an alert level: no_view (no camera can see \
+the vent: cloud, fog, darkness or no fresh frames), quiet (a clear view with no plume, glow or fountain), degassing \
+(a gas or steam plume and no glowing lava), incandescence (glowing lava but no fountain), fountaining (a lava \
+fountain).
+- headline: one sentence. body: three to six sentences on what each useful camera shows, the measurements with \
+± sigma, units and local times, the drift against the wind, and what could not be measured and why.
+- measurements: every number the body quotes from measure_track or get_history, exactly as the tool returned it \
+(value and sigma), with its camera, target, metric, unit and the frame ids it came from. Quote per-frame values \
+(latest or max), not means.
+- evidence: one to three frames that best show what you describe, each with the target whose mask to draw and a \
+short caption in each language.
+- drift_bearing is the side of the camera's line of sight the plume sits on, not the direction it travels.
+Do not write a disclaimer or the official source: every bulletin gets them."""
 
 
 class EvidenceError(Exception):
@@ -259,3 +290,74 @@ def load_bulletin(conn: sqlite3.Connection, bulletin_id: int) -> Bulletin:
     if row is None:
         raise KeyError(f"no bulletin {bulletin_id}")
     return Bulletin.model_validate_json(row["body"])
+
+
+@dataclass(frozen=True)
+class Written:
+    run: AgentRun
+    bulletin: Bulletin | None
+    problem: str | None = None  # why there is no bulletin
+
+
+def write_bulletin(client: MetaClient, ctx: ToolContext, volcano_id: str, out_dir: Path, *, task: str | None = None,
+                   wall_clock: Callable[[], datetime] = utcnow, **agent: Any) -> Written:
+    """Run the agent at the context's clock with a bulletin as its final answer, then check, store and publish it
+    in out_dir (inside the data dir). The task recalls the last bulletin before the clock, so the agent can say
+    what changed. Other keyword arguments go to run_agent."""
+    volcano = ctx.sources.volcanoes[volcano_id]
+    task = task or DEFAULT_TASK.format(name=volcano.name)
+    previous = ctx.conn.execute(
+        "SELECT clock, activity_level, headline_en FROM bulletins WHERE volcano = ? AND clock < ? "
+        "ORDER BY clock DESC, id DESC LIMIT 1", (volcano_id, to_iso(ctx.now))).fetchone()
+    if previous is not None:
+        task += (f"\nYour previous bulletin, at {local_time(previous['clock'], volcano.utc_offset_hours)}, reported "
+                 f"{previous['activity_level']}: {previous['headline_en']}")
+    run = run_agent(client, ctx, volcano_id, task, finish=BULLETIN_FINISH, text_format=DRAFT_FORMAT,
+                    wall_clock=wall_clock, **agent)
+    if run.status not in ("done", "max_turns"):
+        return Written(run, None, f"the agent run ended with {run.status}: {run.error}")
+    try:
+        draft = BulletinDraft.model_validate_json(run.final_text)
+    except ValidationError as exc:
+        return Written(run, None, f"the final answer is not a bulletin: {exc.errors()[0]['msg']}")
+    bulletin = store_bulletin(ctx.conn, build_bulletin(ctx, volcano_id, run.run_id, draft, out_dir,
+                                                       wall_clock=wall_clock))
+    publish(bulletin, ctx.data_dir, out_dir)
+    return Written(run, bulletin)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Have the agent write a bulletin about a volcano at a time (now, "
+                                                 "or a past time to replay it), check it and publish it.")
+    parser.add_argument("--volcano", required=True, help="volcano id from the sources file, e.g. kilauea")
+    parser.add_argument("--at", type=parse_utc, help="the agent's clock, e.g. 2026-10-17T05:00-10:00 (default: now)")
+    parser.add_argument("--max-turns", type=int, default=MAX_TURNS, help=f"model turns (default {MAX_TURNS})")
+    parser.add_argument("--budget", type=float, default=BUDGET_USD,
+                        help=f"USD for the whole run, tool calls included (default {BUDGET_USD})")
+    parser.add_argument("--effort", choices=["low", "medium", "high"], default="medium", help="reasoning effort")
+    args = parser.parse_args(argv)
+    if args.max_turns < 1:
+        parser.error("--max-turns must be at least 1")
+
+    settings = Settings.from_env()
+    sources = load_sources(settings.sources_path)
+    if args.volcano not in sources.volcanoes:
+        parser.error(f"unknown volcano {args.volcano!r} in {settings.sources_path}")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")  # a Windows console may not show every character
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    out_dir = settings.data_dir / "bulletins"
+    with closing(db.connect(settings.db_path)) as conn, \
+            httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+        ctx = context_from_settings(settings, conn, http, args.at or utcnow(), sources=sources)
+        client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+        written = write_bulletin(client, ctx, args.volcano, out_dir, max_turns=args.max_turns,
+                                 budget_usd=args.budget, effort=args.effort)
+        print(trace(conn, written.run.run_id))
+    if written.bulletin is None:
+        print(f"no bulletin: {written.problem}")
+        raise SystemExit(1)
+    for lang in ("en", "es"):
+        print()
+        print(to_markdown(written.bulletin, lang))
+    print(f"published in {out_dir / f'run{written.run.run_id}'}")

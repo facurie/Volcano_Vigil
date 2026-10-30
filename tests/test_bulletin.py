@@ -1,16 +1,21 @@
 import json
 from typing import get_args
 
+import httpx
+import openai
 import pytest
 from PIL import Image
 from pydantic import ValidationError
 
 from conftest import NOW
+from test_agent_loop import FAKE_TOOLS, SOURCES_YAML, Script
 from test_agent_tools import (SIZE, T0, add_frame, add_measurement, add_run, add_track, context, detection_ids,
                               store)  # store is a fixture
-from vigia.agent.bulletin import (DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft, DraftEvidence,
-                                  DraftMeasurement, build_bulletin, draw_evidence, load_bulletin, run_wind,
-                                  store_bulletin, verify)
+from test_meta_client import make_client, turn_body
+from vigia.agent.bulletin import (BULLETIN_FINISH, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
+                                  DraftEvidence, DraftMeasurement, build_bulletin, draw_evidence, load_bulletin, main,
+                                  run_wind, store_bulletin, verify, write_bulletin)
+from vigia.meta.client import MetaClient
 from vigia.timeutil import to_iso
 
 
@@ -271,3 +276,102 @@ def test_a_stored_bulletin_loads_back_with_its_id(conn, tmp_path):
         3, "fountaining", 0, "2026-10-17T15:00:00Z")
     with pytest.raises(KeyError):
         load_bulletin(conn, 2)
+
+
+QUIET = {**DRAFT, "activity_level": "no_view", "measurements": [], "evidence": []}
+
+
+def write(conn, tmp_path, api):
+    return write_bulletin(make_client(api, conn), context(conn, tmp_path), "kilauea", tmp_path / "bulletins",
+                          tools=FAKE_TOOLS, wall_clock=lambda: NOW)
+
+
+def test_the_agent_writes_the_bulletin_in_its_format_and_it_is_stored_and_published(conn, store, tmp_path):
+    frame_id = plume_frame(conn, store)
+    draft = {**DRAFT, "measurements": [quoted(frame_id).model_dump()], "evidence": [shown(frame_id).model_dump()]}
+    api = Script(turn_body([("echo", '{"n": 1}')], text="Measuring.", rid="resp_1"),
+                 turn_body([], text=json.dumps(draft)))
+
+    written = write(conn, tmp_path, api)
+
+    assert written.problem is None and written.bulletin.id == 1 and written.bulletin.verified
+    assert [request["text"] for request in api.requests] == [{"format": DRAFT_FORMAT}] * 2
+    assert all(request["instructions"].endswith(BULLETIN_FINISH) for request in api.requests)
+    assert load_bulletin(conn, 1) == written.bulletin
+    folder = tmp_path / "bulletins" / f"run{written.run.run_id}"
+    assert (folder / "bulletin.html").exists() and (folder / f"frame{frame_id}_plume.jpg").exists()
+
+
+def test_a_final_answer_that_is_not_a_bulletin_stores_nothing(conn, tmp_path):
+    written = write(conn, tmp_path, Script(turn_body([], text="The plume is high.")))
+
+    assert written.bulletin is None and written.problem.startswith("the final answer is not a bulletin")
+    assert written.run.status == "done"
+    assert conn.execute("SELECT COUNT(*) FROM bulletins").fetchone()[0] == 0
+
+
+def test_a_failed_run_writes_no_bulletin(conn, tmp_path):
+    failure = httpx.Response(500, json={"error": {"message": "boom", "type": "server_error", "param": None,
+                                                  "code": None}})
+
+    written = write(conn, tmp_path, Script(failure))
+
+    assert written.bulletin is None and written.problem.startswith("the agent run ended with error")
+
+
+def test_the_task_recalls_the_last_bulletin_before_the_clock_only(conn, tmp_path):
+    draft = BulletinDraft.model_validate(QUIET)
+    for clock, headline in (("2026-10-17T14:00:00Z", "Fountain rising"), ("2026-10-17T16:00:00Z", "From later")):
+        bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 1, draft, tmp_path / "bulletins")
+        store_bulletin(conn, bulletin.model_copy(update={"clock": clock, "headline_en": headline,
+                                                         "activity_level": "fountaining"}))
+    api = Script(turn_body([], text=json.dumps(QUIET)))
+
+    write(conn, tmp_path, api)
+
+    task = api.requests[0]["input"][0]["content"]
+    assert task.startswith("Check Kilauea now")
+    assert task.endswith("\nYour previous bulletin, at 2026-10-17 14:00 UTC, reported fountaining: Fountain rising")
+    assert "From later" not in task
+
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(SOURCES_YAML, encoding="utf-8")
+    monkeypatch.setenv("SOURCES_PATH", str(sources))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    return tmp_path
+
+
+def fake_meta(monkeypatch, api):
+    def from_env(ledger):  # the CLI's own ledger, so its database connection is the only one
+        sdk = openai.OpenAI(base_url="https://api.meta.ai/v1", api_key="test-key", max_retries=0,
+                            http_client=httpx.Client(transport=httpx.MockTransport(api)))
+        return MetaClient(sdk, ledger)
+
+    monkeypatch.setattr("vigia.agent.bulletin.MetaClient.from_env", from_env)
+
+
+def test_cli_prints_the_trace_and_the_bulletin_in_both_languages(cli_env, monkeypatch, capsys):
+    fake_meta(monkeypatch, Script(turn_body([("list_cameras_status", "{}")], rid="resp_1"),
+                                  turn_body([], text=json.dumps(QUIET))))
+
+    main(["--volcano", "kilauea", "--at", "2026-10-17T05:00-10:00"])
+
+    out = capsys.readouterr().out
+    assert "at 2026-10-17T15:00:00Z (kilauea): done after 2 turns" in out
+    assert "# Lava fountain and a tall plume at Kīlauea" in out and "# Fuente de lava y una columna alta" in out
+    assert "Kilauea · 2026-10-17 05:00 (UTC-10) · Activity: No usable view" in out
+    assert (cli_env / "data" / "bulletins" / "run1" / "bulletin.html").exists()
+
+
+def test_cli_exits_with_an_error_when_no_bulletin_comes_back(cli_env, monkeypatch, capsys):
+    fake_meta(monkeypatch, Script(turn_body([], text="No JSON here.")))
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--volcano", "kilauea", "--at", "2026-10-17T05:00-10:00"])
+
+    assert exit_info.value.code == 1
+    assert "no bulletin: the final answer is not a bulletin" in capsys.readouterr().out
