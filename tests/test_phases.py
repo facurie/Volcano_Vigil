@@ -3,6 +3,8 @@ from dataclasses import replace
 from datetime import timedelta
 
 import httpx
+import openai
+import pytest
 
 from test_agent_tools import SOURCES, T0, add_frame, add_run, add_track, context, store  # store is a fixture
 from test_meta_client import SPARK_USAGE, make_client, response_body
@@ -106,3 +108,44 @@ def test_ask_phases_maps_each_named_video_second_to_its_frames_capture_time(conn
     assert "6 frames, captured about every 2 minutes from 15:00 to 15:10 (UTC)" in prompt
     assert "about 4 minutes x t after the first" in prompt
     assert api.requests[-1].method == "DELETE"
+
+
+def test_a_failing_muse_spark_call_still_deletes_the_uploaded_timelapse(conn, store, tmp_path):
+    for i in range(6):
+        add_frame(conn, store, "kilauea-k2", 2 * i)
+    api = FakeVideoApi(ANSWER)
+    plain = api.__call__
+
+    def failing(request):
+        if request.url.path == "/v1/responses":
+            api.requests.append(request)
+            return httpx.Response(500, json={"error": {"message": "overloaded"}})
+        return plain(request)
+
+    camera = context(conn, tmp_path).camera("kilauea-k2")
+
+    with pytest.raises(openai.APIError):
+        ask_phases(make_client(failing, conn), conn, tmp_path, camera, SOURCES.volcanoes["kilauea"], T0, T0 + 10 * M)
+
+    assert api.requests[-1].method == "DELETE"
+
+
+@needs_ffmpeg
+def test_a_video_second_before_the_clip_maps_to_its_first_frame(conn, store, tmp_path):
+    for i in range(6):
+        add_frame(conn, store, "kilauea-k2", 2 * i)
+    api = FakeVideoApi({**ANSWER, "onset": phase(-3.0)})
+    camera = context(conn, tmp_path).camera("kilauea-k2")
+
+    result = ask_phases(make_client(api, conn), conn, tmp_path, camera, SOURCES.volcanoes["kilauea"], T0, T0 + 10 * M)
+
+    assert result["onset"]["time"] == "2026-10-17T15:00:00Z"
+
+
+def test_a_height_exactly_90_percent_of_the_peak_is_not_yet_the_decline(conn, store):
+    for i, height in enumerate([100] * 5 + [90] * 5 + [80] * 5):  # running medians: 100 x5, 90 x5, 80 x5
+        fountain(conn, store, "kilauea-k2", 2 * i, height)
+
+    phases = sam_phases(conn, "kilauea-k2", T0, T0 + 30 * M)
+
+    assert phases["decline"] == "2026-10-17T15:20:00Z"  # frame 10, the first median under 90

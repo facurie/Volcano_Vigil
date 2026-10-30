@@ -3,13 +3,16 @@
 One step at time `now`, for one volcano's cameras:
 1. the quality gate gives a verdict to every frame of the last hours that has none (local checks, and Muse
    Spark for the uncertain ones when there is a client);
-2. every closed window (one per camera per hour, the Phase 2 cost rule) with enough usable frames and no
-   tracking run yet is tracked with SAM 3.1 video, and a calibrated camera's new detections are measured;
+2. every closed window (one per camera per hour, the Phase 2 cost rule) with enough usable frames that lacks
+   a run of some target is tracked, for the missing targets only, with SAM 3.1 video, and a calibrated
+   camera's new detections are measured;
 3. at each full `agent_every` after the pipeline started, the agent writes a bulletin.
 A window counts as closed once `settle` has passed after its end, so that late frames are in; the replay, whose
 frames are all on time, settles for nothing. The agent waits for the same `settle`: live, the 14:00 bulletin runs
 at 14:05, after the step has tracked the 13:00-14:00 window. A window that fails is reported and the step goes
-on; one that gives no run is tried at most `MAX_WINDOW_ATTEMPTS` times. Nothing in a step looks past `now`.
+on; one that still lacks a target after a try is tried again, at most `MAX_WINDOW_ATTEMPTS` times. An agent run
+that ended in error is not the bulletin: it is run again, until `MAX_AGENT_ERRORS` runs have failed. Nothing in a
+step looks past `now`.
 Tracking and measuring take minutes (mask decoding), so a server runs the steps in a background thread, never in
 a request.
 
@@ -38,11 +41,12 @@ from vigia import db, tracking
 from vigia.agent.bulletin import write_bulletin
 from vigia.agent.loop import BUDGET_USD, context_from_settings
 from vigia.agent.tools import ToolContext
-from vigia.config import load_sources
+from vigia.config import Camera, load_sources
 from vigia.gate import QualityGate, SparkMode
 from vigia.meta.client import MetaClient
 from vigia.meta.ledger import BudgetExceeded, CostLedger
 from vigia.metrics import measure_window
+from vigia.prompts import Target
 from vigia.settings import Settings
 from vigia.timeutil import to_iso, utcnow
 
@@ -53,6 +57,7 @@ LOOKBACK = timedelta(hours=3)
 SETTLE = timedelta(minutes=5)
 MIN_WINDOW_FRAMES = 5
 MAX_WINDOW_ATTEMPTS = 3
+MAX_AGENT_ERRORS = 2
 AGENT_EVERY = timedelta(hours=1)
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -114,7 +119,8 @@ class Pipeline:
         self.started_at = base.now
         self._cameras = [base.camera(camera_id) for camera_id in config.cameras]
         self._track, self._measure, self._write = track, measure, write
-        self._attempts: dict[tuple[str, datetime], int] = {}  # windows tracked without storing a run
+        self._attempts: dict[tuple[str, datetime], int] = {}  # windows tracked and still missing a target
+        self._gave_up: set[datetime] = set()                  # agent boundaries reported as given up
 
     def step(self, now: datetime, *, flush: bool = False, agent: bool | None = None) -> StepReport:
         """One step at `now`. `flush` also tracks the open window up to now (the end of a replay). `agent`: None
@@ -126,7 +132,7 @@ class Pipeline:
         if ctx.client is None:
             return report
         self._track_windows(ctx, report, flush)
-        due = self._agent_due(now) if agent is None else agent and not self._ran_at(now)
+        due = self._agent_due(now, report) if agent is None else agent and not self._ran_at(now, report)
         if due:
             self._run_agent(ctx, report)
         return report
@@ -155,20 +161,25 @@ class Pipeline:
             windows.append((start, min(now, start + every - timedelta(seconds=1))))
         return windows
 
-    def _tracked(self, camera_id: str, start: datetime) -> bool:
-        return self.base.conn.execute(
-            "SELECT 1 FROM tracking_runs WHERE camera_id = ? AND window_start >= ? AND window_end < ? LIMIT 1",
-            (camera_id, to_iso(start), to_iso(start + self.config.window))).fetchone() is not None
+    def _missing(self, ctx: ToolContext, camera: Camera, start: datetime) -> list[Target]:
+        """The targets the prompts have phrases for on this camera that the window has no run of."""
+        done = {row[0] for row in ctx.conn.execute(
+            "SELECT DISTINCT target FROM tracking_runs WHERE camera_id = ? AND window_start >= ? AND window_end < ?",
+            (camera.id, to_iso(start), to_iso(start + self.config.window)))}
+        return [target for target in tracking.TARGETS
+                if ctx.prompts.phrases(target, camera.kind) and target not in done]
 
     def _track_windows(self, ctx: ToolContext, report: StepReport, flush: bool) -> None:
         for camera in self._cameras:
             for start, end in self._windows(ctx.now, flush):
-                if self._tracked(camera.id, start) or self._attempts.get((camera.id, start), 0) >= MAX_WINDOW_ATTEMPTS:
+                missing = self._missing(ctx, camera, start)
+                if not missing or self._attempts.get((camera.id, start), 0) >= MAX_WINDOW_ATTEMPTS:
                     continue
                 if len(tracking.usable_frames(ctx.conn, ctx.data_dir, camera.id, start, end)) < self.config.min_frames:
                     continue
                 try:
-                    result = self._track(ctx.client, ctx.conn, ctx.data_dir, camera, ctx.prompts, start, end)
+                    result = self._track(ctx.client, ctx.conn, ctx.data_dir, camera, ctx.prompts, start, end,
+                                         targets=missing)
                 except BudgetExceeded as exc:
                     report.errors.append(f"tracking stopped: {exc}")
                     return
@@ -182,16 +193,16 @@ class Pipeline:
                     "camera_id": camera.id, "start": to_iso(start), "end": to_iso(end), "frames": result.frames,
                     "runs": [{"run_id": run.run_id, "target": run.target, "phrase": run.phrase, "tracks": run.tracks,
                               "detections": run.detections} for run in result.runs]})
-                if not result.runs:
-                    self._count_attempt(camera.id, start, report)
-                elif camera.id in ctx.calibration.cameras:
+                if result.runs and camera.id in ctx.calibration.cameras:
                     try:
                         measured = self._measure(ctx.conn, ctx.calibration, camera.id, start, end)
                     except ValueError as exc:
                         report.errors.append(f"{camera.id} {to_iso(start)}: {exc}")
-                        continue
-                    report.measured += measured.measured
-                    report.errors += measured.errors
+                    else:
+                        report.measured += measured.measured
+                        report.errors += measured.errors
+                if self._missing(ctx, camera, start):
+                    self._count_attempt(camera.id, start, report)
 
     def _count_attempt(self, camera_id: str, start: datetime, report: StepReport) -> None:
         key = (camera_id, start)
@@ -199,20 +210,34 @@ class Pipeline:
         if self._attempts[key] == MAX_WINDOW_ATTEMPTS:
             report.errors.append(f"{camera_id} {to_iso(start)}: gave up after {MAX_WINDOW_ATTEMPTS} attempts")
 
-    def _agent_due(self, now: datetime) -> bool:
+    def _agent_due(self, now: datetime, report: StepReport) -> bool:
         every = self.config.agent_every
         if every is None:
             return False
         boundary = floor_time(now - self.config.settle, every)
         if boundary <= self.started_at:
             return False
-        return self.base.conn.execute(
-            "SELECT 1 FROM agent_runs WHERE volcano = ? AND clock >= ? AND clock < ? LIMIT 1",
-            (self.config.volcano, to_iso(boundary), to_iso(boundary + every))).fetchone() is None
+        return not self._agent_settled(boundary, boundary + every, report)
 
-    def _ran_at(self, now: datetime) -> bool:
-        return self.base.conn.execute("SELECT 1 FROM agent_runs WHERE volcano = ? AND clock = ? LIMIT 1",
-                                      (self.config.volcano, to_iso(now))).fetchone() is not None
+    def _ran_at(self, now: datetime, report: StepReport) -> bool:
+        return self._agent_settled(now, now + timedelta(seconds=1), report)
+
+    def _agent_settled(self, low: datetime, high: datetime, report: StepReport) -> bool:
+        """True if the agent needs no more runs with a clock in [low, high): one did not end in error, or
+        `MAX_AGENT_ERRORS` did (said once in a report). A run in error is run again, so a Ctrl-C or an API
+        failure does not lose the bulletin."""
+        finished, failed = self.base.conn.execute(
+            """SELECT COALESCE(SUM(status != 'error'), 0), COALESCE(SUM(status = 'error'), 0) FROM agent_runs
+               WHERE volcano = ? AND clock >= ? AND clock < ?""",
+            (self.config.volcano, to_iso(low), to_iso(high))).fetchone()
+        if finished:
+            return True
+        if failed < MAX_AGENT_ERRORS:
+            return False
+        if low not in self._gave_up:
+            self._gave_up.add(low)
+            report.errors.append(f"agent at {to_iso(low)}: gave up after {failed} failed runs")
+        return True
 
     def _run_agent(self, ctx: ToolContext, report: StepReport) -> None:
         written = self._write(ctx.client, ctx, self.config.volcano, self.config.bulletin_dir,

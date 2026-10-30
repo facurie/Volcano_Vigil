@@ -22,6 +22,7 @@ import dataclasses
 import json
 import logging
 import sqlite3
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -89,8 +90,15 @@ def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, 
                spark_video: bool = True, pipeline: Pipeline | None = None, sleep: Callable[[float], None] = time.sleep,
                monotonic: Callable[[], float] = time.monotonic) -> dict[str, Any]:
     """Replay the episode into base.conn, the replay's own database, and write timeline.json and report.md to
-    out_dir (inside the data dir); returns the timeline."""
+    out_dir (inside the data dir); returns the timeline. Raises ValueError if the database holds steps from another
+    grid (another --step): they cannot be resumed."""
     conn = base.conn
+    grid = {to_iso(tick) for tick in ticks(episode.start, episode.end, step)}
+    off_grid = sorted(row[0] for row in conn.execute("SELECT clock FROM replay_ticks") if row[0] not in grid)
+    if off_grid:
+        raise ValueError(f"the replay in {out_dir} has a step at {off_grid[0]}, which is not on this run's grid of "
+                         f"{step / timedelta(minutes=1):g} min from {to_iso(episode.start)}; delete that folder to "
+                         "start over, or run it with the step it used")
     if pipeline is None:
         config = PipelineConfig(volcano=episode.volcano, cameras=episode.cameras, bulletin_dir=out_dir / "bulletins",
                                 settle=timedelta(0), agent_every=agent_every)
@@ -131,7 +139,8 @@ def _spark_phases(base: ToolContext, episode: Episode, out_dir: Path) -> dict[st
     try:
         answer = ask_phases(base.client, base.conn, base.data_dir, base.camera(episode.timelapse_camera),
                             base.sources.volcanoes[episode.volcano], episode.start, episode.end)
-    except (openai.APIError, BudgetExceeded, ToolError, ValueError) as exc:
+    except (openai.APIError, BudgetExceeded, ToolError, ValueError, OSError, RuntimeError,
+            subprocess.CalledProcessError) as exc:
         log.warning("Muse Spark did not read the timelapse: %s", exc)
         return None
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -213,10 +222,14 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+def _checked(measurements: list[dict[str, Any]]) -> str:
+    return "-" if not measurements else "yes" if all(m["verified"] for m in measurements) else "no"
+
+
 def report_markdown(timeline: dict[str, Any], episode: Episode) -> str:
     comparison, every = timeline["comparison"], timeline["agent_every_minutes"]
     bulletins = [[local_time(b["clock"], episode.local), b["activity_level"], _cell(b["headline_en"]),
-                  _cell(b["headline_es"]), "yes" if all(m["verified"] for m in b["measurements"]) else "no"]
+                  _cell(b["headline_es"]), _checked(b["measurements"])]
                  for b in timeline["bulletins"]]
     agent = f"a bulletin every {every:g} min and at the end" if every else "no agent"
     sections = [
@@ -264,16 +277,21 @@ def main(argv: list[str] | None = None) -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    with closing(db.connect(settings.db_path)) as source, closing(db.connect(out_dir / "vigia.sqlite")) as conn, \
-            httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+    with closing(db.connect(settings.db_path)) as source:
         marks = ",".join("?" * len(episode.cameras))
         stored = source.execute(f"SELECT COUNT(*) FROM frames WHERE camera_id IN ({marks}) AND captured_at "
                                 "BETWEEN ? AND ?", (*episode.cameras, to_iso(episode.start), to_iso(episode.end)))
         if not stored.fetchone()[0]:
             parser.error(f"{settings.db_path} has no frames of episode {episode.key}; backfill them with vigia-backfill")
-        client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
-        run_replay(source, context_from_settings(settings, conn, http, episode.start, client), episode, out_dir,
-                   step=timedelta(minutes=args.step), speed=args.speed, spark_video=not args.no_video,
-                   agent_every=None if args.no_agent else timedelta(minutes=args.agent_every))
+        with closing(db.connect(out_dir / "vigia.sqlite")) as conn, \
+                httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+            client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+            try:
+                run_replay(source, context_from_settings(settings, conn, http, episode.start, client), episode,
+                           out_dir, step=timedelta(minutes=args.step), speed=args.speed,
+                           spark_video=not args.no_video,
+                           agent_every=None if args.no_agent else timedelta(minutes=args.agent_every))
+            except ValueError as exc:
+                parser.error(str(exc))
     print((out_dir / "report.md").read_text(encoding="utf-8"))
     print(f"timeline: {out_dir / 'timeline.json'}")

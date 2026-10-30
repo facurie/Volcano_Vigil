@@ -1,4 +1,5 @@
 import json
+import subprocess
 from dataclasses import replace
 from datetime import timedelta
 
@@ -6,7 +7,7 @@ import pytest
 
 from test_agent_tools import T0, context, frame_jpeg
 from test_bulletin import DRAFT
-from vigia import db
+from vigia import db, replay
 from vigia.agent.bulletin import BulletinDraft, CitedMeasurement, build_bulletin, store_bulletin
 from vigia.episodes import EP55
 from vigia.ingest.store import FrameStore
@@ -173,3 +174,103 @@ def test_without_a_client_or_a_stored_reading_muse_spark_is_not_asked(source, co
                           step=10 * M, pipeline=FakePipeline(conn))
 
     assert timeline["phases"]["muse_spark"] is None and timeline["phases"]["rows"][0][4] == "not asked"
+
+
+def test_feed_ignores_a_frame_captured_before_the_episode_starts(source, conn, tmp_path):
+    add(source, tmp_path, "kilauea-kp", -61)
+    inside = add(source, tmp_path, "kilauea-kp", -60)
+
+    assert feed(source, conn, ("kilauea-kp",), T0 - 60 * M, T0) == {"kilauea-kp": 1}
+    assert [row[0] for row in conn.execute("SELECT id FROM frames")] == [inside]
+
+
+def test_without_an_agent_schedule_the_last_step_does_not_force_one(source, conn, tmp_path):
+    fake = FakePipeline(conn)
+
+    run_replay(source, context(conn, tmp_path), episode(T0, T0 + 20 * M), tmp_path / "replay", step=10 * M,
+               agent_every=None, pipeline=fake)
+
+    assert [call[1:3] for call in fake.calls] == [(False, None), (True, None)]
+
+
+def test_a_bulletin_that_quoted_nothing_has_no_numbers_to_have_checked(source, conn, tmp_path):
+    bulletin_at(conn, tmp_path, "2026-10-17T14:00:00Z")
+    bulletin_at(conn, tmp_path, "2026-10-17T15:00:00Z", measurements=[top(6951, 429, "2026-10-17T14:55:05Z")])
+
+    run_replay(source, context(conn, tmp_path), episode(T0, T0 + 10 * M), tmp_path / "replay", step=10 * M,
+               pipeline=FakePipeline(conn))
+
+    report = (tmp_path / "replay" / "report.md").read_text(encoding="utf-8")
+    assert [line.split(" | ")[-1] for line in report.splitlines() if line.startswith(("| 04:00", "| 05:00"))] == [
+        "- |", "yes |"]
+
+
+@pytest.mark.parametrize("error", [OSError("frame file is gone"), RuntimeError("the video has 3 frames"),
+                                   subprocess.CalledProcessError(1, "ffmpeg")])
+def test_a_timelapse_that_cannot_be_read_does_not_stop_the_replay(source, conn, tmp_path, monkeypatch, error):
+    def ask(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(replay, "ask_phases", ask)
+
+    timeline = run_replay(source, context(conn, tmp_path, client="a Meta client"), episode(T0, T0 + 10 * M),
+                          tmp_path / "replay", step=10 * M, pipeline=FakePipeline(conn))
+
+    assert timeline["phases"]["muse_spark"] is None
+    assert not (tmp_path / "replay" / "spark_phases.json").exists()
+    assert json.loads((tmp_path / "replay" / "timeline.json").read_text(encoding="utf-8")) == timeline
+
+
+def test_muse_sparks_reading_is_asked_once_and_kept(source, conn, tmp_path, monkeypatch):
+    answer = {phase: {"seen": False, "time": None} for phase in PHASES} | {"summary": "Nothing."}
+    asked = []
+    monkeypatch.setattr(replay, "ask_phases", lambda *args, **kwargs: asked.append(args) or answer)
+    base, out = context(conn, tmp_path, client="a Meta client"), tmp_path / "replay"
+
+    first = run_replay(source, base, episode(T0, T0 + 10 * M), out, step=10 * M, pipeline=FakePipeline(conn))
+    second = run_replay(source, base, episode(T0, T0 + 10 * M), out, step=10 * M, pipeline=FakePipeline(conn))
+
+    assert len(asked) == 1 and first["phases"]["muse_spark"] == second["phases"]["muse_spark"] == answer
+    assert json.loads((out / "spark_phases.json").read_text(encoding="utf-8")) == answer
+
+
+def test_a_replay_stored_on_another_grid_is_not_resumed(source, conn, tmp_path):
+    with conn:
+        conn.execute("INSERT INTO replay_ticks (clock, report) VALUES (?, '{}')", (to_iso(T0 + 7 * M),))
+    fake = FakePipeline(conn)
+
+    with pytest.raises(ValueError, match=r"replay in .*delete that folder"):
+        run_replay(source, context(conn, tmp_path), episode(T0, T0 + 30 * M), tmp_path / "replay", step=10 * M,
+                   pipeline=fake)
+
+    assert fake.calls == []
+
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigia.sqlite"))
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    return tmp_path / "data"
+
+
+def test_cli_refuses_an_episode_with_no_stored_frames_and_leaves_no_replay_database(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--episode", "55"])
+
+    assert "has no frames of episode 55" in capsys.readouterr().err
+    assert not (cli_env / "replay").exists()
+
+
+def test_cli_turns_a_replay_on_another_grid_into_a_usage_error(cli_env, capsys):
+    with db.connect(cli_env / "vigia.sqlite") as source:
+        FrameStore(source, cli_env).add("kilauea-kp", frame_jpeg(1), captured_at=EP55.start + 30 * M,
+                                        timestamp_source="ashcam", fetched_at=EP55.start + 30 * M)
+    with db.connect(cli_env / "replay" / "ep55" / "vigia.sqlite") as stored:
+        stored.execute("INSERT INTO replay_ticks (clock, report) VALUES (?, '{}')", (to_iso(EP55.start + 7 * M),))
+
+    with pytest.raises(SystemExit):
+        main(["--episode", "55", "--no-video"])
+
+    err = capsys.readouterr().err
+    assert "ep55" in err and "delete that folder" in err

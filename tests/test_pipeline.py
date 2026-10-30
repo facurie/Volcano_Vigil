@@ -26,24 +26,27 @@ class Fakes:
 
     def __init__(self):
         self.tracked, self.measured, self.agent_clocks, self.events = [], [], [], []
+        self.targets = []         # the targets each tracking call was given
+        self.agent_status = "done"
         self.budget_spent = False
         self.raises = {}          # camera id -> exception its tracking raises
         self.stores_runs = True   # False: tracking returns without storing a run
         self.measure_error = None
 
-    def track(self, client, conn, data_dir, camera, prompts, start, end):
+    def track(self, client, conn, data_dir, camera, prompts, start, end, targets=tracking.TARGETS):
         if self.budget_spent:
             raise BudgetExceeded("daily budget $5.00 would be exceeded")
         self.tracked.append((camera.id, start, end))
+        self.targets.append(tuple(targets))
         self.events.append(f"track {camera.id}")
         if camera.id in self.raises:
             raise self.raises[camera.id]
         frame_ids = [frame.id for frame in tracking.usable_frames(conn, data_dir, camera.id, start, end)]
         if not self.stores_runs:
             return TrackingReport(camera.id, len(frame_ids))
-        run_id = add_run(conn, camera.id, "plume", frame_ids)
-        return TrackingReport(camera.id, len(frame_ids),
-                              runs=[RunSummary(run_id, "plume", "steam", 1, len(frame_ids), start, end)])
+        return TrackingReport(camera.id, len(frame_ids), runs=[
+            RunSummary(add_run(conn, camera.id, target, frame_ids), target, target, 1, len(frame_ids), start, end)
+            for target in targets])
 
     def measure(self, conn, calibration, camera_id, start, end):
         self.measured.append((camera_id, start, end))
@@ -57,9 +60,9 @@ class Fakes:
         with ctx.conn:
             run_id = ctx.conn.execute(
                 "INSERT INTO agent_runs (started_at, clock, volcano, task, model, status) "
-                "VALUES ('2026-10-28T00:00:00Z', ?, ?, 'task', 'muse-spark-1.3', 'done')",
-                (to_iso(ctx.now), volcano_id)).lastrowid
-        return Written(AgentRun(run_id, "done", 1, 0.0, "{}", None), None, "no bulletin in this test")
+                "VALUES ('2026-10-28T00:00:00Z', ?, ?, 'task', 'muse-spark-1.3', ?)",
+                (to_iso(ctx.now), volcano_id, self.agent_status)).lastrowid
+        return Written(AgentRun(run_id, self.agent_status, 1, 0.0, "{}", None), None, "no bulletin in this test")
 
 
 @pytest.fixture
@@ -103,6 +106,7 @@ def test_each_closed_hour_is_tracked_once_per_camera(conn, store, tmp_path, fake
     assert [(w["camera_id"], w["start"], w["end"]) for w in report.tracked] == [
         ("kilauea-kp", to_iso(START), to_iso(end)), ("kilauea-k2", to_iso(START), to_iso(end))]
     assert report.tracked[0]["runs"][0]["detections"] == 6
+    assert fakes.targets == [("plume", "fountain")] * 2  # the targets the prompts have phrases for
 
 
 def test_a_window_waits_until_it_has_settled(conn, store, tmp_path, fakes):
@@ -213,7 +217,7 @@ def test_a_report_reads_as_one_line_per_step(conn, store, tmp_path, fakes):
 
     assert report.as_json()["clock"] == to_iso(START + H + 5 * M)
     assert report.summary().startswith("2026-10-17T14:05:00Z: 0 frames assessed (0 usable); tracked kilauea-kp "
-                                       "13:00-13:59 (6 detections); 2 detections measured")
+                                       "13:00-13:59 (12 detections); 2 detections measured")
 
 
 @pytest.mark.parametrize("error", [ValueError("bad frames"), RuntimeError("video has 3 frames"),
@@ -332,3 +336,75 @@ def test_cli_refuses_what_it_cannot_run(cli_env, capsys, argv, message):
         main(argv)
 
     assert message in capsys.readouterr().err
+
+
+def test_a_window_with_only_the_plume_run_is_tracked_again_for_the_missing_targets(conn, store, tmp_path, fakes):
+    ids = frames(conn, store, "kilauea-kp", 0)
+    add_run(conn, "kilauea-kp", "plume", ids)
+    frames(conn, store, "kilauea-k2", 0)
+    runner = pipeline(conn, tmp_path, fakes)
+
+    runner.step(START + H + 5 * M)
+    runner.step(START + H + 10 * M)
+
+    assert [(camera, targets) for (camera, _, _), targets in zip(fakes.tracked, fakes.targets)] == [
+        ("kilauea-kp", ("fountain",)), ("kilauea-k2", ("plume", "fountain"))]  # incandescence has no phrases
+
+
+def test_a_target_that_keeps_missing_is_given_up_too(conn, store, tmp_path, fakes):
+    ids = frames(conn, store, "kilauea-kp", 0)
+    add_run(conn, "kilauea-kp", "plume", ids)
+    fakes.stores_runs = False
+    runner = pipeline(conn, tmp_path, fakes, cameras=("kilauea-kp",))
+
+    reports = [runner.step(START + H + minutes * M) for minutes in (5, 10, 15, 20)]
+
+    assert len(fakes.tracked) == 3 and fakes.targets == [("fountain",)] * 3
+    assert reports[2].errors[0] == "kilauea-kp 2026-10-17T13:00:00Z: gave up after 3 attempts"
+
+
+def agent_run(conn, clock, status, volcano="kilauea"):
+    with conn:
+        conn.execute("INSERT INTO agent_runs (started_at, clock, volcano, task, model, status) "
+                     "VALUES ('2026-10-28T00:00:00Z', ?, ?, 'task', 'muse-spark-1.3', ?)",
+                     (to_iso(clock), volcano, status))
+
+
+def test_a_run_that_ended_in_error_does_not_count_as_the_hours_bulletin(conn, tmp_path, fakes):
+    agent_run(conn, START + H + 2 * M, "error")
+
+    pipeline(conn, tmp_path, fakes, settle=timedelta(0)).step(START + H + 5 * M)
+
+    assert fakes.agent_clocks == [START + H + 5 * M]
+
+
+def test_two_failed_runs_in_an_hour_stop_the_agent_and_say_so_once(conn, tmp_path, fakes):
+    agent_run(conn, START + H + 1 * M, "error")
+    agent_run(conn, START + H + 2 * M, "error")
+    runner = pipeline(conn, tmp_path, fakes, settle=timedelta(0))
+
+    reports = [runner.step(START + H + minutes * M) for minutes in (5, 10)]
+
+    assert fakes.agent_clocks == []
+    assert reports[0].errors == ["agent at 2026-10-17T14:00:00Z: gave up after 2 failed runs"]
+    assert reports[1].errors == []
+
+
+def test_a_finished_run_in_the_hour_stops_the_agent_even_after_a_failed_one(conn, tmp_path, fakes):
+    agent_run(conn, START + H + 1 * M, "error")
+    agent_run(conn, START + H + 2 * M, "done")
+
+    pipeline(conn, tmp_path, fakes, settle=timedelta(0)).step(START + H + 5 * M)
+
+    assert fakes.agent_clocks == []
+
+
+def test_a_forced_agent_retries_a_failed_run_at_its_clock_and_gives_up_after_two(conn, tmp_path, fakes):
+    fakes.agent_status = "error"
+    runner = pipeline(conn, tmp_path, fakes)
+
+    reports = [runner.step(START + 30 * M, agent=True) for _ in range(4)]
+
+    assert fakes.agent_clocks == [START + 30 * M] * 2
+    assert "agent at 2026-10-17T13:30:00Z: gave up after 2 failed runs" in reports[2].errors
+    assert reports[3].errors == []
