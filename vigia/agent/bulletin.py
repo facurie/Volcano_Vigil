@@ -62,7 +62,9 @@ the vent: cloud, fog, darkness or no fresh frames), quiet (a clear view with no 
 (a gas or steam plume and no glowing lava), incandescence (glowing lava but no fountain), fountaining (a lava \
 fountain).
 - headline: one sentence. body: three to six sentences on what each useful camera shows, the measurements with \
-± sigma, units and local times, the drift against the wind, and what could not be measured and why.
+± sigma, units and local times, the drift against the wind, and what could not be measured and why. Write the \
+body's numbers as people read them, rounded to what the sigma supports: 6,951 ± 429 m, an area of about 20.6 km² and \
+3.3 m/s in English; 6.951 ± 429 m, unos 20,6 km² and 3,3 m/s in Spanish, with its decimal comma.
 - measurements: every number the body quotes from measure_track or get_history, exactly as the tool returned it \
 (value and sigma), with its camera, target, metric, unit and the frame ids it came from. Quote per-frame values \
 (latest or max), not means.

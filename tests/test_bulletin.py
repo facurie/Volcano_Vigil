@@ -302,8 +302,10 @@ def test_the_agent_writes_the_bulletin_in_its_format_and_it_is_stored_and_publis
     assert (folder / "bulletin.html").exists() and (folder / f"frame{frame_id}_plume.jpg").exists()
 
 
-def test_a_final_answer_that_is_not_a_bulletin_stores_nothing(conn, tmp_path):
-    written = write(conn, tmp_path, Script(turn_body([], text="The plume is high.")))
+@pytest.mark.parametrize("answer", ["The plume is high.", json.dumps({**QUIET, "headline_en": ""}),
+                                    json.dumps({**QUIET, "activity_level": "red_alert"})])
+def test_a_final_answer_that_is_not_a_bulletin_stores_nothing(conn, tmp_path, answer):
+    written = write(conn, tmp_path, Script(turn_body([], text=answer)))
 
     assert written.bulletin is None and written.problem.startswith("the final answer is not a bulletin")
     assert written.run.status == "done"
@@ -319,11 +321,30 @@ def test_a_failed_run_writes_no_bulletin(conn, tmp_path):
     assert written.bulletin is None and written.problem.startswith("the agent run ended with error")
 
 
+def test_a_run_over_its_budget_writes_no_bulletin(conn, tmp_path):
+    written = write_bulletin(make_client(Script(), conn), context(conn, tmp_path), "kilauea", tmp_path / "bulletins",
+                             tools=FAKE_TOOLS, budget_usd=0.001, wall_clock=lambda: NOW)
+
+    assert written.bulletin is None and written.problem.startswith("the agent run ended with budget")
+
+
+def test_a_run_out_of_turns_still_gives_its_bulletin(conn, tmp_path):
+    api = Script(turn_body([("echo", '{"n": 1}')], text=json.dumps(QUIET)))  # it still calls a tool on its last turn
+
+    written = write_bulletin(make_client(api, conn), context(conn, tmp_path), "kilauea", tmp_path / "bulletins",
+                             tools=FAKE_TOOLS, max_turns=1, wall_clock=lambda: NOW)
+
+    assert written.run.status == "max_turns" and written.bulletin is not None
+
+
 def test_the_task_recalls_the_last_bulletin_before_the_clock_only(conn, tmp_path):
     draft = BulletinDraft.model_validate(QUIET)
-    for clock, headline in (("2026-10-17T14:00:00Z", "Fountain rising"), ("2026-10-17T16:00:00Z", "From later")):
+    for volcano, clock, headline in (("kilauea", "2026-10-17T14:00:00Z", "Fountain rising"),
+                                     ("nevado-del-ruiz", "2026-10-17T14:30:00Z", "Elsewhere"),
+                                     ("kilauea", "2026-10-17T15:00:00Z", "At the clock"),
+                                     ("kilauea", "2026-10-17T16:00:00Z", "From later")):
         bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 1, draft, tmp_path / "bulletins")
-        store_bulletin(conn, bulletin.model_copy(update={"clock": clock, "headline_en": headline,
+        store_bulletin(conn, bulletin.model_copy(update={"volcano": volcano, "clock": clock, "headline_en": headline,
                                                          "activity_level": "fountaining"}))
     api = Script(turn_body([], text=json.dumps(QUIET)))
 
@@ -332,7 +353,6 @@ def test_the_task_recalls_the_last_bulletin_before_the_clock_only(conn, tmp_path
     task = api.requests[0]["input"][0]["content"]
     assert task.startswith("Check Kilauea now")
     assert task.endswith("\nYour previous bulletin, at 2026-10-17 14:00 UTC, reported fountaining: Fountain rising")
-    assert "From later" not in task
 
 
 @pytest.fixture

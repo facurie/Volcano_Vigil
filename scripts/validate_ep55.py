@@ -27,6 +27,7 @@ from vigia.settings import Settings
 from vigia.timeutil import parse_utc, to_iso, utcnow
 from vigia.wind import WindService, compare_drift
 
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=Path("docs/VALIDATION.md"))
