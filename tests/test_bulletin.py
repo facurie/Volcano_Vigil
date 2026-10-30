@@ -132,6 +132,9 @@ def stored_measurement(conn, store, metric, value, sigma, unit, minutes=-5):
     ("drift_bearing", "deg", 5.0, 5.0, 2.0, 2.3, False),    # the sigma alone is off
     ("area", "m2", 100000, 100800, 5000, 5000, True),       # 0.8 %
     ("area", "m2", 100000, 102000, 5000, 5000, False),      # 2 %
+    ("drift_bearing", "deg", 3.04, 3.0, 2.0, 2.0, True),    # small values: only the rounding term covers them
+    ("top_height", "m", 20.6, 20, 5, 5, True),
+    ("area", "m2", 30.7, 30, 5, 5, True),
 ])
 def test_a_quoted_number_is_verified_within_rounding_and_one_percent(
         conn, store, metric, unit, stored, quoted_value, stored_sigma, quoted_sigma, verified):
