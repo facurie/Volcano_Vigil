@@ -9,7 +9,10 @@ mask as COCO RLE (vigia.masks).
 
 Cost rule: SAM bills at least 50 frames per video request, so backfills send
 windows of 50 frames or more (vigia-track refuses fewer by default); live
-tracking uses one window per camera per hour.
+tracking uses one window per camera per hour. A window shorter than that is led
+in with the camera's earlier usable frames, which cost nothing extra: SAM video
+picks up an object it would miss starting cold (KPcam's plume after 15:00Z on
+episode 55), and only the window's own frames are stored.
 
     vigia-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
 """
@@ -24,8 +27,8 @@ import tempfile
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import closing
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -135,6 +138,7 @@ def track_window(
     targets: Sequence[Target] = TARGETS,
     redo: bool = False,
     max_height: int = VIDEO_MAX_HEIGHT,
+    lead_in: int = 0,
     now: Callable[[], datetime] = utcnow,
 ) -> TrackingReport:
     """Track each phrase of `targets` for the camera's kind through its usable frames in [start, end].
@@ -144,6 +148,11 @@ def track_window(
     the phrases (`redo` replaces those runs). A failed SAM request is reported
     and the other phrases go on. A window is matched by its first and last
     frame, so a window that only overlaps an earlier one is tracked again.
+
+    `lead_in` puts up to that many of the camera's usable frames captured before
+    `start` (within 24 hours, of the window's size and format) in front of the
+    video, so SAM starts from frames where the object is clear. Their detections
+    are dropped: the stored run, tracks and summary cover the window's frames only.
     """
     frames = usable_frames(conn, data_dir, camera.id, start, end)
     if not frames:
@@ -163,23 +172,31 @@ def track_window(
     report = TrackingReport(camera.id, len(frames))
     if not phrases:
         return report
+    context: list[WindowFrame] = []
+    if lead_in > 0:
+        kind = (frames[0].width, frames[0].height, frames[0].path.suffix.lower())
+        earlier = usable_frames(conn, data_dir, camera.id, start - timedelta(hours=24), start - timedelta(seconds=1))
+        context = [f for f in earlier if (f.width, f.height, f.path.suffix.lower()) == kind][-lead_in:]
+    total = len(context) + len(frames)
     with tempfile.TemporaryDirectory() as tmp:
         height = min(max_height, frames[0].height) // 2 * 2
-        video = assemble([f.path for f in frames], Path(tmp) / "window.mp4", fps=VIDEO_FPS, height=height)
+        video = assemble([f.path for f in context + frames], Path(tmp) / "window.mp4", fps=VIDEO_FPS, height=height)
         info = probe(video)
-        if info.frames != len(frames):
-            raise RuntimeError(f"the window video has {info.frames} frames instead of {len(frames)}")
+        if info.frames != total:
+            raise RuntimeError(f"the window video has {info.frames} frames instead of {total}")
         report.video_size = (info.width, info.height)
         file_id = client.upload_video(video)
     try:
         for target, phrase in phrases:
             try:
                 objects = client.segment_video(file_id, phrase, purpose=f"track:{target}",
-                                               expected_frames=len(frames))
+                                               expected_frames=total)
             except (openai.APIError, SamStreamError, SamParseError) as exc:
                 log.warning("camera %s, %s: %s", camera.id, phrase, exc)
                 report.errors.append(f"{target} / {phrase}: {type(exc).__name__}: {exc}"[:300])
                 continue
+            objects = [replace(obj, frame_index=obj.frame_index - len(context))
+                       for obj in objects if obj.frame_index >= len(context)]
             try:
                 with conn:
                     _delete_runs(conn, existing.get(phrase, []))

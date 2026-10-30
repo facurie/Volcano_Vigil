@@ -175,11 +175,12 @@ class Pipeline:
                 missing = self._missing(ctx, camera, start)
                 if not missing or self._attempts.get((camera.id, start), 0) >= MAX_WINDOW_ATTEMPTS:
                     continue
-                if len(tracking.usable_frames(ctx.conn, ctx.data_dir, camera.id, start, end)) < self.config.min_frames:
+                usable = len(tracking.usable_frames(ctx.conn, ctx.data_dir, camera.id, start, end))
+                if usable < self.config.min_frames:
                     continue
                 try:
                     result = self._track(ctx.client, ctx.conn, ctx.data_dir, camera, ctx.prompts, start, end,
-                                         targets=missing)
+                                         targets=missing, lead_in=max(0, tracking.MIN_BILLED_FRAMES - usable))
                 except BudgetExceeded as exc:
                     report.errors.append(f"tracking stopped: {exc}")
                     return

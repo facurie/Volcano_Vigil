@@ -10,12 +10,14 @@ import pytest
 from conftest import make_jpeg
 from test_meta_client import make_client, response_body, sse
 from test_sam import OBJ_0
-from vigia import db, masks
+from vigia import db, masks, tracking
 from vigia.config import Camera
 from vigia.ingest.store import FrameStore
 from vigia.prompts import Prompts
 from vigia.settings import Settings
+from vigia.timeutil import to_iso
 from vigia.tracking import detection_mask, main, track_window, unassessed_frames, usable_frames
+from vigia.video import probe as real_probe
 
 T0 = datetime(2026, 10, 17, 18, 0, 2, tzinfo=timezone.utc)
 
@@ -159,6 +161,72 @@ def test_track_window_stores_runs_tracks_and_detections_in_frame_pixels(store, c
     assert first["area_px"] == 4 * 1539
     assert first["score"] == pytest.approx(0.96)
     assert detection_mask(first, width=640, height=668).sum() == 4 * 1539
+
+
+@pytest.fixture
+def probed(monkeypatch):
+    """The frame counts of the videos track_window probes."""
+    counts = []
+
+    def spy(video):
+        info = real_probe(video)
+        counts.append(info.frames)
+        return info
+
+    monkeypatch.setattr(tracking, "probe", spy)
+    return counts
+
+
+@needs_ffmpeg
+def test_a_lead_in_puts_earlier_frames_before_the_window_and_stores_only_the_windows_part(store, conn, tmp_path, probed):
+    add_frame(store, conn, -4, size=(640, 668))
+    add_frame(store, conn, -2, size=(640, 668))
+    ids = window(store, conn)
+    fake = FakeMeta({"steam": f"<0f>{OBJ_0}\n<1f>{OBJ_0}\n<2f>{OBJ_0}\n<4f>{OBJ_0}\n", "lava fountain": ""})
+
+    report = track(fake, conn, tmp_path, lead_in=2)
+
+    assert probed == [5]
+    plume = report.runs[0]
+    assert (plume.tracks, plume.detections) == (1, 2)
+    assert (plume.first_seen, plume.last_seen) == (T0, T0 + timedelta(minutes=4))
+    run = conn.execute("SELECT * FROM tracking_runs WHERE id = ?", (plume.run_id,)).fetchone()
+    assert json.loads(run["frame_ids"]) == ids
+    assert (run["window_start"], run["window_end"]) == (to_iso(T0), to_iso(T0 + timedelta(minutes=4)))
+    rows = conn.execute("SELECT * FROM detections ORDER BY frame_id").fetchall()
+    assert [row["frame_id"] for row in rows] == [ids[0], ids[2]]
+
+
+@needs_ffmpeg
+def test_a_lead_in_longer_than_the_earlier_frames_uses_what_exists(store, conn, tmp_path, probed):
+    add_frame(store, conn, -2, size=(640, 668))
+    add_frame(store, conn, -2 - 24 * 60, size=(640, 668))  # a day before: out of reach
+    window(store, conn)
+
+    track(FakeMeta({"steam": "", "lava fountain": ""}), conn, tmp_path, lead_in=10)
+
+    assert probed == [4]
+
+
+@needs_ffmpeg
+def test_a_lead_in_frame_of_another_size_is_left_out(store, conn, tmp_path, probed):
+    add_frame(store, conn, -4, size=(320, 334))
+    add_frame(store, conn, -2, size=(640, 668))
+    window(store, conn)
+
+    track(FakeMeta({"steam": "", "lava fountain": ""}), conn, tmp_path, lead_in=2)
+
+    assert probed == [4]
+
+
+@needs_ffmpeg
+def test_a_lead_in_skips_frames_that_are_not_usable(store, conn, tmp_path, probed):
+    add_frame(store, conn, -4, size=(640, 668), usable=False)
+    window(store, conn)
+
+    track(FakeMeta({"steam": "", "lava fountain": ""}), conn, tmp_path, lead_in=2)
+
+    assert probed == [3]
 
 
 @needs_ffmpeg

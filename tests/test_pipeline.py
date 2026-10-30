@@ -30,17 +30,19 @@ class Fakes:
     def __init__(self):
         self.tracked, self.measured, self.agent_clocks, self.events = [], [], [], []
         self.targets = []         # the targets each tracking call was given
+        self.lead_ins = []        # the lead-in each tracking call was given
         self.agent_status = "done"
         self.budget_spent = False
         self.raises = {}          # camera id -> exception its tracking raises
         self.stores_runs = True   # False: tracking returns without storing a run
         self.measure_error = None
 
-    def track(self, client, conn, data_dir, camera, prompts, start, end, targets=tracking.TARGETS):
+    def track(self, client, conn, data_dir, camera, prompts, start, end, targets=tracking.TARGETS, lead_in=0):
         if self.budget_spent:
             raise BudgetExceeded("daily budget $5.00 would be exceeded")
         self.tracked.append((camera.id, start, end))
         self.targets.append(tuple(targets))
+        self.lead_ins.append(lead_in)
         self.events.append(f"track {camera.id}")
         if camera.id in self.raises:
             raise self.raises[camera.id]
@@ -110,6 +112,14 @@ def test_each_closed_hour_is_tracked_once_per_camera(conn, store, tmp_path, fake
         ("kilauea-kp", to_iso(START), to_iso(end)), ("kilauea-k2", to_iso(START), to_iso(end))]
     assert report.tracked[0]["runs"][0]["detections"] == 6
     assert fakes.targets == [("plume", "fountain")] * 2  # the targets the prompts have phrases for
+
+
+def test_a_window_is_led_in_with_the_frames_it_lacks_to_the_billed_minimum(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0, count=6)
+
+    pipeline(conn, tmp_path, fakes).step(START + H + 5 * M)
+
+    assert fakes.lead_ins == [44]  # 50 billed frames minus the window's 6
 
 
 def test_a_window_waits_until_it_has_settled(conn, store, tmp_path, fakes):

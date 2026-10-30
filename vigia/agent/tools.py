@@ -432,7 +432,8 @@ def track_window_tool(ctx: ToolContext, args: TrackArgs) -> dict[str, Any]:
                             "(and SAM bills 50 per request anyway), so widen it")
         try:
             report = tracking.track_window(ctx.meta(), ctx.conn, ctx.data_dir, camera, ctx.prompts, start, end,
-                                           targets=[args.target])
+                                           targets=[args.target],
+                                           lead_in=max(0, tracking.MIN_BILLED_FRAMES - len(frames)))
         except ValueError as exc:
             if "already tracked" not in str(exc):
                 raise
