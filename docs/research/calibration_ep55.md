@@ -110,7 +110,7 @@ K2cam's framing held through episode 55 (frames register within 4 px). It also h
 
 **Stars.** K2cam's night frames from Oct 18 and 19 are black.
 
-So the `ep55` preset carries no references, and the fountain rows of the validation read "no measurement". Phase 8 lists the fix: a vertical reference for K2cam, or V1cam through the Moon plus a resection on the vent.
+So the `ep55` preset carries no references, and the fountain rows of the validation read "no measurement". PLAN Phase 9 lists the fix: a vertical reference for K2cam, or V1cam through the Moon plus a resection on the vent.
 
 ## V1cam: not calibrated
 

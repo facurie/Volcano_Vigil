@@ -69,7 +69,7 @@ The first bulletin written once each official window opened, and the value of th
 
 **The 07:30 bound:** it is exceeded. It is the same case as in [VALIDATION.md](../VALIDATION.md): after 07:00 the top of the `steam` mask is earlier cloud drifting downwind, not the column above the vent.
 
-**Fountain heights:** no fountain height is quoted, because K2cam and V1cam are not calibrated (PLAN Phase 8). Every bulletin says so.
+**Fountain heights:** no fountain height is quoted, because K2cam and V1cam are not calibrated (PLAN Phase 9). Every bulletin says so.
 
 **Activity against the official times:**
 
@@ -174,7 +174,7 @@ The first replay ran the same plan, before three fixes. Its database and log are
 
 ## Limits
 
-- **No fountain heights.** They need a calibrated close camera (PLAN Phase 8).
+- **No fountain heights.** They need a calibrated close camera (PLAN Phase 9).
 - **Hourly bulletins** place the onset and the end only to the hour. A live deployment can run the agent more often, at about $0.04–0.07 per run.
 - **The plume top** is the top of the whole `steam` mask. After 07:00 that is cloud downwind, so the 07:30 row exceeds HVO's bound.
 - **Muse Spark's Spanish:**

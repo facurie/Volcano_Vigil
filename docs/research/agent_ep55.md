@@ -83,6 +83,6 @@ The model has the low-level wind from the north to north-northwest. HVO reported
 
 ## Limits and next steps
 
-- Fountain heights wait for a calibrated close camera (PLAN Phase 8: K2cam needs a vertical reference; V1cam needs the Moon plus a resection on the vent).
+- Fountain heights wait for a calibrated close camera (PLAN Phase 9: K2cam needs a vertical reference; V1cam needs the Moon plus a resection on the vent).
 - With one camera, drift is a side of the line of sight, not a direction. `compare_cameras` will cross-check heights once a second camera is calibrated.
 - A tool's model hour is the hour nearest the clock, which can be up to 30 minutes after it. The profile is a model forecast, not an observation, so the replay can use it.

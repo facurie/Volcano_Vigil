@@ -222,7 +222,7 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
   - σ by Monte Carlo over camera position, distance, focal length, mask edge (±3 px) and plume lean.
 - [x] **`vigil/metrics.py`:** per detection, top height (m ± σ), area (m² at vent range) and drift bearing (mask centroid offset against the vent column, plus camera azimuth; with one camera only the across-track component is known).
 - [x] **Calibration strategy:** use cameras with published positions (B1, F1/KW) and landmarks. Use the official values only to check the result, never to fit it. Done differently: KPcam is calibrated from nine Moon positions (JPL Horizons); B1 and F1/KW are fisheye and untracked, so they are not used.
-- [x] **`scripts/validate_ep55.py`:** (fountain rows pending: no K2cam calibration, see [VALIDATION.md](VALIDATION.md) and Phase 8)
+- [x] **`scripts/validate_ep55.py`:** (fountain rows pending: no K2cam calibration, see [VALIDATION.md](VALIDATION.md) and Phase 9)
   - Measure the fountain at the peak, 06:02, 07:00 and 08:00, and the plume at the peak, 06:02 and 07:30.
   - Also measure the end time and the drift direction.
   - Write the comparison table with errors to `docs/VALIDATION.md`.
@@ -280,7 +280,7 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 **Acceptance:** the local dashboard shows both live and replay. Done: replay checked at 03:05, 05:00, 06:10 and 09:30 HST, and live (3-day-old data shows as stale, with dated times), in headless Edge screenshots at 1440 and 500 px.
 
-## Phase 7: Mon Nov 2. Deployment
+## Phase 7: Sat Oct 31. Deployment
 
 - [ ] **Hugging Face Spaces (Docker):**
   - `Dockerfile` from `python:3.12-slim` with ffmpeg.
@@ -297,7 +297,24 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 **Acceptance:** a public URL is live, with ingest running and the replay working.
 
-## Phase 8: Tue Nov 3. Validation report, README, polish
+## Phase 8: Sun Nov 1 – Mon Nov 2. Episode alerts
+
+Bulletins come once an hour, so the episode 55 replay first reported fountaining at 04:00 HST, 41 min after the 03:19 onset, and stopped reporting it 27 min after the 09:03 end ([replay_ep55.md](research/replay_ep55.md)). SAM already sees the fountain on V1cam at 03:25 ([tracking_ep55.md](research/tracking_ep55.md)), and HVO's public onset notice came at 03:43 ([episode55.md](research/episode55.md)).
+
+- [ ] **Onset and end detection:**
+  - Every new frame goes through the local checks. A change near the vent triggers a SAM confirmation on that frame, and Muse Spark is asked only when SAM leaves it ambiguous.
+  - One state per volcano (quiet → fountaining → ended), with the frame that shows each change.
+  - It must tell a fountain from the overflows that came before episode 55 (south and west vents).
+- [ ] **False-alarm test set:** backfill the Oct 16–17 overflow frames from AshCam (they expire around Nov 16). No alert may fire on them, nor on the episode 55 frames before 03:19 HST.
+- [ ] **The alert:** ES and EN text, the frame with its mask, the detection time, the disclaimer and the link to HVO.
+  - It is stored in the database and shown as a banner on the dashboard, live and in replay, bounded by the clock.
+  - It is sent to a public Telegram channel. The user creates the bot and the channel, and the token is a Space secret.
+- [ ] **Replay:** the episode 55 replay emits the alerts at their simulated times, and its report compares them with the onset (03:19), HVO's onset notice (03:43) and the end (09:03).
+- [ ] Deploy the alerts to the Space before Nov 2, when the episode 56 window opens.
+
+**Acceptance:** on the episode 55 replay, the onset alert fires between 03:19 and 03:43 HST, and the end alert after 09:03 with a latency the phase plan sets from the stored frames. No alert fires on the overflow frames. A test alert arrives on the Telegram channel.
+
+## Phase 9: Tue Nov 3. Validation report, README, polish
 
 - [ ] **Calibrate a fountain camera** so the validation's fountain rows get measured. Options:
   - K2cam needs a vertical reference: a clear sea horizon on a frame with the episode 55 framing, or a post-2018 DEM of the crater rim.
@@ -307,19 +324,19 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 - [ ] Final README: updated diagram, live URL, how to run, the "Built during the hackathon" section, disclaimer, credits, cost report.
 - [ ] Code review pass (`superpowers:requesting-code-review`) and fixes.
 
-## Phase 9: Wed Nov 4. Video and submission (afternoon, not last minute)
+## Phase 10: Wed Nov 4. Video and submission (afternoon, not last minute)
 
 - [ ] **3-minute video:**
   1. The problem: observatory webcams publish a frame every few minutes, and nobody can watch them all day.
   2. Live dashboard: camera status and the quality gate at work.
-  3. Episode-55 replay: SAM tracking overlay, agent trace, bilingual bulletins.
+  3. Episode-55 replay: the onset alert arriving on Telegram, SAM tracking overlay, agent trace, bilingual bulletins.
   4. Validation numbers against USGS.
   5. The disclaimer.
 - [ ] Make the repository public and submit before 21:00 ET (23:00 Argentina).
 
 ## Extras (only if time remains)
 
-- [ ] Telegram notifications
+None left: the Telegram notifications became part of Phase 8.
 
 ## Budget
 
@@ -334,5 +351,6 @@ Spent so far: $3.19 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality 
 | PTZ cameras change framing | Read P/T/Z from the frame and calibrate per preset; skip unknown presets |
 | AshCam keeps about 31 days, and its API is undocumented | Live: automatic fallback to `M.jpg` per camera (done in Phase 1). Replay: local copies plus the required HF dataset mirror, loaded at startup (Phase 7) |
 | Volcano quiet during judging | The replay is the centerpiece; live mode shows the quality gate and camera status |
-| Episode 56 (HVO forecast: Oct 31 – Nov 6) erupts during the hackathon, but AshCam cannot be backfilled later | Keep `vigil-ingest` running locally from Oct 31, so frames are stored as they arrive |
+| Episode 56 (HVO forecast of Oct 30: Nov 2–9) erupts during the hackathon or the judging | Keep `vigil-ingest` running locally from Oct 31. On restart it catches up gaps of up to 1 h by itself; `vigil-backfill` fills longer ones while AshCam keeps them (about 31 days). Phase 8's alerts run on the Space before Nov 2 |
+| The overflows before an episode glow like a fountain and fire a false onset alert | Phase 8's test set of Oct 16–17 overflow frames: no alert may fire on them |
 | Session quota runs out mid-task | This file plus the memory notes; commit often |
