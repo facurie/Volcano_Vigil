@@ -20,7 +20,10 @@ export function renderFeed(root, data, ctx) {
   }
   const { bulletins, cameras } = data;
   const offset = config.volcano.utc_offset_hours;
-  const local = (when) => lib.localTime(when, offset);
+  const local = (when) => lib.stamp(when, scene.clock, offset);
+  // a bulletin's time, and its local date when that is not the clock's day (the column is too narrow for both)
+  const timeOf = (when) => [lib.localTime(when, offset),
+    lib.localDate(when, offset) === lib.localDate(scene.clock, offset) ? null : lib.localDate(when, offset)];
   if (!bulletins.length) {
     fill(list, el("li", { class: "error-note" }, state.mode === "replay"
       ? `No bulletin yet by ${local(scene.clock)} ${lib.zone(offset)}. The agent writes one every hour.`
@@ -30,15 +33,16 @@ export function renderFeed(root, data, ctx) {
   // an id that is not visible at this clock (the clock moved back) falls back to the newest
   const openId = bulletins.some((b) => b.id === state.openBulletin) ? state.openBulletin : bulletins[0].id;
   const names = new Map((cameras ?? []).map((c) => [c.camera_id, lib.shortName(c.name)]));
-  fill(list, bulletins.map((b) => bulletin(b, b.id === openId, { state, local, names, actions })));
+  fill(list, bulletins.map((b) => bulletin(b, b.id === openId, { state, local, timeOf, names, actions })));
 }
 
-function bulletin(b, open, { state, local, names, actions }) {
+function bulletin(b, open, { state, local, timeOf, names, actions }) {
   const t = b[state.lang];
+  const [time, date] = timeOf(b.clock);
   return el("li", { class: "bulletin", lang: state.lang, "aria-current": open ? "true" : null },
     el("button", { type: "button", class: "b-summary", "aria-expanded": String(open),
       onClick: () => actions.openBulletin(b.id) },
-    el("span", { class: "b-time" }, local(b.clock)),
+    el("span", { class: "b-time" }, time, date ? el("span", { class: "b-date" }, date) : null),
     el("span", { class: "level", dataset: { level: b.activity_level } }, t.level),
     el("span", { class: "b-headline" }, t.headline)),
     open ? body(b, t, { state, local, names, actions }) : null);

@@ -7,7 +7,7 @@ import { el, fill } from "./dom.js";
 import * as lib from "./lib.js";
 
 const M = { left: 48, right: 16, top: 20, bottom: 24 };
-const PLOT_H = 220, STRIP_H = 16, MIN_TOP_M = 9000, Y_STEP_M = 2000;
+const STRIP_H = 16, MIN_TOP_M = 9000, Y_STEP_M = 2000;
 const GAP_MS = 30 * 60_000;     // a longer pause between measurements breaks the line
 const HOUR_MS = 3_600_000;
 const CHAR_PX = 6.7;            // a label's width in 11 px IBM Plex Mono, to place labels without measuring
@@ -89,16 +89,17 @@ function draw(root, instance) {
 
   const topM = Math.max(MIN_TOP_M, Math.ceil(Math.max(0, ...points.map((p) => p.value + p.sigma)) / 1000) * 1000);
   const plotW = width - M.left - M.right;
-  const height = M.top + PLOT_H + M.bottom + strips.length * STRIP_H + 4;
+  const plotH = width >= 700 ? 300 : 200;  // taller where the panel is wide, so it fills the row beside the map
+  const height = M.top + plotH + M.bottom + strips.length * STRIP_H + 4;
   const x = (t) => M.left + ((t - t0) / (t1 - t0)) * plotW;
-  const y = (metres) => M.top + PLOT_H - (metres / topM) * PLOT_H;
-  const right = M.left + plotW, bottom = M.top + PLOT_H;
+  const y = (metres) => M.top + plotH - (metres / topM) * plotH;
+  const right = M.left + plotW, bottom = M.top + plotH;
   const nameOf = (id) => shortOf(data.cameras, id);
 
   // ---- paper: the future, the grid, the vent's elevation
   const paper = svg("g", { class: "drum-grid" });
   const future = replay && clock < t1
-    ? svg("rect", { class: "drum-future", x: x(clock), y: M.top, width: right - x(clock), height: PLOT_H }) : null;
+    ? svg("rect", { class: "drum-future", x: x(clock), y: M.top, width: right - x(clock), height: plotH }) : null;
   for (let metres = 0; metres <= topM; metres += Y_STEP_M) {
     paper.append(line(M.left, y(metres), right, y(metres)),
       label(M.left - 8, y(metres) + 4, metres === 0 ? "0" : `${metres / 1000} km`, { "text-anchor": "end" }));
@@ -125,7 +126,7 @@ function draw(root, instance) {
     const a = Date.parse(from), b = Date.parse(to);
     const text = `${phase} (HVO)`, edge = x(b), fits = edge + 4 + text.length * CHAR_PX < right;
     phaseMarks.push(
-      phase === "peak" ? svg("rect", { class: "drum-peak", x: x(a), y: M.top, width: x(b) - x(a), height: PLOT_H })
+      phase === "peak" ? svg("rect", { class: "drum-peak", x: x(a), y: M.top, width: x(b) - x(a), height: plotH })
         : line(x(a), M.top, x(a), bottom, "drum-phase"),
       label(fits ? edge + 4 : x(a) - 4, M.top + 12, text, { "text-anchor": fits ? "start" : "end" }));
   }
@@ -194,10 +195,10 @@ function draw(root, instance) {
   // ---- hover and keyboard: a crosshair that snaps to the nearest measurement
   const cursor = line(0, M.top, 0, bottom, "drum-cursor");
   cursor.setAttribute("visibility", "hidden");
-  const empty = points.length ? null : label(M.left + plotW / 2, M.top + PLOT_H / 2, replay
+  const empty = points.length ? null : label(M.left + plotW / 2, M.top + plotH / 2, replay
     ? `No plume measurements by ${local(scene.clock)}.` : "No plume measurements in the last 24 hours.",
   { "text-anchor": "middle", class: "drum-empty" });
-  const overlay = svg("rect", { x: M.left, y: M.top, width: plotW, height: PLOT_H, fill: "transparent", class: "drum-hit" });
+  const overlay = svg("rect", { x: M.left, y: M.top, width: plotW, height: plotH, fill: "transparent", class: "drum-hit" });
   const chart = svg("svg", {
     width, height, viewBox: `0 0 ${width} ${height}`, role: "group", tabindex: points.length ? "0" : null,
     "aria-label": "Plume top above sea level over time. Use the arrow keys to move between measurements, Enter to show the frame.",

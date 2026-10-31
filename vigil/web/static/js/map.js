@@ -52,19 +52,20 @@ export function renderMap(root, data, ctx) {
   }
   const { config, scene } = ctx;
   const offset = config.volcano.utc_offset_hours;
-  const local = (when) => lib.localTime(when, offset);
+  const local = (when) => lib.stamp(when, scene.clock, offset);
   ensureMap(mapRoot);
   layers.clearLayers();
   const steam = token("--steam"), lava = token("--lava"), plume = token("--plume"), basalt = token("--basalt-1");
   const names = new Map(data.cameras.map((c) => [c.camera_id, lib.shortName(c.name)]));
   const vent = config.vent;
   const rows = [];
-  const row = (swatch, text) => rows.push(el("div", { class: "row" }, el("i", { class: `swatch ${swatch.kind ?? ""}`, style: `--swatch: ${swatch.color}` }), text));
+  const row = (swatch, text, short = false) => rows.push(el("div", { class: short ? "row short" : "row" },
+    el("i", { class: `swatch ${swatch.kind ?? ""}`, style: `--swatch: ${swatch.color}` }), text));
 
   if (vent) {
     layers.addLayer(L.circleMarker([vent.lat, vent.lon], { radius: 6, weight: 2, color: lava, fillColor: basalt, fillOpacity: 1 })
       .bindTooltip(tip("Vent"), { permanent: true, direction: "left", offset: [-8, 0], className: "map-label" }));
-    row({ kind: "vent", color: "var(--basalt-1)" }, "Vent");
+    row({ kind: "vent", color: "var(--basalt-1)" }, "Vent", true);
   }
 
   const drawn = data.cameras.filter((c) => c.position);
@@ -77,8 +78,8 @@ export function renderMap(root, data, ctx) {
     if (vent) layers.addLayer(L.polyline([[lat, lon], [vent.lat, vent.lon]], { color: steam, weight: 1, opacity: 0.45 }));
   }
   if (drawn.length) {
-    row({ kind: "dot", color: "var(--steam)" }, "Camera, with a circle of its position uncertainty");
-    if (vent) row({ color: "var(--steam)" }, "Line of sight from each camera to the vent");
+    row({ kind: "dot", color: "var(--steam)" }, "Camera, circle of its position uncertainty", true);
+    if (vent) row({ color: "var(--steam)" }, "Line of sight to the vent", true);
   }
 
   // the plume's measured side: the measuring camera's newest visible plume detection

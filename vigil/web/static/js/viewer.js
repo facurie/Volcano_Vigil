@@ -27,7 +27,7 @@ export function renderViewer(root, data, ctx) {
   const { state, config, scene, actions } = ctx;
   const offset = config.volcano.utc_offset_hours;
   const zone = lib.zone(offset);
-  const local = (when, seconds = false) => lib.localTime(when, offset, seconds);
+  const local = (when, seconds = false) => lib.stamp(when, scene.clock, offset, seconds);
   const byId = new Map(cameras.map((camera) => [camera.camera_id, camera]));
   const short = (id) => (byId.has(id) ? lib.shortName(byId.get(id).name) : id);
 
@@ -124,7 +124,7 @@ function renderBar(root, { shown, latest, pinned, local, zone, scene, actions })
       : el("div", { class: "seg", role: "group", "aria-label": "Frame" },
         choose("tracked", "Last tracked", latest.tracked, which), choose("latest", "Latest", latest.latest, which)),
     el("span", { class: "mono" }, `${local(shown.captured_at, true)} ${zone}`),
-    el("span", { class: "mono" }, `${lib.localTime(shown.captured_at, 0)} UTC`),
+    el("span", { class: "mono" }, `${lib.stamp(shown.captured_at, scene.clock, 0)} UTC`),
     el("span", {}, lib.age(shown.captured_at, scene.clock)),
     el("span", {}, verdict),
     unsettled ? el("span", {}, "SAM tracks each hour once it closes.") : null,

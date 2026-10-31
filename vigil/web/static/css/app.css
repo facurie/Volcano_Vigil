@@ -137,9 +137,10 @@ select { background: var(--well); border: 1px solid var(--rule-strong); border-r
 /* Bulletins. */
 .bulletins { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; flex: 1; }
 .bulletin + .bulletin { border-top: 1px solid var(--rule); }
-.b-summary { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 2px var(--s3); width: 100%; padding: var(--s3) var(--s4); border: 0; background: transparent; text-align: left; cursor: pointer; }
+.b-summary { display: grid; grid-template-columns: minmax(48px, max-content) minmax(0, 1fr); gap: 2px var(--s3); width: 100%; padding: var(--s3) var(--s4); border: 0; background: transparent; text-align: left; cursor: pointer; }
 .b-summary:hover { background: rgba(236, 226, 212, 0.03); }
 .b-time { grid-row: span 2; font: 500 13px/1.5 var(--font-mono); color: var(--ash); }
+.b-date { display: block; white-space: nowrap; font: 400 10px/1.3 var(--font-mono); color: var(--tephra); }
 .b-headline { font-weight: 500; text-wrap: pretty; }
 .bulletin[aria-current="true"] .b-headline { font-size: 15px; }
 .level { display: inline-flex; align-items: center; gap: 6px; font: 600 11px/1.3 var(--font-cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ash); }
@@ -181,7 +182,7 @@ details summary { cursor: pointer; color: var(--ash); font-size: 12px; padding: 
 pre { margin: var(--s1) 0 0; max-height: 280px; overflow: auto; padding: var(--s2) var(--s3); background: var(--well); border: 1px solid var(--rule); border-radius: var(--r-sm); font: 400 11.5px/1.5 var(--font-mono); color: var(--ash); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Line-of-sight map. */
-#map { height: 340px; background: var(--well); isolation: isolate; }
+#map { height: 300px; background: var(--well); isolation: isolate; }
 .leaflet-container { background: var(--well); font-family: var(--font-sans); }
 .leaflet-tile-pane { filter: saturate(0.55) brightness(0.62) contrast(1.05); }
 .leaflet-control-attribution { background: rgba(16, 14, 13, 0.8) !important; color: var(--tephra) !important; }
@@ -191,8 +192,9 @@ pre { margin: var(--s1) 0 0; max-height: 280px; overflow: auto; padding: var(--s
 .leaflet-tooltip.map-label::before { display: none; }
 .arrowhead { background: none; border: 0; }
 .arrowhead svg { display: block; }
-.map-legend { display: grid; gap: 6px; padding: var(--s3) var(--s4); font-size: 12px; color: var(--ash); }
-.map-legend .row { display: flex; gap: var(--s2); align-items: baseline; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px var(--s4); padding: var(--s3) var(--s4); font-size: 12px; color: var(--ash); }
+.map-legend .row { display: flex; flex-basis: 100%; gap: var(--s2); align-items: baseline; }
+.map-legend .row.short { flex-basis: auto; }
 .map-legend .swatch { flex: none; width: 14px; height: 3px; border-radius: 2px; background: var(--swatch); transform: translateY(-3px); }
 .map-legend .swatch.dot, .map-legend .swatch.vent { width: 8px; height: 8px; margin: 0 3px; border-radius: 50%; transform: translateY(-1px); }
 .map-legend .swatch.vent { border: 1.5px solid var(--lava); }

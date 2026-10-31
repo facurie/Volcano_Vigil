@@ -20,6 +20,14 @@ export function localDate(when, offsetHours) {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
+// A time as the page shows it beside the clock: the local time, with the local date in front when the day is not
+// the clock's own (live data can be days old, and two bare times would read in the wrong order).
+export function stamp(when, clock, offsetHours, seconds = false) {
+  const time = localTime(when, offsetHours, seconds);
+  const date = localDate(when, offsetHours);
+  return date === localDate(clock, offsetHours) ? time : `${date} ${time}`;
+}
+
 export function zone(offsetHours) {
   if (offsetHours === 0) return "UTC";
   return `UTC${offsetHours < 0 ? "−" : "+"}${Math.abs(offsetHours)}`;

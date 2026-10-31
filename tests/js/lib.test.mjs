@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { age, bearing, destination, feet, localDate, localTime, number, plusMinus, ticks, zone } from "../../vigil/web/static/js/lib.js";
+import { age, bearing, destination, feet, localDate, localTime, number, plusMinus, stamp, ticks, zone } from "../../vigil/web/static/js/lib.js";
 
 test("local time shifts by the volcano's offset, never the browser's zone", () => {
   assert.equal(localTime("2026-10-17T14:55:05Z", -10), "04:55");
@@ -49,4 +49,13 @@ test("a destination and a bearing on the sphere agree", () => {
   assert.ok(Math.abs(north - 19.413953) < 2e-5);
   const there = destination(19.492709, -155.385281, 137, 5000);
   assert.ok(Math.abs(bearing(19.492709, -155.385281, there[0], there[1]) - 137) < 0.01);
+});
+
+test("a stamp carries the local date when it is not the clock's local day", () => {
+  const clock = "2026-10-27T18:55:00Z"; // 08:55 on Oct 27 in Hawaiʻi
+  assert.equal(stamp("2026-10-27T18:40:00Z", clock, -10), "08:40");
+  assert.equal(stamp("2026-10-17T19:25:09Z", clock, -10), "2026-10-17 09:25");
+  assert.equal(stamp("2026-10-17T19:25:09Z", clock, -10, true), "2026-10-17 09:25:09");
+  assert.equal(stamp("2026-10-27T09:30:00Z", clock, -10), "2026-10-26 23:30"); // the previous local day
+  assert.equal(stamp("2026-10-27T09:30:00Z", clock, 0), "09:30");
 });

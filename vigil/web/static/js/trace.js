@@ -20,7 +20,7 @@ export function renderTrace(root, data, ctx) {
   }
   const { runs, run, steps: rows } = data.trace;
   const offset = config.volcano.utc_offset_hours, zone = lib.zone(offset);
-  const local = (when) => lib.localTime(when, offset);
+  const local = (when) => lib.stamp(when, scene.clock, offset);
 
   fill(select, runs.map((r) => el("option", {
     value: r.run_id, selected: run?.run_id === r.run_id,
