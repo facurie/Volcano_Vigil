@@ -1,17 +1,19 @@
+import io
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
-from test_agent_tools import T0, add_frame
+from test_agent_tools import T0, add_frame, add_run, add_track, frame_jpeg
 from test_web_views import add_agent_run
 from vigil import db
 from vigil.episodes import EP55
 from vigil.ingest.store import FrameStore
 from vigil.settings import Settings
 from vigil.timeutil import to_iso
-from vigil.web.app import create_app
+from vigil.web.app import create_app, media_file
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = T0 + timedelta(days=13)  # the wall clock, 2026-10-30T15:00Z; T0 is 05:00 HST in episode 55
@@ -152,3 +154,39 @@ def test_a_run_after_the_clock_cannot_be_traced(client, replayed):
 
 def test_an_image_width_outside_the_allowed_range_is_refused(client):
     assert client.get("/api/frames/1/image", params={**AT, "width": 4000}).status_code == 422
+
+
+def test_media_serves_bulletin_images_and_nothing_else(client, tmp_path):
+    folder = tmp_path / "replay" / "ep55" / "bulletins" / "run2"
+    folder.mkdir(parents=True)
+    (folder / "frame29_plume.jpg").write_bytes(frame_jpeg(1))
+    (folder / "bulletin.html").write_text("<p>x</p>", encoding="utf-8")
+    (tmp_path / "frames").mkdir(exist_ok=True)
+    (tmp_path / "frames" / "raw.jpg").write_bytes(frame_jpeg(2))
+
+    served = client.get("/media/replay/ep55/bulletins/run2/frame29_plume.jpg")
+
+    assert served.status_code == 200 and served.headers["content-type"] == "image/jpeg"
+    for path in ("frames/raw.jpg", "replay/ep55/bulletins/run2/bulletin.html", "replay/ep55/vigil.sqlite",
+                 "replay/ep55/bulletins/run2/missing.jpg"):
+        assert client.get(f"/media/{path}").status_code == 404, path
+
+
+def test_a_media_path_cannot_leave_the_data_dir(tmp_path):
+    data = tmp_path / "data"
+    (data / "bulletins").mkdir(parents=True)
+    (tmp_path / "bulletins").mkdir()
+    (tmp_path / "bulletins" / "outside.jpg").write_bytes(frame_jpeg(3))
+
+    assert media_file(data, "../bulletins/outside.jpg") is None
+    assert media_file(data, "bulletins/../../bulletins/outside.jpg") is None
+
+
+def test_the_image_route_sends_a_scaled_jpeg_with_its_masks(client, replayed, tmp_path):
+    shown = add_frame(replayed, FrameStore(replayed, tmp_path), "kilauea-kp", -5)
+    add_track(replayed, add_run(replayed, "kilauea-kp", "plume", [shown]), [shown])
+
+    answer = client.get(f"/api/frames/{shown}/image", params={**AT, "width": 320})
+
+    assert answer.headers["content-type"] == "image/jpeg"
+    assert Image.open(io.BytesIO(answer.content)).size == (320, 180)
