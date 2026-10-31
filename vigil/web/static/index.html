@@ -4,8 +4,101 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Volcano Vigil · {{volcano_name}}</title>
+<meta name="description" content="An agent that watches the USGS webcams of {{volcano_name}} and turns frames into measurements and bilingual bulletins.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script type="module" src="/static/js/main.js"></script>
 </head>
 <body>
-<p class="notice" role="note"><strong class="notice-tag">Not an official alert</strong> {{notice_lead}}<a href="{{official_url}}" rel="noopener" target="_blank">{{official_agency}}</a>.</p>
+<div class="top">
+  <header class="bar">
+    <div class="mark"><span class="mark-name">Volcano Vigil</span><span class="mark-place">{{volcano_name}} summit</span></div>
+    <div class="modes" role="group" aria-label="Mode">
+      <button type="button" class="mode" data-mode="live" aria-pressed="false">Live</button>
+      <button type="button" class="mode" data-mode="replay" aria-pressed="false">Replay · Episode 55</button>
+    </div>
+    <div class="clock" id="clock">
+      <span class="clock-local" id="clock-local">--:--</span>
+      <span class="clock-zone" id="clock-zone"></span>
+      <span class="clock-utc" id="clock-utc"></span>
+    </div>
+  </header>
+  <p class="notice" role="note"><strong class="notice-tag">Not an official alert</strong> {{notice_lead}}<a href="{{official_url}}" rel="noopener" target="_blank">{{official_agency}}</a>.</p>
+</div>
+
+<main class="console">
+  <section class="panel viewer" aria-label="Cameras">
+    <div class="tabs" role="tablist" aria-label="Camera" id="camera-tabs"></div>
+    <div class="frame-well" id="frame-well">
+      <img id="frame-img" alt="">
+      <p class="frame-empty" id="frame-empty" hidden></p>
+    </div>
+    <div class="frame-bar" id="frame-bar"></div>
+    <div class="readout" id="readout"></div>
+  </section>
+
+  <section class="panel feed" aria-labelledby="feed-title">
+    <div class="panel-inner">
+      <div class="panel-head">
+        <h2 id="feed-title">Bulletins</h2>
+        <div class="seg aside" role="group" aria-label="Bulletin language">
+          <button type="button" data-lang="en" aria-pressed="true">EN</button>
+          <button type="button" data-lang="es" aria-pressed="false">ES</button>
+        </div>
+      </div>
+      <ol class="bulletins" id="bulletins"></ol>
+    </div>
+  </section>
+
+  <section class="panel drum" aria-labelledby="drum-title">
+    <div class="panel-head">
+      <h2 id="drum-title">Plume top above sea level</h2>
+      <div class="legend aside" id="drum-legend"></div>
+    </div>
+    <div class="drum-figure" id="drum"></div>
+    <details class="drum-table"><summary>Data table</summary><div id="drum-table"></div></details>
+    <div id="results"></div>
+  </section>
+
+  <section class="panel map-panel" aria-labelledby="map-title">
+    <div class="panel-head"><h2 id="map-title">Line of sight</h2></div>
+    <div id="map" role="img" aria-label="Map of the cameras, the vent, the plume's measured side and the model wind"></div>
+    <div class="map-legend" id="map-legend"></div>
+  </section>
+
+  <section class="panel trace" aria-labelledby="trace-title">
+    <div class="panel-head">
+      <h2 id="trace-title">Agent trace</h2>
+      <label class="aside run-pick">Run <select id="run-select"></select></label>
+    </div>
+    <div class="trace-head" id="trace-head"></div>
+    <ol class="steps" id="steps"></ol>
+  </section>
+</main>
+
+<footer class="transport" id="transport" hidden>
+  <div class="transport-buttons">
+    <button type="button" class="icon-button" id="step-back" aria-label="Back 5 minutes">‹</button>
+    <button type="button" class="icon-button play" id="play" aria-label="Play">▶</button>
+    <button type="button" class="icon-button" id="step-forward" aria-label="Forward 5 minutes">›</button>
+  </div>
+  <div class="scrub">
+    <input type="range" id="scrubber" min="0" max="0" value="0" aria-label="Simulated time">
+    <p class="transport-status" id="transport-status"></p>
+  </div>
+  <label class="speed">Speed <select id="speed">
+    <option value="2.5">2.5 min/s</option>
+    <option value="5" selected>5 min/s</option>
+    <option value="10">10 min/s</option>
+  </select></label>
+</footer>
+
+<footer class="credits">
+  Frames: U.S. Geological Survey, public domain. Heights and drift: SAM 3.1 masks on calibrated cameras; bulletins: Muse Spark (Meta). Wind: Open-Meteo. Map imagery: USGS The National Map.
+</footer>
 </body>
 </html>
