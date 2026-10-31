@@ -179,3 +179,59 @@ select { background: var(--well); border: 1px solid var(--rule-strong); border-r
 .step-meta .failed { color: var(--steam); font-weight: 500; }
 details summary { cursor: pointer; color: var(--ash); font-size: 12px; padding: 2px 0; }
 pre { margin: var(--s1) 0 0; max-height: 280px; overflow: auto; padding: var(--s2) var(--s3); background: var(--well); border: 1px solid var(--rule); border-radius: var(--r-sm); font: 400 11.5px/1.5 var(--font-mono); color: var(--ash); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Line-of-sight map. */
+#map { height: 340px; background: var(--well); isolation: isolate; }
+.leaflet-container { background: var(--well); font-family: var(--font-sans); }
+.leaflet-tile-pane { filter: saturate(0.55) brightness(0.62) contrast(1.05); }
+.leaflet-control-attribution { background: rgba(16, 14, 13, 0.8) !important; color: var(--tephra) !important; }
+.leaflet-control-attribution a { color: var(--ash) !important; }
+.leaflet-bar a { background: var(--basalt-2) !important; color: var(--steam) !important; border-color: var(--rule-strong) !important; }
+.leaflet-tooltip.map-label { background: var(--basalt-2); border: 1px solid var(--rule-strong); border-radius: var(--r-sm); color: var(--steam); box-shadow: none; font: 400 12px/1.3 var(--font-mono); padding: 3px 6px; }
+.leaflet-tooltip.map-label::before { display: none; }
+.arrowhead { background: none; border: 0; }
+.arrowhead svg { display: block; }
+.map-legend { display: grid; gap: 6px; padding: var(--s3) var(--s4); font-size: 12px; color: var(--ash); }
+.map-legend .row { display: flex; gap: var(--s2); align-items: baseline; }
+.map-legend .swatch { flex: none; width: 14px; height: 3px; border-radius: 2px; background: var(--swatch); transform: translateY(-3px); }
+.map-legend .swatch.dot, .map-legend .swatch.vent { width: 8px; height: 8px; margin: 0 3px; border-radius: 50%; transform: translateY(-1px); }
+.map-legend .swatch.vent { border: 1.5px solid var(--lava); }
+
+/* Plume-height drum and results. */
+.drum-figure { position: relative; padding: var(--s2) var(--s4) var(--s3); }
+.drum-figure svg { display: block; width: 100%; overflow: visible; }
+.drum-figure svg text { font: 400 11px var(--font-mono); fill: var(--tephra); }
+.drum-grid line { stroke: var(--rule); stroke-width: 1; shape-rendering: crispEdges; }
+.drum-vent { stroke: var(--rule-strong); stroke-width: 1; shape-rendering: crispEdges; }
+.drum-future { fill: var(--well); }
+.drum-band { fill: var(--plume-wash); }
+.drum-line { fill: none; stroke: var(--plume); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.drum-dot { fill: var(--plume); stroke: var(--basalt-1); stroke-width: 2; }
+.drum-official { stroke: var(--lehua); stroke-width: 1.5; }
+.drum-diamond { fill: var(--lehua); stroke: var(--basalt-1); stroke-width: 2; }
+.drum-phase { stroke: var(--steam); stroke-opacity: 0.35; stroke-width: 1; shape-rendering: crispEdges; }
+.drum-peak { fill: var(--steam); fill-opacity: 0.05; }
+.drum-clock { stroke: var(--lava); stroke-width: 1.5; }
+.drum-cursor { stroke: var(--steam); stroke-opacity: 0.5; stroke-width: 1; shape-rendering: crispEdges; pointer-events: none; }
+.drum-bulletin { fill: var(--lava); cursor: pointer; }
+.drum-figure svg text.value { fill: var(--steam); font-weight: 500; }
+.drum-figure svg text.halo { paint-order: stroke; stroke: var(--basalt-1); stroke-width: 3px; stroke-linejoin: round; }
+.drum-figure svg text.clock-label { fill: var(--lava); font-weight: 500; }
+.drum-figure svg text.drum-empty { fill: var(--ash); font: 400 13px var(--font-sans); }
+.drum-hit { cursor: crosshair; }
+.strip-fountain { fill: var(--lava); } .strip-plume { fill: var(--plume); }
+.strip-clear { fill: var(--ash); fill-opacity: 0.5; } .strip-rejected { fill: var(--cinder); }
+.tooltip { position: absolute; pointer-events: none; z-index: 10; display: grid; gap: 2px; padding: 6px 8px; background: var(--basalt-2); border: 1px solid var(--rule-strong); border-radius: var(--r-sm); font: 400 12px/1.35 var(--font-mono); color: var(--ash); white-space: nowrap; }
+.tooltip strong { color: var(--steam); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: 12px; color: var(--ash); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg { display: inline-block; flex: none; }
+.lg-line { width: 14px; height: 3px; border-radius: 2px; background: var(--plume); }
+.lg-diamond { width: 8px; height: 8px; background: var(--lehua); transform: rotate(45deg); }
+.lg-triangle { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 7px solid var(--lava); }
+.drum-table { padding: 0 var(--s4) var(--s3); }
+.drum-table table, #results table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#results { padding: 0 var(--s4) var(--s4); }
+#results h3 { margin: var(--s4) 0 var(--s2); font: 600 12px/1.2 var(--font-cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ash); }
+#results h4 { margin: var(--s4) 0 var(--s1); font: 500 13px/1.3 var(--font-sans); color: var(--steam); }
+.results-cost { margin: var(--s3) 0 0; font: 400 12px/1.4 var(--font-mono); color: var(--tephra); }

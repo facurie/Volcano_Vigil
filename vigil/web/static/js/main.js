@@ -231,7 +231,7 @@ function paint() {
   draw(panel("trace"), renderTrace, ["trace"], () => ({ trace: value("trace") }));
   draw(panel("drum"), renderDrum, ["series"], () => ({
     series: value("series"), strips: value("strips"), bulletins: value("bulletins")?.bulletins ?? null,
-    replay: value("replay") }));
+    replay: value("replay"), cameras: value("cameras")?.cameras ?? null }));
   draw(panel("map-panel"), renderMap, ["cameras"], () => ({
     cameras: value("cameras").cameras, measuring: value("measuring"),
     bulletins: value("bulletins")?.bulletins ?? null }));
