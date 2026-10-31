@@ -337,9 +337,12 @@ def frame_image(scene: Scene, frame_id: int, *, width: int, overlay: bool = True
         raise LookupError(f"no frame {frame_id} captured by {scene.now}")
     scale = min(1.0, width / row["width"])
     size = (max(1, round(row["width"] * scale)), max(1, round(row["height"] * scale)))
-    with Image.open(scene.data_dir / row["path"]) as image:
-        image.draft("RGB", size)  # JPEG: decode at a fraction of the size, which is much faster
-        picture = image.convert("RGB").resize(size, Image.LANCZOS)
+    try:
+        with Image.open(scene.data_dir / row["path"]) as image:
+            image.draft("RGB", size)  # JPEG: decode at a fraction of the size, which is much faster
+            picture = image.convert("RGB").resize(size, Image.LANCZOS)
+    except FileNotFoundError as exc:
+        raise LookupError(f"frame {frame_id}'s file is missing from the data dir") from exc
     layers = []
     for d in _detection_rows(scene, [frame_id]) if overlay else []:
         left, top, right, bottom = (round(v * scale) for v in (d["box_left"], d["box_top"], d["box_right"],

@@ -323,3 +323,11 @@ def test_a_mask_of_a_run_that_closes_after_the_clock_is_not_drawn(conn, store, t
     plain = views.frame_image(scene(conn, tmp_path), shown, width=384, overlay=False)
 
     assert views.frame_image(scene(conn, tmp_path), shown, width=384) == plain
+
+
+def test_a_frame_whose_file_is_gone_has_no_image(conn, store, tmp_path):
+    gone = add_frame(conn, store, "kilauea-kp", -5)
+    (tmp_path / conn.execute("SELECT path FROM frames WHERE id = ?", (gone,)).fetchone()[0]).unlink()
+
+    with pytest.raises(LookupError, match="file"):
+        views.frame_image(scene(conn, tmp_path), gone, width=320)
