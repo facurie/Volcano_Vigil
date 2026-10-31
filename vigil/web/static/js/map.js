@@ -88,12 +88,14 @@ export function renderMap(root, data, ctx) {
     d.target === "plume" && d.measurements.drift_bearing && d.measurements.drift_offset);
   if (vent && detection) {
     const { drift_bearing: side, drift_offset: across } = detection.measurements;
+    // the offset is signed (right or left of the sightline) but the bearing already points at the plume's side
+    const reach = Math.abs(across.value);
     const camera = names.get(measuring.camera_id) ?? measuring.camera_id;
     const seenAge = lib.age(measuring.tracked.captured_at, scene.clock);
-    arrow(vent, side.value, across.value, { color: plume, weight: 3,
-      label: `Plume side ${Math.round(side.value)}° · ${lib.plusMinus(across.value, across.sigma, "m")} across ` +
+    arrow(vent, side.value, reach, { color: plume, weight: 3,
+      label: `Plume side ${Math.round(side.value)}° · ${lib.plusMinus(reach, across.sigma, "m")} across ` +
         `${camera}'s line of sight · ${local(measuring.tracked.captured_at)} (${seenAge})` });
-    row({ color: "var(--plume)" }, `Plume's measured side: ${Math.round(side.value)}°, ${lib.number(across.value)} m across ${camera}'s line of sight (${seenAge})`);
+    row({ color: "var(--plume)" }, `Plume's measured side: ${Math.round(side.value)}°, ${lib.number(reach)} m across ${camera}'s line of sight (${seenAge})`);
   }
 
   // the wind of the newest bulletin that has one

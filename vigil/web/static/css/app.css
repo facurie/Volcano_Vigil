@@ -19,6 +19,11 @@
   --lava: #f25820;              /* the accent: the clock, focus, play; also the fountain on dark surfaces */
   --plume: #259ed6;             /* the plume on dark surfaces */
   --plume-wash: rgba(37, 158, 214, 0.16);
+  --notice-rule: rgba(216, 176, 74, 0.25);   /* sulphur hairline under the notice */
+  --bar-scrim: rgba(16, 14, 13, 0.94);       /* the transport bar over the page */
+  --map-scrim: rgba(16, 14, 13, 0.8);        /* the map's attribution over the imagery */
+  --hover: rgba(236, 226, 212, 0.03);        /* a pointed-at row */
+  --photo-edge: rgba(255, 255, 255, 0.1);    /* the edge of an evidence photo */
   --glow: #b68c00;              /* glowing lava on dark surfaces; never beside the fountain in a chart */
   --lehua: #c3518d;             /* HVO's official values */
   --mask-plume: #50c8ff;        /* the colours the masks are drawn in on the frames */
@@ -59,7 +64,7 @@ button, select, input { font: inherit; color: inherit; }
 .clock-local { font: 500 22px/1 var(--font-mono); letter-spacing: -0.01em; }
 .clock[data-mode="replay"] .clock-local { color: var(--lava); }
 .clock-zone, .clock-utc { font: 400 12px/1 var(--font-mono); color: var(--tephra); }
-.notice { margin: 0; padding: 7px var(--s5); background: var(--notice); border-bottom: 1px solid rgba(216, 176, 74, 0.25); font-size: 12.5px; line-height: 1.45; color: var(--steam); text-wrap: pretty; }
+.notice { margin: 0; padding: 7px var(--s5); background: var(--notice); border-bottom: 1px solid var(--notice-rule); font-size: 12.5px; line-height: 1.45; color: var(--steam); text-wrap: pretty; }
 .notice-tag { font: 600 11px/1 var(--font-cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--sulfur); margin-right: var(--s2); }
 
 /* The console: the frame leads; the bulletins sit beside it at the frame's height. */
@@ -87,7 +92,7 @@ button, select, input { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
 
 /* Transport (replay only) and credits. */
-.transport { position: sticky; bottom: 0; z-index: 1000; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--s4); padding: var(--s3) var(--s5); background: rgba(16, 14, 13, 0.94); backdrop-filter: blur(6px); border-top: 1px solid var(--rule-strong); }
+.transport { position: sticky; bottom: 0; z-index: 1000; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--s4); padding: var(--s3) var(--s5); background: var(--bar-scrim); backdrop-filter: blur(6px); border-top: 1px solid var(--rule-strong); }
 .transport-buttons { display: flex; gap: var(--s1); }
 .icon-button { width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--r-md); background: var(--basalt-2); border: 1px solid var(--rule); color: var(--steam); cursor: pointer; font-size: 18px; line-height: 1; transition: transform 120ms var(--ease); }
 .icon-button:active { transform: scale(0.97); }
@@ -138,7 +143,7 @@ select { background: var(--well); border: 1px solid var(--rule-strong); border-r
 .bulletins { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; flex: 1; }
 .bulletin + .bulletin { border-top: 1px solid var(--rule); }
 .b-summary { display: grid; grid-template-columns: minmax(48px, max-content) minmax(0, 1fr); gap: 2px var(--s3); width: 100%; padding: var(--s3) var(--s4); border: 0; background: transparent; text-align: left; cursor: pointer; }
-.b-summary:hover { background: rgba(236, 226, 212, 0.03); }
+.b-summary:hover { background: var(--hover); }
 .b-time { grid-row: span 2; font: 500 13px/1.5 var(--font-mono); color: var(--ash); }
 .b-date { display: block; white-space: nowrap; font: 400 10px/1.3 var(--font-mono); color: var(--tephra); }
 .b-headline { font-weight: 500; text-wrap: pretty; }
@@ -161,7 +166,7 @@ select { background: var(--well); border: 1px solid var(--rule-strong); border-r
 .b-wind { font-size: 13px; color: var(--ash); }
 .b-evidence { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2); margin: 0 0 var(--s3); }
 .b-evidence figure { margin: 0; }
-.b-evidence img { display: block; width: 100%; border-radius: var(--r-sm); outline: 1px solid rgba(255, 255, 255, 0.1); outline-offset: -1px; }
+.b-evidence img { display: block; width: 100%; border-radius: var(--r-sm); outline: 1px solid var(--photo-edge); outline-offset: -1px; }
 .b-evidence figcaption { margin-top: 4px; font-size: 11.5px; color: var(--ash); }
 .b-check { font: 400 12px/1.4 var(--font-mono); color: var(--ash); }
 .b-source { font-size: 13px; }
@@ -185,7 +190,7 @@ pre { margin: var(--s1) 0 0; max-height: 280px; overflow: auto; padding: var(--s
 #map { height: 300px; background: var(--well); isolation: isolate; }
 .leaflet-container { background: var(--well); font-family: var(--font-sans); }
 .leaflet-tile-pane { filter: saturate(0.55) brightness(0.62) contrast(1.05); }
-.leaflet-control-attribution { background: rgba(16, 14, 13, 0.8) !important; color: var(--tephra) !important; }
+.leaflet-control-attribution { background: var(--map-scrim) !important; color: var(--tephra) !important; }
 .leaflet-control-attribution a { color: var(--ash) !important; }
 .leaflet-bar a { background: var(--basalt-2) !important; color: var(--steam) !important; border-color: var(--rule-strong) !important; }
 .leaflet-tooltip.map-label { background: var(--basalt-2); border: 1px solid var(--rule-strong); border-radius: var(--r-sm); color: var(--steam); box-shadow: none; font: 400 12px/1.3 var(--font-mono); padding: 3px 6px; }
@@ -208,6 +213,7 @@ pre { margin: var(--s1) 0 0; max-height: 280px; overflow: auto; padding: var(--s
 .drum-future { fill: var(--well); }
 .drum-band { fill: var(--plume-wash); }
 .drum-line { fill: none; stroke: var(--plume); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.drum-sigma { stroke: var(--plume); stroke-width: 2; stroke-linecap: round; }
 .drum-dot { fill: var(--plume); stroke: var(--basalt-1); stroke-width: 2; }
 .drum-official { stroke: var(--lehua); stroke-width: 1.5; }
 .drum-diamond { fill: var(--lehua); stroke: var(--basalt-1); stroke-width: 2; }

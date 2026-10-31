@@ -31,6 +31,7 @@ export function renderDrum(panel, data, ctx) {
     fill(legend);
     fill(table);
     fill(root, el("p", { class: "error-note" }, `The plume record could not be loaded (${data.error.message}).`));
+    instances.get(root)?.observer.disconnect();
     instances.delete(root);
     return;
   }
@@ -39,7 +40,8 @@ export function renderDrum(panel, data, ctx) {
   let instance = instances.get(root);
   if (!instance) {
     instance = { width: 0, args: null };
-    new ResizeObserver(() => { if (root.clientWidth !== instance.width) draw(root, instance); }).observe(root);
+    instance.observer = new ResizeObserver(() => { if (root.clientWidth !== instance.width) draw(root, instance); });
+    instance.observer.observe(root);
     instances.set(root, instance);
   }
   instance.args = { data, ctx };
@@ -60,7 +62,7 @@ function renderTable(root, data, ctx) {
   fill(root, points.length ? el("table", { class: "b-table" },
     el("thead", {}, el("tr", {}, ["Time (local)", "Plume top above sea level", "Frame"].map((h) => el("th", { scope: "col" }, h)))),
     el("tbody", {}, points.map((p) => el("tr", {},
-      el("td", { class: "mono" }, `${lib.localTime(p.captured_at, offset, true)} ${lib.zone(offset)}`),
+      el("td", { class: "mono" }, `${lib.stamp(p.captured_at, ctx.scene.clock, offset, true)} ${lib.zone(offset)}`),
       el("td", { class: "mono" }, lib.plusMinus(p.value, p.sigma, "m")),
       el("td", { class: "mono" }, p.frame_id))))) : null);
 }
@@ -73,7 +75,7 @@ function draw(root, instance) {
   const { data, ctx } = instance.args;
   const { state, config, scene, actions } = ctx;
   const offset = config.volcano.utc_offset_hours, zone = lib.zone(offset);
-  const local = (when, seconds = false) => lib.localTime(when, offset, seconds);
+  const local = (when, seconds = false) => lib.stamp(when, scene.clock, offset, seconds);
   const replay = state.mode === "replay";
   const clock = Date.parse(scene.clock);
   const episode = replay ? config.replays.find((r) => r.episode === state.episode) : null;
@@ -90,7 +92,13 @@ function draw(root, instance) {
   const topM = Math.max(MIN_TOP_M, Math.ceil(Math.max(0, ...points.map((p) => p.value + p.sigma)) / 1000) * 1000);
   const plotW = width - M.left - M.right;
   const plotH = width >= 700 ? 300 : 200;  // taller where the panel is wide, so it fills the row beside the map
-  const height = M.top + plotH + M.bottom + strips.length * STRIP_H + 4;
+  const stepMs = (replay ? 1 : 3) * HOUR_MS;
+  const offsetMs = offset * HOUR_MS;
+  const tickTimes = [];
+  for (let t = Math.ceil((t0 + offsetMs) / stepMs) * stepMs - offsetMs; t <= t1; t += stepMs) tickTimes.push(t);
+  const isMidnight = (t) => lib.localTime(new Date(t).toISOString(), offset) === "00:00";
+  const axisH = tickTimes.some(isMidnight) ? M.bottom + 12 : M.bottom;  // room for the date under a midnight label
+  const height = M.top + plotH + axisH + strips.length * STRIP_H + 4;
   const x = (t) => M.left + ((t - t0) / (t1 - t0)) * plotW;
   const y = (metres) => M.top + plotH - (metres / topM) * plotH;
   const right = M.left + plotW, bottom = M.top + plotH;
@@ -104,16 +112,16 @@ function draw(root, instance) {
     paper.append(line(M.left, y(metres), right, y(metres)),
       label(M.left - 8, y(metres) + 4, metres === 0 ? "0" : `${metres / 1000} km`, { "text-anchor": "end" }));
   }
-  const stepMs = (replay ? 1 : 3) * HOUR_MS;
   const every = Math.max(1, Math.ceil(36 / ((stepMs / (t1 - t0)) * plotW)));  // label every n-th tick when narrow
-  const offsetMs = offset * HOUR_MS;
-  let n = 0;
-  for (let t = Math.ceil((t0 + offsetMs) / stepMs) * stepMs - offsetMs; t <= t1; t += stepMs, n++) {
+  tickTimes.forEach((t, n) => {
     paper.append(line(x(t), M.top, x(t), bottom));
-    if (n % every === 0) {
-      paper.append(label(x(t), bottom + 16, lib.localTime(new Date(t).toISOString(), offset), { "text-anchor": "middle" }));
+    const midnight = isMidnight(t);
+    if (n % every === 0 || midnight) {
+      const when = new Date(t).toISOString();
+      paper.append(label(x(t), bottom + 16, lib.localTime(when, offset), { "text-anchor": "middle" }));
+      if (midnight) paper.append(label(x(t), bottom + 28, lib.localDate(when, offset), { "text-anchor": "middle" }));
     }
-  }
+  });
   const vent = config.vent
     ? [line(M.left, y(config.vent.elev_m), right, y(config.vent.elev_m), "drum-vent"),
       label(right - 4, y(config.vent.elev_m) - 4, `vent ${lib.number(config.vent.elev_m)} m`, { "text-anchor": "end" })]
@@ -152,6 +160,10 @@ function draw(root, instance) {
     if (current && p.t - current.at(-1).t <= GAP_MS) current.push(p);
     else runs.push([p]);
   }
+  const lone = runs.filter((r) => r.length === 1).flatMap(([p]) => [  // a measurement with no neighbour within 30 min
+    line(x(p.t), y(p.value + p.sigma), x(p.t), y(p.value - p.sigma), "drum-sigma"),
+    svg("circle", { class: "drum-dot", cx: x(p.t), cy: y(p.value), r: 3 }),
+  ]);
   const ink = runs.filter((r) => r.length > 1).flatMap((r) => [
     svg("polygon", { class: "drum-band", points: [
       ...r.map((p) => `${x(p.t)},${y(p.value + p.sigma)}`), ...[...r].reverse().map((p) => `${x(p.t)},${y(p.value - p.sigma)}`),
@@ -168,7 +180,7 @@ function draw(root, instance) {
 
   // ---- the cameras' strips: what each frame showed
   const rows = strips.map(([id, frames], i) => {
-    const top = bottom + M.bottom + i * STRIP_H;
+    const top = bottom + axisH + i * STRIP_H;
     return svg("g", {}, label(M.left - 8, top + 12, nameOf(id), { "text-anchor": "end" }),
       frames.map((f) => {
         const seen = TARGET_ORDER.filter((t) => f.targets.includes(t));
@@ -202,7 +214,7 @@ function draw(root, instance) {
   const chart = svg("svg", {
     width, height, viewBox: `0 0 ${width} ${height}`, role: "group", tabindex: points.length ? "0" : null,
     "aria-label": "Plume top above sea level over time. Use the arrow keys to move between measurements, Enter to show the frame.",
-  }, future, paper, vent, phaseMarks, marks, ink, clockMarks, endMarks, rows, empty, cursor, overlay, bulletinMarks);
+  }, future, paper, vent, phaseMarks, marks, ink, lone, clockMarks, endMarks, rows, empty, cursor, overlay, bulletinMarks);
   fill(root, chart);
 
   let tooltip = null, selected = null;

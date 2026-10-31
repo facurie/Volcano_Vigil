@@ -87,8 +87,8 @@ function showFrame(root, frame, alt, scene) {
   const wide = well.clientWidth * (window.devicePixelRatio || 1) > 1280;
   const url = imageUrl(frame.frame_id, scene, { width: wide ? 1920 : 1280 });
   const token = ++imageToken;
-  img.alt = alt;
   if (img.getAttribute("src") === url) {
+    img.alt = alt;
     img.hidden = false;
     well.removeAttribute("aria-busy");
     return;
@@ -98,11 +98,17 @@ function showFrame(root, frame, alt, scene) {
   probe.onload = () => {
     if (token !== imageToken) return;
     img.src = url;
+    img.alt = alt;
     img.hidden = false;
     well.removeAttribute("aria-busy");
   };
   probe.onerror = () => {
-    if (token === imageToken) well.removeAttribute("aria-busy");
+    if (token !== imageToken) return;
+    img.hidden = true;  // never leave the previous picture under this frame's caption
+    well.removeAttribute("aria-busy");
+    const empty = root.querySelector("#frame-empty");
+    empty.textContent = "The frame could not be loaded.";
+    empty.hidden = false;
   };
   probe.src = url;
 }

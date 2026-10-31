@@ -261,6 +261,9 @@ async function chooseCamera(preferred) {
 function enterMode(mode, hashClock) {
   stopPlaying();
   clearInterval(pollTimer);
+  generation++;  // a load the other mode started must not paint into this one
+  controller?.abort();
+  last = null;
   state.mode = mode;
   state.pinned = null;
   if (mode === "replay") {
@@ -292,7 +295,9 @@ function snap(when) {
 async function switchMode(mode) {
   if (mode === state.mode) return;
   enterMode(mode, null);
-  state.camera = await chooseCamera(state.camera);
+  const camera = await chooseCamera(state.camera);
+  if (state.mode !== mode) return;  // switched again while the cameras were loading
+  state.camera = camera;
   state.runId = null;
   state.openBulletin = null;
   return load();
