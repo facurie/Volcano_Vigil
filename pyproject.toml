@@ -18,6 +18,8 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "pydantic>=2.7",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -36,9 +38,13 @@ vigil-agent = "vigil.agent.loop:main"
 vigil-bulletin = "vigil.agent.bulletin:main"
 vigil-pipeline = "vigil.pipeline:main"
 vigil-replay = "vigil.replay:main"
+vigil-web = "vigil.web.app:main"
 
 [tool.setuptools.packages.find]
 include = ["vigil*"]
+
+[tool.setuptools.package-data]
+"vigil.web" = ["static/*.html", "static/css/*.css", "static/js/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
