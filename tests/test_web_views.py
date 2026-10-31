@@ -86,6 +86,29 @@ def test_a_visible_detection_carries_its_box_and_measurements(conn, store, tmp_p
     assert detection["measurements"] == {"top_altitude": {"value": 6951.5, "sigma": 429.4, "unit": "m"}}
 
 
+def test_a_cameras_last_detection_counts_only_runs_closed_by_the_clock(conn, store, tmp_path):
+    a, b, c, d = (add_frame(conn, store, "kilauea-kp", minutes) for minutes in (-20, -10, -5, 5))
+    add_track(conn, add_run(conn, "kilauea-kp", "plume", [a, b]), [a, b])
+    add_track(conn, add_run(conn, "kilauea-kp", "fountain", [c, d]), [c])  # its window ends after the clock
+
+    def last_detection(clock):
+        return views.camera_status(scene(conn, tmp_path, clock=clock, cameras=("kilauea-kp",)))[0]["last_detection"]
+
+    assert last_detection(T0) == {"plume": to_iso(T0 - 10 * M)}
+    assert last_detection(T0 + 5 * M) == {"plume": to_iso(T0 - 10 * M), "fountain": to_iso(T0 - 5 * M)}
+
+
+def test_the_tracked_frame_waits_for_its_sam_run_to_close(conn, store, tmp_path):
+    a, b = add_frame(conn, store, "kilauea-kp", -10), add_frame(conn, store, "kilauea-kp", 5)
+    add_track(conn, add_run(conn, "kilauea-kp", "plume", [a, b]), [a, b])  # the only run closes after the clock
+
+    now = views.latest_frames(scene(conn, tmp_path), "kilauea-kp")
+    later = views.latest_frames(scene(conn, tmp_path, clock=T0 + 5 * M), "kilauea-kp")
+
+    assert now["tracked"] is None and now["latest"]["frame_id"] == a
+    assert later["tracked"]["frame_id"] == b
+
+
 def test_a_camera_without_visible_detections_has_no_tracked_frame(conn, store, tmp_path):
     add_frame(conn, store, "kilauea-kp", -10)
 
