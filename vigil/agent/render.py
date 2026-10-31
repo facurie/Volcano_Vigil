@@ -89,17 +89,17 @@ def wind_text(b: Bulletin, lang: Lang) -> str:
             f"de la visual de la cámara, a {angle}° de hacia donde sopla el viento: {verdict}.")
 
 
-def _texts(b: Bulletin, lang: Lang) -> tuple[str, str, str]:
+def texts(b: Bulletin, lang: Lang) -> tuple[str, str, str]:
     if lang == "en":
         return b.headline_en, b.body_en, b.disclaimer_en
     return b.headline_es, b.body_es, b.disclaimer_es
 
 
-def _header(lang: Lang) -> list[str]:
+def table_header(lang: Lang) -> list[str]:
     return [_pick(WORDS[key], lang) for key in ("what", "camera", "value", "captured", "frames", "checked")]
 
 
-def _rows(b: Bulletin, lang: Lang) -> list[list[str]]:
+def table_rows(b: Bulletin, lang: Lang) -> list[list[str]]:
     rows = []
     for m in b.measurements:
         captured = local_time(m.captured_at, b.utc_offset_hours) if m.captured_at else "–"
@@ -116,15 +116,15 @@ def _cell(text: str) -> str:
 
 def to_markdown(b: Bulletin, lang: Lang, *, image_root: str = "") -> str:
     """The bulletin in one language; each evidence image links to image_root plus its data-dir path."""
-    headline, body, disclaimer = _texts(b, lang)
+    headline, body, disclaimer = texts(b, lang)
     level = _pick(LEVELS[b.activity_level], lang)
     when = local_time(b.clock, b.utc_offset_hours)
     lines = [f"# {headline}", "", f"{b.volcano_name} · {when} · {_pick(WORDS['activity'], lang)}: {level}", "",
              f"> **{disclaimer}**", "", body, ""]
     if b.measurements:
-        lines += [f"## {_pick(WORDS['measurements'], lang)}", "", "| " + " | ".join(_header(lang)) + " |",
+        lines += [f"## {_pick(WORDS['measurements'], lang)}", "", "| " + " | ".join(table_header(lang)) + " |",
                   "|---|---|---|---|---|---|"]
-        lines += ["| " + " | ".join(map(_cell, row)) + " |" for row in _rows(b, lang)] + [""]
+        lines += ["| " + " | ".join(map(_cell, row)) + " |" for row in table_rows(b, lang)] + [""]
     if b.wind:
         lines += [f"## {_pick(WORDS['wind'], lang)}", "", wind_text(b, lang), ""]
     if b.evidence:
@@ -142,7 +142,7 @@ def to_markdown(b: Bulletin, lang: Lang, *, image_root: str = "") -> str:
 
 def _article(b: Bulletin, lang: Lang, image_root: str) -> str:
     e = html.escape
-    headline, body, disclaimer = _texts(b, lang)
+    headline, body, disclaimer = texts(b, lang)
     level = _pick(LEVELS[b.activity_level], lang)
     parts = [f'<article lang="{lang}">', f'<p class="disclaimer">{e(disclaimer)}</p>', f"<h1>{e(headline)}</h1>",
              f"<p>{e(b.volcano_name)} · {e(local_time(b.clock, b.utc_offset_hours))} · "
@@ -150,8 +150,8 @@ def _article(b: Bulletin, lang: Lang, image_root: str) -> str:
     parts += [f"<p>{e(paragraph.strip())}</p>" for paragraph in body.split("\n\n") if paragraph.strip()]
     if b.measurements:
         parts += [f"<h2>{_pick(WORDS['measurements'], lang)}</h2>", "<table>",
-                  "<tr>" + "".join(f"<th>{e(cell)}</th>" for cell in _header(lang)) + "</tr>"]
-        parts += ["<tr>" + "".join(f"<td>{e(cell)}</td>" for cell in row) + "</tr>" for row in _rows(b, lang)]
+                  "<tr>" + "".join(f"<th>{e(cell)}</th>" for cell in table_header(lang)) + "</tr>"]
+        parts += ["<tr>" + "".join(f"<td>{e(cell)}</td>" for cell in row) + "</tr>" for row in table_rows(b, lang)]
         parts.append("</table>")
     if b.wind:
         parts += [f"<h2>{_pick(WORDS['wind'], lang)}</h2>", f"<p>{e(wind_text(b, lang))}</p>"]

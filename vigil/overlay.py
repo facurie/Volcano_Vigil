@@ -27,6 +27,7 @@ def draw_layers(
     alpha: float = 0.45,
     *,
     min_legend_rows: int = 0,
+    legend: bool = True,
 ) -> Image.Image:
     """Return a new RGB image with each layer's mask tinted and outlined.
 
@@ -34,7 +35,8 @@ def draw_layers(
     never hide burned-in text (timestamps, PTZ readouts) or the top of a plume.
     `min_legend_rows` reserves rows even when there are fewer layers, so every
     frame rendered for one video gets the same size. With no layers and no
-    reserved rows the output keeps the input's size.
+    reserved rows the output keeps the input's size. `legend=False` draws no strip at all, for pages that show
+    their own legend.
     """
     pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy()
     height, width = pixels.shape[:2]
@@ -50,7 +52,7 @@ def draw_layers(
     for layer in layers:
         if layer.box:
             draw.rectangle(layer.box, outline=layer.color, width=max(1, height // 400))
-    rows = max(len(layers), min_legend_rows)
+    rows = max(len(layers), min_legend_rows) if legend else 0
     return _add_legend(frame, layers, rows) if rows else frame
 
 

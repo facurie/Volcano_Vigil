@@ -61,6 +61,11 @@ class OffGridError(ValueError):
     """The replay's database holds steps from another grid, so it cannot be resumed."""
 
 
+def replay_dir(data_dir: Path, episode: Episode) -> Path:
+    """Where an episode's replay keeps its database, timeline, report and bulletins."""
+    return data_dir / "replay" / f"ep{episode.key}"
+
+
 def ticks(start: datetime, end: datetime, step: timedelta) -> list[datetime]:
     """The simulated clock's steps: every `step` after start, and the end itself."""
     out, tick = [], start + step
@@ -277,7 +282,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--step and --agent-every must be positive and --speed not negative")
     episode = EPISODES[args.episode]
     settings = Settings.from_env()
-    out_dir = settings.data_dir / "replay" / f"ep{episode.key}"
+    out_dir = replay_dir(settings.data_dir, episode)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")

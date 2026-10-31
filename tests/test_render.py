@@ -1,7 +1,8 @@
 from typing import get_args
 
 from vigil.agent.bulletin import ActivityLevel, Bulletin, CitedMeasurement, Evidence
-from vigil.agent.render import LEVELS, METRICS, TARGETS, local_time, number, publish, to_html, to_markdown
+from vigil.agent.render import (LEVELS, METRICS, TARGETS, local_time, number, publish, table_header, table_rows, texts,
+                               to_html, to_markdown)
 from vigil.agent.tools import Metric
 from vigil.prompts import Target
 
@@ -132,3 +133,13 @@ def test_a_pipe_or_a_newline_in_a_cell_does_not_break_the_markdown_table():
 
     row = next(line for line in text.splitlines() if "a\\|b c" in line)
     assert row.count("|") - row.count("\\|") == 7
+
+
+def test_the_public_table_helpers_give_the_markdown_tables_cells():
+    b = bulletin()
+    markdown = to_markdown(b, "es")
+
+    assert "| " + " | ".join(table_header("es")) + " |" in markdown
+    assert table_rows(b, "es")[0][2] == "6.951 ± 429 m"
+    assert all(cell in markdown for cell in table_rows(b, "es")[0])
+    assert texts(b, "en") == (b.headline_en, b.body_en, b.disclaimer_en)

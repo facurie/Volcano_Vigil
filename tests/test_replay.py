@@ -2,6 +2,7 @@ import json
 import subprocess
 from dataclasses import replace
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +14,7 @@ from vigil.episodes import EP55
 from vigil.ingest.store import FrameStore
 from vigil.phases import PHASES
 from vigil.pipeline import StepReport
-from vigil.replay import OffGridError, activity_rows, bulletin_rows, feed, main, run_replay, ticks
+from vigil.replay import OffGridError, activity_rows, bulletin_rows, feed, main, replay_dir, run_replay, ticks
 from vigil.timeutil import parse_utc, to_iso
 
 M = timedelta(minutes=1)
@@ -274,3 +275,7 @@ def test_cli_turns_a_replay_on_another_grid_into_a_usage_error(cli_env, capsys):
 
     err = capsys.readouterr().err
     assert "ep55" in err and "delete that folder" in err
+
+
+def test_an_episodes_replay_lives_in_its_own_folder_of_the_data_dir():
+    assert replay_dir(Path("data"), EP55) == Path("data") / "replay" / "ep55"

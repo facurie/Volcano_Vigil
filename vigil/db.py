@@ -200,3 +200,16 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=5000")
     conn.executescript(SCHEMA)
     return conn
+
+
+def connect_readonly(path: str | Path) -> sqlite3.Connection:
+    """A connection that cannot write, for readers such as the dashboard. The database must exist: this never
+    creates one. Usable from another thread than the one that opened it (one request at a time)."""
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    conn = sqlite3.connect(path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA query_only=ON")
+    return conn

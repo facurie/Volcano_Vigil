@@ -77,3 +77,14 @@ def test_input_image_is_not_modified():
 def test_mask_with_a_different_shape_than_the_image_is_rejected():
     with pytest.raises(ValueError, match="shape"):
         draw_layers(gray_image(), [layer(shape=(10, 10), top=0, left=0, size=3)])
+
+
+def test_without_a_legend_the_frame_keeps_its_size_even_with_layers():
+    image = Image.new("RGB", (40, 30), (90, 90, 90))
+    mask = np.zeros((30, 40), dtype=bool)
+    mask[10:20, 10:20] = True
+
+    out = draw_layers(image, [Layer(mask, (80, 200, 255), "plume")], legend=False)
+
+    assert out.size == (40, 30)
+    assert out.getpixel((15, 15)) != (90, 90, 90)
