@@ -2182,3 +2182,56 @@ git commit -m "Draw the plume record as a drum that inks up to the clock, the li
 - [ ] Push; update the status memory.
 
 ## Execution notes
+
+### Execution notes (2026-10-30, session 7)
+
+**Commits.**
+
+| Task | Commits |
+|---|---|
+| 1 | d3bf82a |
+| 2 | f916d75, and 75c5252 for the review |
+| 3 | c42f694 |
+| 4 | 9121282 |
+| 5 | a2ad036, and ca3d5ab for the review |
+| 6 | b2d7f1d |
+| 7 | 24f3415, plus 16e27df |
+| 8 | 9d9028c |
+| 9 | 7811142, 3799bb2, 8ae2944, 2a28d13 |
+
+The suite went from 492 to 556 tests, and `node --test tests/js/lib.test.mjs` runs inside it. No Meta API calls; the phase spent $0.
+
+**Deviations from the plan.**
+- `vigil/web/app.py` does not use `from __future__ import annotations`. With it, FastAPI could not resolve the local alias `Seen = Annotated[Scene, Depends(scene)]`.
+- **Chart colours.** The plan first reused the overlay colours on the dark panels. The dataviz validator failed them: plume L 0.79 and glow L 0.88 are too light for the 0.48–0.67 dark band. So the drum and the map use stepped tokens: plume `#259ed6`, fountain `#f25820`, glow `#b68c00`. HVO's values got their own hue, lehua `#c3518d`; a neutral fails the chroma floor, and olivine green or violet fail the deutan check against lava or plume. The overlay colours only key the masks drawn on the frames. Glow is left out of the drum's strips, because beside the fountain it has a deutan ΔE of 0.6.
+- **Not in the plan:**
+  - `GET /api/frames/{id}`, used by a frame pinned on the drum.
+  - `lib.shortName`.
+  - `lib.stamp`, which puts the local date in front of a time when its local day is not the clock's day. Live data is days old, and "Last tracked 09:25" next to "Latest 08:55" read in the wrong order.
+- **Bulletin disclaimers.** The views show the disclaimer from the current config. The episode 55 bulletins were stored before the rename and say "Vigía Andino". The disclaimer is the code's text, never the model's. No model text in the replay database names the old project.
+- **Feed.** The bulletin measurements are a two-line list instead of a table, because a six-column table does not fit the 400 px feed.
+- **Drum and map.**
+  - The drum plot is 300 px tall when the panel is at least 700 px wide, so it matches the map beside it.
+  - The map is 300 px tall, and its short legend keys share a line.
+  - The map's camera labels take two lines.
+  - Every age on the map ("14 min ago") is shown, because live arrows can be days old.
+
+**Review findings that were fixed.**
+- **Two clock bounds no test pinned:** a camera's `last_detection`, and the `tracked` frame. The reviewer showed it by dropping each bound on a copy; every test still passed.
+- **The plume arrow used the signed `drift_offset`.** A negative offset would have drawn it on the wrong side of the line of sight; episode 55 only has positive offsets.
+- **The drum's times carried no date** in a live window that crosses midnight.
+- **A failed frame image** left the previous picture under the new caption. Its server cause, a missing JPEG, now gives 404 instead of 500.
+- **Smaller fixes:** a NUL byte in a `/media` path gave 500; a stale `ResizeObserver`; a lone series point was not drawn; literal `rgba()` colours outside the tokens; a live load could paint after a switch to replay.
+
+**Acceptance (headless Edge, 1440 px and 500 px).**
+- **Replay at 03:05 HST:** no bulletin yet, no plume measured, an empty drum.
+- **At 05:00:** KPcam frame 29 with its mask. The hero reads 6,964 ± 419 m (22,848 ft), the same as row 2 of bulletin #2 and the trace of run 2. No HVO value is shown yet. The plume side points SW (224°) and the wind SE (151°).
+- **At 06:10:** HVO 7,620 m and 5,182 m appear, next to our 5,215 m.
+- **At 09:30:**
+  - three HVO values (the last an upper bound), and the end line at 09:03;
+  - the strips show K2 and V1 stop seeing the fountain just before 09:03;
+  - the comparison tables: plume top −9 % at the peak and +1 % at 06:02, end of fountaining −1.0 min, $1.03.
+- **Live:** every camera is stale (the newest frames are from Oct 27), and every time carries its date.
+- The Spanish feed reads correctly. K2cam shows its fountain, glow and plume masks, with "Heights are not measured on K2cam".
+
+**Not checked in a browser:** hover, keyboard and click on the drum; the failed-image path; a negative drift offset; a lone series point. They were checked by reading the code. Headless Edge does not render below about 500 px wide.

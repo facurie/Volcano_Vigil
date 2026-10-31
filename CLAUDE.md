@@ -18,7 +18,7 @@ An agent that watches public volcano webcams (USGS Kīlauea) and turns frames in
 - Full suite: `.venv/Scripts/python.exe -m pytest`. `addopts` already has `-q`; passing `-q` again hides the summary line.
 - One test: `.venv/Scripts/python.exe -m pytest tests/test_x.py -k name`
 - After adding a console script to `pyproject.toml`: `.venv/Scripts/python.exe -m pip install -e ".[dev]"`
-- CLIs: `vigil-ingest`, `vigil-backfill`, `vigil-quality`, `vigil-track`, `vigil-measure`, `vigil-wind`, `vigil-agent`, `vigil-bulletin`, `vigil-pipeline`, `vigil-replay`.
+- CLIs: `vigil-ingest`, `vigil-backfill`, `vigil-quality`, `vigil-track`, `vigil-measure`, `vigil-wind`, `vigil-agent`, `vigil-bulletin`, `vigil-pipeline`, `vigil-replay`, `vigil-web` (the dashboard, http://127.0.0.1:8000).
 
 ## Rules
 

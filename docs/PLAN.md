@@ -19,7 +19,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (492 passing at the end of Phase 5, session 6).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (556 passing at the end of Phase 6, session 7; they include the dashboard's JS helper tests, run with node).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -130,6 +130,12 @@
     - fountaining was first reported at 04:00 and no longer reported at 09:30 (hourly);
     - end of fountaining: K2 −1.0 min, V1 +0.0 min.
   - Muse Spark reading the K2cam timelapse (video input, $0.05) gets the end within 3 min, but puts the peak after sunrise (+110 min). SAM's fountain-box heights put the peak and the decline inside HVO's windows.
+- **Dashboard** (`vigil-web`, [phase 6 plan](superpowers/plans/2026-10-30-phase-6-dashboard.md)):
+  - A `Scene` is one database (live, or `data/replay/ep<key>/`) seen at one clock. A SAM detection, and the measurements made from it, show only once its run's `window_end` (the capture time of the run's last frame) is ≤ the clock. HVO heights show once their window has closed, phases once their latest time has passed, and the comparison tables only at the episode's end.
+  - Frames go to the browser as JPEGs at most 1,280 px wide, with their visible masks drawn: about 95 ms each.
+  - The bulletins show the disclaimer as the code gives it now. The episode 55 bulletins were stored before the rename and still say "Vigía Andino".
+  - Chart colours passed the dataviz checks on the dark panels: plume `#259ed6`, HVO `#c3518d` (lehua), fountain `#f25820`. The overlay colours are too light for a dark chart, so they only key the masks drawn on the frames.
+  - Headless Edge (`--headless=new` with a separate `--user-data-dir`) takes the screenshots. It will not render below about 500 px wide.
 
 ## Target module map
 
@@ -158,7 +164,8 @@ vigil/
   episodes.py             episode 55 and its official values    (exists, phase 5)
   replay.py               episode replay on a simulated clock; vigil-replay (exists, phase 5)
   phases.py               episode phases: SAM vs Muse Spark video (exists, phase 5)
-  web/app.py web/static/  FastAPI + dashboard                    (phase 6)
+  web/views.py            the dashboard's queries, one DB at one clock (exists, phase 6)
+  web/app.py web/static/  FastAPI + dashboard; vigil-web          (exist, phase 6)
 config/prompts.yaml       SAM phrases per target/camera kind     (exists, phase 1)
 config/calibration.yaml   per camera and PTZ preset              (exists, phase 3)
 ```
@@ -255,17 +262,23 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 ## Phase 6: Sun Nov 1. Dashboard
 
-- [ ] **`vigil/web/app.py`** (FastAPI): `/api/cameras`, `/api/frames/latest`, `/api/series`, `/api/bulletins`, `/api/replay`, `/api/agent/trace`.
-- [ ] **`vigil/web/static/`:**
-  - Leaflet map: cameras, vent, drift arrow, wind arrow.
-  - Current frame with mask overlay.
-  - Height chart over time.
-  - Bulletin feed with an ES/EN toggle.
-  - Camera status (fresh / stale / fog / night).
-  - Replay player and agent trace view.
-  - The disclaimer banner is always visible.
+- [x] **`vigil/web/app.py`** (FastAPI): `/api/cameras`, `/api/frames/latest`, `/api/series`, `/api/bulletins`, `/api/replay`, `/api/agent/trace`. (Also:
+  - `/api/config`;
+  - `/api/frames`, the per-camera frame strip;
+  - `/api/frames/{id}` and `/api/frames/{id}/image`, a scaled JPEG with its masks;
+  - `/media/`, bulletin images only.
 
-**Acceptance:** the local dashboard shows both live and replay.
+  Every endpoint takes `replay` and `at`, and its queries live in `vigil/web/views.py`, a `Scene` = one database at one clock. CLI: `vigil-web`.)
+- [x] **`vigil/web/static/`:** (plain ES modules, no build step; dark "observatory night shift" design; plan [2026-10-30-phase-6-dashboard.md](superpowers/plans/2026-10-30-phase-6-dashboard.md))
+  - Leaflet map: cameras, vent, drift arrow, wind arrow. (USGS imagery tiles. Each camera's position is drawn as a circle of its σ, with its line of sight to the vent; the drift is drawn across KPcam's line of sight, and the wind is the newest bulletin's layer mean.)
+  - Current frame with mask overlay. (Last tracked frame or latest frame, plus the hero readout of the plume top ± σ.)
+  - Height chart over time. (A helicorder "drum" that inks only up to the clock; HVO's values appear once their window has closed, with per-camera frame strips.)
+  - Bulletin feed with an ES/EN toggle.
+  - Camera status (fresh / stale / fog / night). (Words, not alert colours: usable, night, fog, frozen, stale, unchecked, no frames.)
+  - Replay player and agent trace view. (A transport with a scrubber on the 5-min grid, 2.5–10 simulated min/s, and the step summary. At the episode's end, the comparison tables against HVO.)
+  - The disclaimer banner is always visible. (It is in the page's markup and sticky with the top bar.)
+
+**Acceptance:** the local dashboard shows both live and replay. Done: replay checked at 03:05, 05:00, 06:10 and 09:30 HST, and live (3-day-old data shows as stale, with dated times), in headless Edge screenshots at 1440 and 500 px.
 
 ## Phase 7: Mon Nov 2. Deployment
 
@@ -310,7 +323,7 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 ## Budget
 
-Spent so far: $3.19 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $3.19 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger; Phase 6 made no Meta API call). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 
