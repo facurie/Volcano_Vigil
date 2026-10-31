@@ -226,7 +226,8 @@ function paint() {
 
   draw(panel("viewer"), renderViewer, ["cameras", "latest"], () => ({
     cameras: value("cameras").cameras, latest: value("latest"), pinnedFrame: value("pinned") }));
-  draw(panel("feed"), renderFeed, ["bulletins"], () => ({ bulletins: value("bulletins").bulletins }));
+  draw(panel("feed"), renderFeed, ["bulletins"], () => ({
+    bulletins: value("bulletins").bulletins, cameras: value("cameras")?.cameras ?? null }));
   draw(panel("trace"), renderTrace, ["trace"], () => ({ trace: value("trace") }));
   draw(panel("drum"), renderDrum, ["series"], () => ({
     series: value("series"), strips: value("strips"), bulletins: value("bulletins")?.bulletins ?? null,
