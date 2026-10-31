@@ -182,11 +182,17 @@ def test_a_media_path_cannot_leave_the_data_dir(tmp_path):
     assert media_file(data, "bulletins/../../bulletins/outside.jpg") is None
 
 
+def test_a_media_path_with_a_nul_byte_is_not_found(client):
+    assert client.get("/media/bulletins/a%00.jpg").status_code == 404
+
+
 def test_the_image_route_sends_a_scaled_jpeg_with_its_masks(client, replayed, tmp_path):
     shown = add_frame(replayed, FrameStore(replayed, tmp_path), "kilauea-kp", -5)
     add_track(replayed, add_run(replayed, "kilauea-kp", "plume", [shown]), [shown])
 
     answer = client.get(f"/api/frames/{shown}/image", params={**AT, "width": 320})
+    plain = client.get(f"/api/frames/{shown}/image", params={**AT, "width": 320, "overlay": "false"})
 
     assert answer.headers["content-type"] == "image/jpeg"
     assert Image.open(io.BytesIO(answer.content)).size == (320, 180)
+    assert answer.content != plain.content

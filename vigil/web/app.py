@@ -44,8 +44,11 @@ def media_file(data_dir: Path, path: str) -> Path | None:
     """A bulletin image under the data dir (an evidence overlay, inside a `bulletins` folder); None for anything
     else: frames, databases, pages, or a path that leaves the data dir."""
     root = data_dir.resolve()
-    target = (root / path).resolve()
-    if not target.is_relative_to(root) or target.suffix.lower() not in MEDIA_SUFFIXES or not target.is_file():
+    try:
+        target = (root / path).resolve()
+        if not target.is_relative_to(root) or target.suffix.lower() not in MEDIA_SUFFIXES or not target.is_file():
+            return None
+    except (OSError, ValueError):  # e.g. a NUL byte in the path
         return None
     return target if "bulletins" in target.relative_to(root).parts[:-1] else None
 
