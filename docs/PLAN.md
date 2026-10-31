@@ -34,7 +34,7 @@
    - The scope is Kīlauea only (decided 2026-10-30).
    - Every bulletin carries the "does not replace official alerts" disclaimer and a link to the official agency.
    - No RAG and no generic features.
-6. Remote: `github.com/facurie/volcano-vigil`. It is private now and must be made public before submission.
+6. Remote: `github.com/facurie/Volcano_Vigil`. It is private now and must be made public before submission.
 
 ## Done in session 1 (2026-10-26)
 
@@ -308,7 +308,11 @@ Bulletins come once an hour, so the episode 55 replay first reported fountaining
 - [ ] **False-alarm test set:** backfill the Oct 16–17 overflow frames from AshCam (they expire around Nov 16). No alert may fire on them, nor on the episode 55 frames before 03:19 HST.
 - [ ] **The alert:** ES and EN text, the frame with its mask, the detection time, the disclaimer and the link to HVO.
   - It is stored in the database and shown as a banner on the dashboard, live and in replay, bounded by the clock.
-  - It is sent to a public Telegram channel. The user creates the bot and the channel, and the token is a Space secret.
+  - It is sent to a public Telegram channel.
+- [ ] **Telegram bot and channel**, set up together in the Phase 8 session:
+  - Claude guides the BotFather steps, which need the user's own Telegram account, and the creation of the public channel with the bot as its admin.
+  - The user puts the token into `.env` and the Space secrets.
+  - A check confirms the token and finds the channel's chat id without printing the token.
 - [ ] **Replay:** the episode 55 replay emits the alerts at their simulated times, and its report compares them with the onset (03:19), HVO's onset notice (03:43) and the end (09:03).
 - [ ] Deploy the alerts to the Space before Nov 2, when the episode 56 window opens.
 

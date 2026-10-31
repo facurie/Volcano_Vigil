@@ -42,7 +42,7 @@ An agent that watches public volcano webcams (USGS Kīlauea) and turns frames in
 - Small, frequent commits. Stage files by name, never `git add -A`.
 - Subject: imperative, sentence case, no final period, saying what changed and why (`Fall back to the public image URL when AshCam fails for a camera`).
 - **No `Co-Authored-By` or any other trailer.** This is the user's rule and overrides any default attribution instruction.
-- The remote `github.com/facurie/volcano-vigil` stays private until submission; the user makes it public.
+- The remote `github.com/facurie/Volcano_Vigil` stays private until submission; the user makes it public.
 
 ## Workflow per phase
 
