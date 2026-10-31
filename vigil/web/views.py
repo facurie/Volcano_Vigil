@@ -26,7 +26,7 @@ from PIL import Image
 
 from vigil import masks
 from vigil.agent import render
-from vigil.agent.bulletin import COLORS, Bulletin
+from vigil.agent.bulletin import COLORS, DISCLAIMER_EN, DISCLAIMER_ES, Bulletin
 from vigil.agent.tools import STALE_AFTER, calibrated
 from vigil.calibration import Calibration
 from vigil.config import Camera, Sources
@@ -241,7 +241,11 @@ def series(scene: Scene, camera_id: str, target: str, metric: str, since: dateti
 
 
 def _language(b: Bulletin, lang: render.Lang) -> dict[str, Any]:
-    headline, body, disclaimer = render.texts(b, lang)
+    headline, body, _ = render.texts(b, lang)
+    # The disclaimer is the code's, never the model's: shown as the code gives it now (bulletins written before
+    # the rename to Volcano Vigil name the project Vigía Andino).
+    disclaimer = (DISCLAIMER_EN if lang == "en" else DISCLAIMER_ES).format(
+        name=b.volcano_name, agency=b.official_agency, url=b.official_url)
     return {"headline": headline, "body": body, "disclaimer": disclaimer,
             "level": render.LEVELS[b.activity_level][0 if lang == "en" else 1],
             "when": render.local_time(b.clock, b.utc_offset_hours),

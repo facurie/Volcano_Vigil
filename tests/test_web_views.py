@@ -9,7 +9,7 @@ from test_agent_tools import SOURCES, T0, add_frame, add_measurement, add_run, a
 from test_metrics import kp_calibration
 from test_replay import bulletin_at, top
 from vigil.agent import render
-from vigil.agent.bulletin import Evidence
+from vigil.agent.bulletin import DISCLAIMER_EN, DISCLAIMER_ES, Evidence
 from vigil.episodes import EP55, HEIGHT_HEADER
 from vigil.ingest.store import FrameStore
 from vigil.timeutil import parse_utc, to_iso
@@ -190,6 +190,20 @@ def test_bulletins_written_by_the_clock_come_newest_first_in_both_languages(conn
     assert old["en"]["disclaimer"] == first.disclaimer_en and old["official_url"] == first.official_url
     assert old["wind"] is None and old["en"]["wind_text"] is None and old["verified"] is True
     assert len(views.bulletins(scene(conn, tmp_path), limit=1)) == 1
+
+
+def test_a_bulletin_shows_the_disclaimer_the_code_gives_now(conn, tmp_path):
+    stored = bulletin_at(conn, tmp_path, "2026-10-17T14:00:00Z")
+    old = stored.model_copy(update={"disclaimer_en": "Automated reading by Vigía Andino.",
+                                    "disclaimer_es": "Lectura automática de Vigía Andino."})
+    with conn:
+        conn.execute("UPDATE bulletins SET body = ? WHERE id = ?", (old.model_dump_json(), stored.id))
+
+    (shown,) = views.bulletins(scene(conn, tmp_path))
+
+    words = {"name": stored.volcano_name, "agency": stored.official_agency, "url": stored.official_url}
+    assert shown["en"]["disclaimer"] == DISCLAIMER_EN.format(**words)
+    assert shown["es"]["disclaimer"] == DISCLAIMER_ES.format(**words)
 
 
 def test_a_bulletins_evidence_keeps_its_overlay_path_and_captions(conn, tmp_path):
