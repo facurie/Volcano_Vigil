@@ -149,12 +149,14 @@ select { background: var(--well); border: 1px solid var(--rule-strong); border-r
 .b-body { padding: 0 var(--s4) var(--s4) calc(48px + var(--s3) + var(--s4)); }
 .b-body p { margin: 0 0 var(--s3); text-wrap: pretty; }
 .b-disclaimer { font-size: 12px; color: var(--ash); border-left: 2px solid var(--sulfur); padding-left: var(--s3); }
-/* The table is wider than the bulletin's text column: it takes the whole panel width, and scrolls if it must. */
-.b-table-wrap { margin-left: calc(-1 * (48px + var(--s3))); overflow-x: auto; }
 .b-table { width: 100%; border-collapse: collapse; margin: 0 0 var(--s3); font-size: 12px; }
 .b-table th { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--rule); font: 600 10.5px/1.2 var(--font-cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--tephra); }
 .b-table td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--ash); }
-.b-table td:nth-child(3) { font-family: var(--font-mono); color: var(--steam); }
+.b-rows { list-style: none; margin: 0 0 var(--s3); padding: 0; }
+.b-row { padding: 6px 0; border-bottom: 1px solid var(--rule); }
+.b-row-main { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); }
+.b-row-value { flex: none; font: 500 12.5px/1.4 var(--font-mono); color: var(--steam); text-align: right; white-space: nowrap; }
+.b-row-meta { font: 400 11.5px/1.4 var(--font-mono); color: var(--tephra); overflow-wrap: anywhere; }
 .b-wind { font-size: 13px; color: var(--ash); }
 .b-evidence { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2); margin: 0 0 var(--s3); }
 .b-evidence figure { margin: 0; }
@@ -162,7 +164,7 @@ select { background: var(--well); border: 1px solid var(--rule-strong); border-r
 .b-evidence figcaption { margin-top: 4px; font-size: 11.5px; color: var(--ash); }
 .b-check { font: 400 12px/1.4 var(--font-mono); color: var(--ash); }
 .b-source { font-size: 13px; }
-@media (max-width: 1180px) { .b-body { padding-left: var(--s4); } .b-table-wrap { margin-left: 0; } }
+@media (max-width: 1180px) { .b-body { padding-left: var(--s4); } }
 
 /* Agent trace. */
 .trace-head { display: grid; gap: var(--s1); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--rule); font: 400 12px/1.5 var(--font-mono); color: var(--ash); }

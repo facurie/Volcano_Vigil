@@ -5,6 +5,7 @@ import { el, fill } from "./dom.js";
 import * as lib from "./lib.js";
 
 const dollars = (cost) => `$${(cost ?? 0).toFixed(4)}`;
+const latency = (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
 const pretty = (value) => (typeof value === "string" ? value : JSON.stringify(value, null, 2));
 
 export function renderTrace(root, data, ctx) {
@@ -71,7 +72,7 @@ function toolStep(step) {
     ? Object.entries(args).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(", ")
     : (args === null || args === undefined ? "" : pretty(args));
   const meta = [step.ok === false ? el("span", { class: "failed" }, "✕ error") : "ok"];
-  if (step.latency_ms !== null && step.latency_ms !== undefined) meta.push(`${(step.latency_ms / 1000).toFixed(1)} s`);
+  if (step.latency_ms !== null && step.latency_ms !== undefined) meta.push(latency(step.latency_ms));
   meta.push(dollars(step.cost_usd));
   return el("div", {},
     el("div", { class: "step-call" }, el("span", { class: "fn" }, step.tool_name), `(${shown})`),
