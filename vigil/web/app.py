@@ -199,7 +199,7 @@ def create_app(settings: Settings | None = None, *, volcano: str = "kilauea",
     def media(path: str) -> FileResponse:
         target = media_file(settings.data_dir, path)
         if target is None:
-            raise HTTPException(404, "not a bulletin image")
+            raise HTTPException(404, "not a bulletin or alert image")
         return FileResponse(target)
 
     return app
