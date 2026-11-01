@@ -3,15 +3,19 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 import numpy as np
 import pytest
 from PIL import Image
 
+from test_agent_tools import context, store  # store: fixture
+from test_meta_client import FakeApi, make_client
 from vigil import db, masks
-from vigil.alerts import (CAPTION_MAX, NOTE_EN, NOTE_ES, Alert, AlertConfig, CameraRule, Sighting, alert_texts,
-                          best_sighting, caption, draw_alert_frame, duration_text, load_alert, load_alert_config,
-                          size_of, store_alert)
+from vigil.alerts import (CAPTION_MAX, LAVA_GLOW, NOTE_EN, NOTE_ES, Alert, AlertConfig, AlertWatcher, CameraRule,
+                          Sighting, alert_texts, best_sighting, caption, draw_alert_frame, duration_text, load_alert,
+                          load_alert_config, size_of, store_alert)
 from vigil.config import ConfigError, Volcano
+from vigil.meta.ledger import BudgetExceeded
 from vigil.meta.sam import SamObject
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -173,3 +177,179 @@ def test_an_end_frame_is_drawn_without_a_mask(tmp_path):
 
     with Image.open(tmp_path / overlay) as drawn:
         assert drawn.size == (640, 360)
+
+
+T0 = datetime(2026, 10, 17, 13, 0, tzinfo=timezone.utc)   # 03:00 HST: night at Kīlauea
+DAY = datetime(2026, 10, 17, 22, 0, tzinfo=timezone.utc)  # 12:00 HST
+M = timedelta(minutes=1)
+CONFIG = AlertConfig(cameras={"kilauea-v1": RULE, "kilauea-k2": RULE})
+SIZE = (384, 216)
+LARGE, AMBIGUOUS, SMALL = (200, 100), (100, 30), (40, 20)  # 0.24, 0.036 and 0.0096 of a 384x216 frame
+SUSTAINED = {"fountain_visible": True, "larger_than_before": True, "looks_like": "sustained_fountain",
+             "reason": "much larger"}
+OVERFLOW = {"fountain_visible": True, "larger_than_before": False, "looks_like": "overflow_or_dome",
+            "reason": "same as before"}
+
+
+def scene_jpeg(seed, lava=True):
+    """A frame with detail, dark enough never to look hot, and a block of lava's colour when `lava`."""
+    pixels = np.random.default_rng(seed).integers(0, 120, (SIZE[1], SIZE[0], 3), dtype=np.uint8)
+    if lava:
+        pixels[80:180, 120:260] = (255, 120, 20)
+    buffer = io.BytesIO()
+    Image.fromarray(pixels).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+class Fakes:
+    """SAM and Muse Spark for the watcher: SAM answers per frame id, Muse Spark with one answer."""
+
+    def __init__(self):
+        self.sam = {}           # frame id -> (width, height) of a full-box sighting; others show nothing
+        self.looked = []        # frame ids SAM looked at, in order
+        self.tags = []          # the tag of the client each look used
+        self.answer = SUSTAINED
+        self.asked = []         # minutes between the two frames of each Muse Spark comparison
+        self.raises = None      # an exception SAM raises
+
+    def segment(self, client, frame_id, jpeg):
+        if self.raises is not None:
+            raise self.raises
+        self.looked.append(frame_id)
+        self.tags.append(client.tag)
+        width, height = self.sam.get(frame_id, (0, 0))
+        return [obj(width, height)] if width else []
+
+    def compare(self, client, earlier, now, minutes):
+        self.asked.append(minutes)
+        return self.answer
+
+
+@pytest.fixture
+def fakes():
+    return Fakes()
+
+
+def add(store, camera_id, when, lava=True):
+    seed = int(when.timestamp()) // 60 * 10 + {"kilauea-v1": 1, "kilauea-k2": 2}[camera_id]
+    return store.add(camera_id, scene_jpeg(seed, lava), captured_at=when, timestamp_source="ashcam", fetched_at=when)
+
+
+def series(store, camera_id, start, first, last, every=2, lava=True):
+    """Frames every `every` minutes from `first` to `last` minutes after `start`: {minute: frame id}."""
+    return {minute: add(store, camera_id, start + minute * M, lava) for minute in range(first, last + 1, every)}
+
+
+def watcher(conn, tmp_path, fakes, config=CONFIG, now=T0):
+    client = make_client(FakeApi(lambda request: httpx.Response(500)), conn, budget=5.0)
+    return AlertWatcher(context(conn, tmp_path, client=client, now=now), "kilauea", config, tmp_path / "alerts",
+                        budget_usd=0.75, segment=fakes.segment, compare=fakes.compare)
+
+
+def run(w, start, first, last):
+    """Step the watcher every minute from `first` to `last` minutes after `start`; the reports."""
+    return [w.step(start + minute * M) for minute in range(first, last + 1)]
+
+
+V1_ONLY = AlertConfig(cameras={"kilauea-v1": RULE})
+
+
+def looked_minutes(frames, fakes):
+    by_id = {frame_id: minute for minute, frame_id in frames.items()}
+    return [by_id[frame_id] for frame_id in fakes.looked]
+
+
+def test_while_lava_is_visible_sam_looks_every_eight_minutes(conn, store, tmp_path, fakes):
+    frames = series(store, "kilauea-v1", T0, 0, 30)
+    fakes.sam = {frame_id: SMALL for frame_id in frames.values()}
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 30)
+
+    assert looked_minutes(frames, fakes) == [0, 8, 16, 24]
+    sizes = [row["size"] for row in conn.execute("SELECT size FROM alert_checks ORDER BY captured_at")]
+    assert sizes == ["small"] * 4
+
+
+def test_a_clear_day_with_no_lava_gets_a_look_every_half_hour(conn, store, tmp_path, fakes):
+    frames = series(store, "kilauea-v1", DAY, 0, 62, lava=False)
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY, now=DAY), DAY, 0, 62)
+
+    assert looked_minutes(frames, fakes) == [0, 30, 60]
+
+
+def test_a_dark_night_frame_is_never_sent_to_sam(conn, store, tmp_path, fakes):
+    series(store, "kilauea-v1", T0, 0, 40, lava=False)  # night, no glow: the local checks reject it
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 40)
+
+    assert fakes.looked == []
+
+
+def test_an_episode_size_sighting_gets_the_very_next_frame_looked_at(conn, store, tmp_path, fakes):
+    frames = series(store, "kilauea-v1", T0, 0, 12)
+    fakes.sam = {frames[8]: LARGE}
+    fakes.answer = OVERFLOW  # so no alert changes the cadence
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 12)
+
+    assert looked_minutes(frames, fakes)[:3] == [0, 8, 10]
+
+
+def test_a_step_never_sees_a_frame_captured_after_its_clock(conn, store, tmp_path, fakes):
+    frames = series(store, "kilauea-v1", T0, 0, 20)
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 7)
+
+    assert looked_minutes(frames, fakes) == [0]
+    assert conn.execute("SELECT MAX(captured_at) FROM alert_checks").fetchone()[0] <= "2026-10-17T13:07:00Z"
+
+
+def test_a_first_step_does_not_look_at_frames_older_than_ten_minutes(conn, store, tmp_path, fakes):
+    frames = series(store, "kilauea-v1", T0, -40, 0)
+
+    watcher(conn, tmp_path, fakes, V1_ONLY).step(T0)
+
+    assert looked_minutes(frames, fakes) == [-8, 0]  # frames from 10 minutes back only, then the 8-minute cadence
+
+
+def test_a_look_is_stored_with_its_box_mask_and_size_and_reported(conn, store, tmp_path, fakes):
+    frame_id = add(store, "kilauea-v1", T0)
+    fakes.sam = {frame_id: SMALL}
+
+    report = watcher(conn, tmp_path, fakes, V1_ONLY).step(T0)
+
+    row = conn.execute("SELECT * FROM alert_checks").fetchone()
+    assert (row["frame_id"], row["camera_id"], row["clock"], row["size"], row["episode"]) == (
+        frame_id, "kilauea-v1", "2026-10-17T13:00:00Z", "small", 0)
+    assert (row["box_left"], row["box_top"], row["box_right"], row["box_bottom"]) == (10, 10, 50, 30)
+    assert row["glow"] >= LAVA_GLOW and row["score"] == pytest.approx(0.8)
+    assert report.looks == [{"camera_id": "kilauea-v1", "frame_id": frame_id, "captured_at": "2026-10-17T13:00:00Z",
+                             "size": "small", "episode": False}]
+
+
+def test_the_alerts_spend_under_a_tag_of_the_simulated_utc_day(conn, store, tmp_path, fakes):
+    add(store, "kilauea-v1", T0)
+
+    watcher(conn, tmp_path, fakes, V1_ONLY).step(T0)
+
+    assert fakes.tags == ["alerts:2026-10-17"]
+
+
+def test_a_spent_budget_stops_the_step_and_says_so(conn, store, tmp_path, fakes):
+    add(store, "kilauea-v1", T0)
+    fakes.raises = BudgetExceeded("budget $0.75 of alerts:2026-10-17 would be exceeded")
+
+    report = watcher(conn, tmp_path, fakes, V1_ONLY).step(T0)
+
+    assert report.errors == ["alerts stopped: budget $0.75 of alerts:2026-10-17 would be exceeded"]
+
+
+def test_without_a_meta_client_nothing_is_looked_at(conn, store, tmp_path, fakes):
+    add(store, "kilauea-v1", T0)
+    w = AlertWatcher(context(conn, tmp_path, now=T0), "kilauea", V1_ONLY, tmp_path / "alerts", budget_usd=0.75,
+                     segment=fakes.segment, compare=fakes.compare)
+
+    report = w.step(T0)
+
+    assert fakes.looked == [] and report.errors == ["no Meta client: SAM cannot look for a fountain"]
