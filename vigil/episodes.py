@@ -8,7 +8,7 @@ docs/VALIDATION.md from these rows, and vigil.replay compares a replay with them
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -50,6 +50,7 @@ class Episode:
     phases: dict[str, tuple[datetime, datetime]]  # onset, peak, decline, end: earliest and latest official UTC time
     drift_deg: float          # the official drift direction (towards)
     drift_name: str           # how the official source names it
+    notices: dict[str, datetime] = field(default_factory=dict)  # HVO's onset and end notices (VAN), UTC
 
 
 EP55 = Episode(
@@ -81,8 +82,31 @@ EP55 = Episode(
     },
     drift_deg=225.0,  # "MOV: SW" (VONA 2026/67), winds from the NE below 20,000 ft
     drift_name="SW",
+    notices={"onset": parse_utc("2026-10-17T13:43:00Z"),  # VAN 2026/H488, 03:43 HST
+             "end": parse_utc("2026-10-17T19:11:00Z")},   # VAN 2026/H489, 09:11 HST
 )
 EPISODES = {EP55.key: EP55}
+
+
+@dataclass(frozen=True)
+class QuietWindow:
+    """Frames with no eruptive episode in them, to test the fountaining alerts on: any alert here is a false alarm."""
+    key: str
+    volcano: str
+    start: datetime
+    end: datetime
+    activity: str  # what the official record says was going on
+
+
+OVERFLOWS = QuietWindow(
+    key="overflows", volcano="kilauea",
+    start=parse_utc("2026-10-16T08:00:00Z"), end=parse_utc("2026-10-17T13:00:00Z"),
+    activity=("The 29 hours before episode 55 (22:00 HST Oct 15 to 03:00 HST Oct 17): overflows from the south vent "
+              "(continuous from 05:56 HST Oct 16), the north vent (intermittent from 18:11, continuous from 23:35) "
+              "and the west vent (from 22:49, continuous from 02:23), with small dome fountains; episode 55 began "
+              "at 03:19 HST (HVO Daily Update, Oct 17)."),
+)
+QUIET_WINDOWS = {OVERFLOWS.key: OVERFLOWS}
 
 
 def local_time(utc: str, tz: timezone, seconds: bool = False) -> str:

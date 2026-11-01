@@ -1,8 +1,8 @@
 import pytest
 
 from test_agent_tools import add_frame, add_measurement, add_run, add_track, detection_ids, store  # store: fixture
-from vigil.episodes import EP55, EPISODES, drift_rows, end_rows, height_row, local_time, table
-from vigil.timeutil import parse_utc
+from vigil.episodes import EP55, EPISODES, QUIET_WINDOWS, drift_rows, end_rows, height_row, local_time, table
+from vigil.timeutil import parse_utc, to_iso
 
 
 def measured(conn, store, camera_id, minutes, target, metric, value, sigma, unit="m"):
@@ -67,3 +67,15 @@ def test_drift_rows_count_the_frames_on_each_side(conn, store):
 
 def test_table_writes_a_markdown_table():
     assert table(["A", "B"], [["1", "2"]]) == "| A | B |\n|---|---|\n| 1 | 2 |"
+
+
+def test_episode_55_knows_hvos_onset_and_end_notices():
+    assert to_iso(EP55.notices["onset"]) == "2026-10-17T13:43:00Z"  # VAN 2026/H488, 03:43 HST
+    assert to_iso(EP55.notices["end"]) == "2026-10-17T19:11:00Z"    # VAN 2026/H489, 09:11 HST
+
+
+def test_the_overflow_window_ends_where_episode_55s_frames_start():
+    window = QUIET_WINDOWS["overflows"]
+
+    assert (to_iso(window.start), to_iso(window.end)) == ("2026-10-16T08:00:00Z", "2026-10-17T13:00:00Z")
+    assert window.end == EP55.start and window.volcano == "kilauea"

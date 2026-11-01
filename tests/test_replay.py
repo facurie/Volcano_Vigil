@@ -4,17 +4,22 @@ from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 
 from test_agent_tools import T0, context, frame_jpeg
+from test_alerts import LARGE, SMALL, V1_ONLY, Fakes, make_alert, scene_jpeg
 from test_bulletin import DRAFT
+from test_meta_client import FakeApi, make_client
+from vigil.alerts import AlertWatcher, store_alert
 from vigil import db, replay
 from vigil.agent.bulletin import BulletinDraft, CitedMeasurement, build_bulletin, store_bulletin
-from vigil.episodes import EP55
+from vigil.episodes import EP55, QUIET_WINDOWS
 from vigil.ingest.store import FrameStore
 from vigil.phases import PHASES
 from vigil.pipeline import StepReport
-from vigil.replay import OffGridError, activity_rows, bulletin_rows, feed, main, replay_dir, run_replay, ticks
+from vigil.replay import (ALERT_HEADER, OffGridError, activity_rows, alert_rows, bulletin_rows, feed, main,
+                          quiet_report, replay_alerts, replay_dir, run_replay, ticks)
 from vigil.timeutil import parse_utc, to_iso
 
 M = timedelta(minutes=1)
@@ -279,3 +284,105 @@ def test_cli_turns_a_replay_on_another_grid_into_a_usage_error(cli_env, capsys):
 
 def test_an_episodes_replay_lives_in_its_own_folder_of_the_data_dir():
     assert replay_dir(Path("data"), EP55) == Path("data") / "replay" / "ep55"
+
+
+def alert_source(tmp_path):
+    """A source database with V1 frames every 2 min from 40 min before T0 to 30 min after it."""
+    source = db.connect(tmp_path / "source.sqlite")
+    store = FrameStore(source, tmp_path)
+    ids = {}
+    for minute in range(-40, 31, 2):
+        when = T0 + minute * M
+        ids[minute] = store.add("kilauea-v1", scene_jpeg(minute + 1000), captured_at=when,
+                                timestamp_source="ashcam", fetched_at=when)
+    return source, ids
+
+
+def alert_watcher(conn, tmp_path, fakes):
+    client = make_client(FakeApi(lambda request: httpx.Response(500)), conn, budget=5.0)
+    return AlertWatcher(context(conn, tmp_path, client=client, now=T0), "kilauea", V1_ONLY, tmp_path / "alerts",
+                        budget_usd=0.75, segment=fakes.segment, compare=fakes.compare)
+
+
+def test_the_alerts_replay_on_a_one_minute_clock_and_never_see_past_it(conn, tmp_path):
+    source, ids = alert_source(tmp_path)
+    fakes = Fakes()
+    fakes.sam = {frame_id: (LARGE if minute >= 6 else SMALL) for minute, frame_id in ids.items()}
+
+    replay_alerts(source, alert_watcher(conn, tmp_path, fakes), T0, T0 + 20 * M)
+
+    clocks = [row[0] for row in conn.execute("SELECT clock FROM alert_ticks ORDER BY clock")]
+    assert clocks == [to_iso(T0 + minute * M) for minute in range(1, 21)]
+    first_fed = conn.execute("SELECT MIN(captured_at) FROM frames").fetchone()[0]
+    assert first_fed == to_iso(T0 - 30 * M)  # the warm-up, for Muse Spark's comparison
+    assert conn.execute("SELECT COUNT(*) FROM alert_checks WHERE captured_at > clock").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM alerts WHERE captured_at > clock").fetchone()[0] == 0
+    assert [row[0] for row in conn.execute("SELECT kind FROM alerts")] == ["onset"]
+
+
+def test_an_interrupted_alerts_replay_resumes_after_its_last_tick(conn, tmp_path):
+    source, _ = alert_source(tmp_path)
+    with conn:
+        conn.execute("INSERT INTO alert_ticks (clock, report) VALUES (?, '{}')", (to_iso(T0 + M),))
+
+    ran = replay_alerts(source, alert_watcher(conn, tmp_path, Fakes()), T0, T0 + 3 * M)
+
+    assert ran == 2
+
+    assert conn.execute("SELECT COUNT(*) FROM alert_ticks").fetchone()[0] == 3
+
+
+def test_alert_rows_set_the_alerts_against_hvos_times_and_notices(conn):
+    store_alert(conn, make_alert("onset", clock="2026-10-17T13:10:00Z", captured_at="2026-10-17T13:09:02Z",
+                                 seen_at="2026-10-17T13:07:02Z", seen_by="V1cam"))
+    store_alert(conn, make_alert("end", clock="2026-10-17T19:09:00Z", captured_at="2026-10-17T19:08:02Z",
+                                 seen_at="2026-10-17T19:02:01Z", seen_by="K2cam"))
+
+    rows = alert_rows(conn, EP55)
+
+    assert ALERT_HEADER == ["Event", "Seen (local)", "Camera", "Official (local)", "Seen vs official",
+                            "Alert (local)", "Alert vs official", "HVO notice (local)", "Alert vs notice"]
+    assert rows == [["fountaining started", "03:07", "V1cam", "03:19", "-12 min", "03:10", "-9 min", "03:43", "-33 min"],
+                    ["fountaining stopped", "09:02", "K2cam", "09:03", "-1 min", "09:09", "+6 min", "09:11", "-2 min"]]
+
+
+def test_alert_rows_without_alerts_say_none(conn):
+    rows = alert_rows(conn, EP55)
+
+    assert [row[:2] for row in rows] == [["fountaining started", "none"], ["fountaining stopped", "none"]]
+
+
+def test_cli_knows_the_quiet_windows(capsys):
+    with pytest.raises(SystemExit):
+        main(["--quiet", "nowhere"])
+
+    assert "overflows" in capsys.readouterr().err
+
+
+def test_the_alerts_replay_over_a_database_that_already_holds_the_frames_adds_none(conn, tmp_path):
+    source, _ = alert_source(tmp_path)
+    feed(source, conn, V1_ONLY.cameras, T0 - 30 * M, T0 + 3 * M)  # as the pipeline replay left them, same ids
+    before = conn.execute("SELECT id, sha256 FROM frames ORDER BY id").fetchall()
+
+    replay_alerts(source, alert_watcher(conn, tmp_path, Fakes()), T0, T0 + 3 * M)
+
+    assert [tuple(row) for row in conn.execute("SELECT id, sha256 FROM frames ORDER BY id")] == [tuple(r) for r in before]
+    assert conn.execute("SELECT COUNT(*) FROM alert_ticks").fetchone()[0] == 3
+
+
+def test_cli_refuses_a_quiet_window_with_no_stored_frames_and_leaves_no_replay_database(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--quiet", "overflows"])
+
+    assert "has no frames of the overflows window" in capsys.readouterr().err
+    assert not (cli_env / "replay").exists()
+
+
+def test_a_quiet_window_report_counts_the_alerts_as_false_alarms(conn):
+    window = QUIET_WINDOWS["overflows"]
+    assert "**Alerts raised: 0** (expected none)." in quiet_report(conn, window)
+
+    store_alert(conn, make_alert("onset", clock="2026-10-17T01:00:00Z", captured_at="2026-10-17T00:59:00Z"))
+
+    report = quiet_report(conn, window)
+    assert "**Alerts raised: 1** (expected none)." in report and "| onset | 2026-10-17T01:00:00Z |" in report

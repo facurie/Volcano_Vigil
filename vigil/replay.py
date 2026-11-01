@@ -3,8 +3,9 @@
 The replay has its own database, data/replay/ep<key>/vigil.sqlite. Every `step` of simulated time it copies
 into it the episode's frames captured by then, as live ingest would have, and runs one pipeline step at that
 time (vigil.pipeline): quality verdicts, one SAM window per camera per closed hour with its measurements, and
-the agent's bulletin at every full hour and once more at the end. Nothing captured after the simulated clock
-exists for any of them. Each step's report goes to replay_ticks, so an interrupted replay resumes where it
+the agent's bulletin at every full hour and once more at the end. Then the fountaining alerts (vigil.alerts) run
+over the same frames on their own one-minute clock. Nothing captured after the simulated clock exists for any of
+them. Each step's report goes to replay_ticks, so an interrupted replay resumes where it
 stopped. With --speed S the simulated clock runs at most S times faster than the wall clock (it cannot run
 faster than tracking does).
 
@@ -13,6 +14,7 @@ episode's phases as SAM's tracks and Muse Spark's reading of the timelapse give 
 report.md next to the database. Its Meta spend goes to that database's ledger.
 
     vigil-replay --episode 55 --speed 60
+    vigil-replay --quiet overflows    # only the alerts, over frames with no episode: they must stay silent
 """
 
 from __future__ import annotations
@@ -37,10 +39,11 @@ import openai
 
 from vigil import db
 from vigil.agent.bulletin import Bulletin
+from vigil.alerts import Alert, AlertWatcher, load_alert_config
 from vigil.agent.loop import context_from_settings
 from vigil.agent.tools import ToolContext, ToolError
-from vigil.episodes import (DRIFT_HEADER, END_HEADER, EPISODES, HEIGHT_HEADER, Episode, drift_rows, end_rows,
-                            height_row, local_time, table)
+from vigil.episodes import (DRIFT_HEADER, END_HEADER, EPISODES, HEIGHT_HEADER, QUIET_WINDOWS, Episode, QuietWindow,
+                            drift_rows, end_rows, height_row, local_time, table)
 from vigil.meta.client import MetaClient
 from vigil.meta.ledger import BudgetExceeded, CostLedger
 from vigil.phases import HEADER as PHASES_HEADER, ask_phases, cross_check
@@ -55,6 +58,10 @@ FRAME_COLUMNS = ("id", "camera_id", "captured_at", "timestamp_source", "fetched_
                  "width", "height")
 BULLETIN_HEADER = ["Quantity", "Official", "Bulletin (local)", "It quoted", "Error", "Checked"]
 ACTIVITY_HEADER = ["Event", "Bulletins (local)", "Official (local)", "Difference"]
+ALERT_STEP = timedelta(minutes=1)
+WARMUP = timedelta(minutes=30)  # frames fed before the window, for Muse Spark's comparisons
+ALERT_HEADER = ["Event", "Seen (local)", "Camera", "Official (local)", "Seen vs official", "Alert (local)",
+                "Alert vs official", "HVO notice (local)", "Alert vs notice"]
 
 
 class OffGridError(ValueError):
@@ -94,9 +101,33 @@ def feed(source: sqlite3.Connection, conn: sqlite3.Connection, cameras: tuple[st
     return {camera: count for camera, count in new.items() if count}
 
 
+def replay_alerts(source: sqlite3.Connection, watcher: AlertWatcher, start: datetime, end: datetime, *,
+                  step: timedelta = ALERT_STEP) -> int:
+    """Run the fountaining alerts from start to end on a simulated clock: every `step` copy the alert cameras' frames
+    captured by then (from WARMUP before the start) into the watcher's database and run one watcher step. Each step's
+    report goes to alert_ticks, so an interrupted run resumes; returns the steps run."""
+    conn = watcher.base.conn
+    done = {row[0] for row in conn.execute("SELECT clock FROM alert_ticks")}
+    fed, ran = start - WARMUP, 0
+    for tick in ticks(start, end, step):
+        if to_iso(tick) in done:
+            continue
+        feed(source, conn, watcher.cameras, fed, tick)
+        fed = tick
+        report = watcher.step(tick)
+        with conn:
+            conn.execute("INSERT INTO alert_ticks (clock, report) VALUES (?, ?)",
+                         (to_iso(tick), json.dumps(report.as_json())))
+        ran += 1
+        if report.alerts or report.errors:
+            log.info("%s", report.summary())
+    return ran
+
+
 def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, out_dir: Path, *,
                step: timedelta = STEP, agent_every: timedelta | None = AGENT_EVERY, speed: float = 0.0,
-               spark_video: bool = True, pipeline: Pipeline | None = None, sleep: Callable[[float], None] = time.sleep,
+               spark_video: bool = True, pipeline: Pipeline | None = None, alerts: AlertWatcher | None = None,
+               sleep: Callable[[float], None] = time.sleep,
                monotonic: Callable[[], float] = time.monotonic) -> dict[str, Any]:
     """Replay the episode into base.conn, the replay's own database, and write timeline.json and report.md to
     out_dir (inside the data dir); returns the timeline. Raises OffGridError if the database holds steps from
@@ -130,6 +161,8 @@ def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, 
             conn.execute("INSERT INTO replay_ticks (clock, report) VALUES (?, ?)",
                          (to_iso(tick), json.dumps({**report.as_json(), "new_frames": new})))
         log.info("%s", report.summary())
+    if alerts is not None:
+        replay_alerts(source, alerts, episode.start, episode.end)
     spark = _spark_phases(base, episode, out_dir) if spark_video else None
     timeline = build_timeline(conn, episode, step, agent_every, cross_check(conn, episode, spark))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -207,6 +240,51 @@ def activity_rows(conn: sqlite3.Connection, episode: Episode) -> list[list[str]]
     return rows
 
 
+def _minutes(later: str, earlier: datetime) -> str:
+    return f"{(parse_utc(later) - earlier) / timedelta(minutes=1):+.0f} min"
+
+
+def alert_rows(conn: sqlite3.Connection, episode: Episode) -> list[list[str]]:
+    """The first onset and end alerts of the episode against the official times and HVO's notices."""
+    rows = []
+    for kind, event in (("onset", "fountaining started"), ("end", "fountaining stopped")):
+        official, notice = episode.phases[kind][0], episode.notices[kind]
+        official_text = local_time(to_iso(official), episode.local)
+        notice_text = local_time(to_iso(notice), episode.local)
+        row = conn.execute("SELECT body FROM alerts WHERE volcano = ? AND kind = ? AND clock >= ? "
+                           "ORDER BY clock, id LIMIT 1", (episode.volcano, kind, to_iso(episode.start))).fetchone()
+        if row is None:
+            rows.append([event, "none", "", official_text, "", "", "", notice_text, ""])
+            continue
+        alert = Alert.model_validate_json(row["body"])
+        rows.append([event, local_time(alert.seen_at, episode.local), alert.seen_by, official_text,
+                     _minutes(alert.seen_at, official), local_time(alert.clock, episode.local),
+                     _minutes(alert.clock, official), notice_text, _minutes(alert.clock, notice)])
+    return rows
+
+
+def alert_looks(conn: sqlite3.Connection) -> str:
+    """One line on what the alerts looked at: SAM's looks by size and Muse Spark's comparisons."""
+    sizes = dict(conn.execute("SELECT size, COUNT(*) FROM alert_checks GROUP BY size").fetchall())
+    asked = conn.execute("SELECT COUNT(*) FROM alert_checks WHERE spark IS NOT NULL").fetchone()[0]
+    parts = ", ".join(f"{size} {sizes.get(size, 0)}" for size in ("none", "small", "ambiguous", "large"))
+    return f"{sum(sizes.values())} SAM looks ({parts}); Muse Spark compared {asked} frames"
+
+
+def quiet_report(conn: sqlite3.Connection, window: QuietWindow) -> str:
+    """report.md of a quiet window: every alert here is a false alarm."""
+    alerts = [Alert.model_validate_json(row[0]) for row in conn.execute("SELECT body FROM alerts ORDER BY clock")]
+    cost = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM api_calls").fetchone()[0]
+    lines = [f"# Fountaining alerts over the {window.key} frames", "", window.activity, "",
+             f"From {to_iso(window.start)} to {to_iso(window.end)} on a one-minute clock. {alert_looks(conn)}. "
+             f"Meta API cost: ${cost:.2f}.", "",
+             f"**Alerts raised: {len(alerts)}** (expected none).", ""]
+    if alerts:
+        lines += [table(["Kind", "Clock (UTC)", "Camera", "Frame (UTC)"],
+                        [[a.kind, a.clock, a.camera_name, a.captured_at] for a in alerts]), ""]
+    return "\n".join(lines)
+
+
 def build_timeline(conn: sqlite3.Connection, episode: Episode, step: timedelta, agent_every: timedelta | None,
                    phases: dict[str, Any] | None = None) -> dict[str, Any]:
     """Everything the replay produced, as one JSON-ready dict (the dashboard's replay player reads it)."""
@@ -219,10 +297,14 @@ def build_timeline(conn: sqlite3.Connection, episode: Episode, step: timedelta, 
         "bulletins": [json.loads(row[0]) for row in conn.execute(
             "SELECT body FROM bulletins WHERE volcano = ? ORDER BY clock, id", (episode.volcano,))],
         "phases": phases,
+        "alerts": [json.loads(row[0]) for row in conn.execute(
+            "SELECT body FROM alerts WHERE volcano = ? ORDER BY clock, id", (episode.volcano,))],
+        "alert_looks": alert_looks(conn),
         "comparison": {
             "heights": [height_row(conn, check, episode.local) for check in episode.checks],
             "ends": end_rows(conn, episode), "drift": drift_rows(conn, episode),
-            "bulletins": bulletin_rows(conn, episode), "activity": activity_rows(conn, episode)},
+            "bulletins": bulletin_rows(conn, episode), "activity": activity_rows(conn, episode),
+            "alerts": alert_rows(conn, episode)},
         "cost_usd": round(conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM api_calls").fetchone()[0], 4),
     }
 
@@ -251,6 +333,10 @@ def report_markdown(timeline: dict[str, Any], episode: Episode) -> str:
         "## What the bulletins quoted against the official values", "",
         table(BULLETIN_HEADER, comparison["bulletins"]), "",
         "## Activity against the official times", "", table(ACTIVITY_HEADER, comparison["activity"]), "",
+        "## Fountaining alerts", "",
+        "The alerts' watcher replayed on a one-minute clock (vigil.alerts): when it first saw the fountain at "
+        "episode size and when it last saw it, and when it raised each alert.", "",
+        table(ALERT_HEADER, comparison["alerts"]), "", f"{timeline['alert_looks']}.", "",
         "## The replay's measurements against the official values", "",
         table(HEIGHT_HEADER, comparison["heights"]), "",
         "## End of fountaining", "", table(END_HEADER, comparison["ends"]), "",
@@ -264,11 +350,33 @@ def report_markdown(timeline: dict[str, Any], episode: Episode) -> str:
     return "\n".join(sections)
 
 
+def _quiet_main(parser: argparse.ArgumentParser, settings: Settings, window: QuietWindow) -> None:
+    """vigil-replay --quiet: the alerts alone over a window with no episode, and report.md saying how many fired."""
+    config = load_alert_config(settings.alerts_path)
+    out_dir = settings.data_dir / "replay" / window.key
+    with closing(db.connect(settings.db_path)) as source:
+        marks = ",".join("?" * len(config.cameras))
+        stored = source.execute(f"SELECT COUNT(*) FROM frames WHERE camera_id IN ({marks}) AND captured_at "
+                                "BETWEEN ? AND ?", (*config.cameras, to_iso(window.start), to_iso(window.end)))
+        if not stored.fetchone()[0]:
+            parser.error(f"{settings.db_path} has no frames of the {window.key} window; backfill them")
+        with closing(db.connect(out_dir / "vigil.sqlite")) as conn,                 httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+            client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+            watcher = AlertWatcher(context_from_settings(settings, conn, http, window.start, client),
+                                   window.volcano, config, out_dir / "alerts", budget_usd=settings.alert_reserve_usd)
+            replay_alerts(source, watcher, window.start, window.end)
+            (out_dir / "report.md").write_text(quiet_report(conn, window), encoding="utf-8")
+    print((out_dir / "report.md").read_text(encoding="utf-8"))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Replay a past episode through the pipeline on a simulated clock "
                                                  "(quality, hourly SAM tracking and measuring, the agent's "
                                                  "bulletins) and compare it with the official values.")
-    parser.add_argument("--episode", required=True, choices=sorted(EPISODES), help="which episode")
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--episode", choices=sorted(EPISODES), help="which episode")
+    target.add_argument("--quiet", choices=sorted(QUIET_WINDOWS),
+                        help="a window with no episode: run only the fountaining alerts, which must stay silent")
     parser.add_argument("--speed", type=float, default=0,
                         help="at most this many simulated seconds per wall second, e.g. 60 (default 0: no limit)")
     parser.add_argument("--step", type=float, default=STEP / timedelta(minutes=1),
@@ -277,15 +385,19 @@ def main(argv: list[str] | None = None) -> None:
                         help="simulated minutes between bulletins (default 60)")
     parser.add_argument("--no-video", action="store_true", help="do not ask Muse Spark to read the timelapse")
     parser.add_argument("--no-agent", action="store_true", help="no agent runs and no bulletins")
+    parser.add_argument("--no-alerts", action="store_true", help="do not run the fountaining alerts over the episode")
     args = parser.parse_args(argv)
     if args.step <= 0 or args.agent_every <= 0 or args.speed < 0:
         parser.error("--step and --agent-every must be positive and --speed not negative")
-    episode = EPISODES[args.episode]
     settings = Settings.from_env()
-    out_dir = replay_dir(settings.data_dir, episode)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.quiet:
+        _quiet_main(parser, settings, QUIET_WINDOWS[args.quiet])
+        return
+    episode = EPISODES[args.episode]
+    out_dir = replay_dir(settings.data_dir, episode)
     with closing(db.connect(settings.db_path)) as source:
         marks = ",".join("?" * len(episode.cameras))
         stored = source.execute(f"SELECT COUNT(*) FROM frames WHERE camera_id IN ({marks}) AND captured_at "
@@ -295,10 +407,13 @@ def main(argv: list[str] | None = None) -> None:
         with closing(db.connect(out_dir / "vigil.sqlite")) as conn, \
                 httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
             client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+            base = context_from_settings(settings, conn, http, episode.start, client)
+            watcher = None if args.no_alerts else AlertWatcher(
+                base, episode.volcano, load_alert_config(settings.alerts_path), out_dir / "alerts",
+                budget_usd=settings.alert_reserve_usd)
             try:
-                run_replay(source, context_from_settings(settings, conn, http, episode.start, client), episode,
-                           out_dir, step=timedelta(minutes=args.step), speed=args.speed,
-                           spark_video=not args.no_video,
+                run_replay(source, base, episode, out_dir, step=timedelta(minutes=args.step), speed=args.speed,
+                           spark_video=not args.no_video, alerts=watcher,
                            agent_every=None if args.no_agent else timedelta(minutes=args.agent_every))
             except OffGridError as exc:
                 parser.error(str(exc))
