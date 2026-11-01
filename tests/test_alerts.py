@@ -353,3 +353,140 @@ def test_without_a_meta_client_nothing_is_looked_at(conn, store, tmp_path, fakes
     report = w.step(T0)
 
     assert fakes.looked == [] and report.errors == ["no Meta client: SAM cannot look for a fountain"]
+
+
+def episode(conn, store, tmp_path, fakes, *, large_from, none_from=None, k2=None, config=V1_ONLY, last=None):
+    """V1 frames every 2 min from -40 to `last` minutes; SAM sees an episode-size fountain from `large_from` and
+    nothing from `none_from`; K2 sightings per minute from `k2` ({minute: size or None}). The frames by camera."""
+    last = last if last is not None else (none_from + 10 if none_from is not None else large_from + 10)
+    v1 = series(store, "kilauea-v1", T0, -40, last)
+    for minute, frame_id in v1.items():
+        if minute >= large_from and (none_from is None or minute < none_from):
+            fakes.sam[frame_id] = LARGE
+        elif minute < large_from:
+            fakes.sam[frame_id] = SMALL
+    frames = {"kilauea-v1": v1}
+    if k2 is not None:
+        frames["kilauea-k2"] = series(store, "kilauea-k2", T0, -40, last)
+        for minute, size in k2.items():
+            if size is not None:
+                fakes.sam[frames["kilauea-k2"][minute]] = size
+    w = watcher(conn, tmp_path, fakes, config)
+    run(w, T0, 0, last)
+    return frames
+
+
+def alerts_of(conn):
+    return conn.execute("SELECT kind, camera_id, captured_at, seen_at, clock FROM alerts ORDER BY clock").fetchall()
+
+
+def test_two_consecutive_episode_size_sightings_confirmed_by_muse_spark_raise_the_onset(conn, store, tmp_path, fakes):
+    frames = episode(conn, store, tmp_path, fakes, large_from=6)
+
+    # looks at 0 (small), 8 (large), the next frame 10 (large): Muse Spark compares 10 with the frame 30 min before
+    assert [tuple(row) for row in alerts_of(conn)] == [
+        ("onset", "kilauea-v1", "2026-10-17T13:10:00Z", "2026-10-17T13:08:00Z", "2026-10-17T13:10:00Z")]
+    assert fakes.asked == [30]
+    alert = load_alert(conn, 1)
+    assert alert.seen_by == "kilauea-v1" and (tmp_path / alert.overlay).is_file()
+    assert alert.disclaimer_en.startswith("Automated, experimental reading") and "usgs.gov" in alert.disclaimer_en
+
+
+def test_overflow_size_sightings_all_night_raise_nothing_and_never_ask_muse_spark(conn, store, tmp_path, fakes):
+    frames = series(store, "kilauea-v1", T0, -40, 120)
+    fakes.sam = {frame_id: SMALL for frame_id in frames.values()}
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 120)
+
+    assert alerts_of(conn) == [] and fakes.asked == []
+
+
+def test_muse_spark_saying_overflow_holds_the_onset_back(conn, store, tmp_path, fakes):
+    fakes.answer = OVERFLOW
+
+    episode(conn, store, tmp_path, fakes, large_from=6)
+
+    assert alerts_of(conn) == []
+    assert conn.execute("SELECT episode FROM alert_checks WHERE spark IS NOT NULL").fetchone()["episode"] == 0
+
+
+def test_an_ambiguous_size_is_settled_by_muse_spark_and_counts_toward_the_onset(conn, store, tmp_path, fakes):
+    v1 = series(store, "kilauea-v1", T0, -40, 12)
+    fakes.sam = {v1[0]: SMALL, v1[8]: AMBIGUOUS, v1[10]: LARGE}
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 12)
+
+    assert fakes.asked == [30]  # once for the ambiguous look; it already confirmed the pair
+    assert [row["kind"] for row in alerts_of(conn)] == ["onset"]
+
+
+def test_one_episode_size_sighting_alone_raises_nothing(conn, store, tmp_path, fakes):
+    v1 = series(store, "kilauea-v1", T0, -40, 20)
+    fakes.sam = {v1[8]: LARGE}  # the next frame shows nothing
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 20)
+
+    assert alerts_of(conn) == [] and fakes.asked == []
+
+
+def test_two_misses_in_a_row_on_the_camera_that_saw_it_end_the_episode(conn, store, tmp_path, fakes):
+    episode(conn, store, tmp_path, fakes, large_from=6, none_from=34, last=44)
+
+    # onset at 10; looks every 6 min: 16, 22, 28 (sightings), 34 (miss), then the next frame 36 (miss)
+    rows = [tuple(row) for row in alerts_of(conn)]
+    assert rows[1] == ("end", "kilauea-v1", "2026-10-17T13:36:00Z", "2026-10-17T13:28:00Z", "2026-10-17T13:36:00Z")
+    end = load_alert(conn, 2)
+    # the test volcano has no UTC offset, so "local time" is UTC here
+    assert "since 13:28 local time" in end.text_en and "It had lasted 20 min" in end.text_en
+
+
+def test_a_single_miss_during_the_episode_does_not_end_it(conn, store, tmp_path, fakes):
+    v1 = series(store, "kilauea-v1", T0, -40, 40)
+    fakes.sam = {frame_id: (LARGE if minute >= 6 else SMALL) for minute, frame_id in v1.items()}
+    fakes.sam[v1[22]] = (0, 0)
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 40)
+
+    assert [row["kind"] for row in alerts_of(conn)] == ["onset"]
+    assert looked_minutes(v1, fakes)[4:7] == [16, 22, 24]  # the miss gets the next frame looked at at once
+
+
+def test_a_camera_that_still_sees_the_fountain_holds_the_end_back(conn, store, tmp_path, fakes):
+    k2 = {minute: LARGE for minute in range(0, 61, 2)}  # K2 keeps seeing it all along
+
+    episode(conn, store, tmp_path, fakes, large_from=6, none_from=34, k2=k2, config=CONFIG, last=60)
+
+    assert [row["kind"] for row in alerts_of(conn)] == ["onset"]
+
+
+def test_a_camera_that_never_saw_the_fountain_cannot_end_it(conn, store, tmp_path, fakes):
+    k2 = {minute: None for minute in range(-40, 41, 2)}  # K2 sees nothing all along (night saturation)
+
+    episode(conn, store, tmp_path, fakes, large_from=6, k2=k2, config=CONFIG, last=40)
+
+    assert [row["kind"] for row in alerts_of(conn)] == ["onset"]
+
+
+def test_a_camera_that_has_gone_blind_does_not_hold_the_end_back(conn, store, tmp_path, fakes):
+    # K2 sees the fountain until minute 20, then its frames stop (fog rejects them, or the camera is down); V1 sees
+    # it from 6 to 48 and nothing from 50
+    v1 = series(store, "kilauea-v1", T0, -40, 70)
+    k2 = series(store, "kilauea-k2", T0, -40, 20)
+    fakes.sam = {**{frame_id: (LARGE if m >= 6 else SMALL) for m, frame_id in v1.items() if m < 50},
+                 **{frame_id: LARGE for m, frame_id in k2.items() if m >= 0}}
+
+    run(watcher(conn, tmp_path, fakes, CONFIG), T0, 0, 70)
+
+    kinds = [row["kind"] for row in alerts_of(conn)]
+    assert kinds == ["onset", "end"]
+    end = conn.execute("SELECT * FROM alerts WHERE kind = 'end'").fetchone()
+    assert end["camera_id"] == "kilauea-v1" and end["seen_at"] >= "2026-10-17T13:40:00Z"
+
+
+def test_the_alerts_state_survives_a_new_watcher(conn, store, tmp_path, fakes):
+    episode(conn, store, tmp_path, fakes, large_from=6, last=12)
+
+    fresh = watcher(conn, tmp_path, fakes, V1_ONLY)
+
+    assert fresh.state(T0 + 12 * M)[0] == "fountaining"
+    assert fresh.state(T0 + 9 * M)[0] == "quiet"  # bounded by the clock: the onset was raised at 13:10

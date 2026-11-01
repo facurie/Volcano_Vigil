@@ -40,7 +40,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from vigil import masks
-from vigil.agent.bulletin import COLORS, OVERLAY_WIDTH
+from vigil.agent.bulletin import COLORS, DISCLAIMER_EN, DISCLAIMER_ES, OVERLAY_WIDTH
 from vigil.agent.tools import ToolContext
 from vigil.config import Camera, ConfigError, Volcano
 from vigil.imaging import load_for_upload
@@ -265,6 +265,47 @@ def sam_segment(client: MetaClient, frame_id: int, jpeg: bytes) -> list[SamObjec
     return client.segment_image(jpeg, PHRASE, purpose="segment")
 
 
+PAIR_WITHIN = timedelta(minutes=10)   # two sightings this close are consecutive
+COMPARE_AGO = timedelta(minutes=30)   # Muse Spark compares a frame with the camera's frame this much earlier
+COMPARE_SPAN = timedelta(hours=2)     # ... found within this span; after a gap, with the oldest frame in it
+BLIND_AFTER = timedelta(minutes=20)   # a camera that has not looked for this long cannot hold the end back
+
+COMPARE_PROMPT = (
+    "These two frames come from the same USGS webcam at the summit of Kilauea, {minutes} minutes apart: the first "
+    "is the earlier one, the second is now. Between eruptive episodes, lava overflows the vents and can form low "
+    "dome fountains and lava cascades a few metres high. An episode begins when a lava fountain at a vent becomes "
+    "sustained and grows much taller and wider than those overflows. Report only what you can see. Is there a lava "
+    "fountain in the second frame, and is it clearly taller and wider than anything in the first frame?"
+)
+COMPARE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "fountain_visible": {"type": "boolean"},
+        "larger_than_before": {"type": "boolean"},
+        "looks_like": {"type": "string",
+                       "enum": ["no_fountain", "overflow_or_dome", "sustained_fountain", "unclear"]},
+        "reason": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
+COMPARE_SCHEMA["required"] = list(COMPARE_SCHEMA["properties"])
+
+
+def spark_compare(client: MetaClient, earlier: bytes, now: bytes, minutes: int) -> dict[str, Any]:
+    """Muse Spark's comparison of two frames of one camera (validated on 4 pairs, docs/research/alerts_calibration.md)."""
+    return client.ask_json(prompt=COMPARE_PROMPT.format(minutes=minutes), images=[earlier, now],
+                           schema_name="fountain_check", schema=COMPARE_SCHEMA, purpose="compare")
+
+
+def sustained(answer: dict[str, Any]) -> bool:
+    return answer.get("looks_like") == "sustained_fountain" and bool(answer.get("larger_than_before"))
+
+
+def short_name(camera: Camera) -> str:
+    """'V1cam' for 'V1cam (Halemaʻumaʻu vents, PTZ)'."""
+    return camera.name.split(" (")[0]
+
+
 @dataclass
 class AlertReport:
     clock: datetime
@@ -286,7 +327,7 @@ class AlertWatcher:
     """The fountaining alerts of one volcano's alert cameras. Each step sets its own clock; `base.now` is unused."""
 
     def __init__(self, base: ToolContext, volcano: str, config: AlertConfig, out_dir: Path, *, budget_usd: float,
-                 segment: Segment = sam_segment, compare: Compare | None = None,
+                 segment: Segment = sam_segment, compare: Compare = spark_compare,
                  wall_clock: Callable[[], datetime] = utcnow):
         self.base, self.volcano, self.config, self.out_dir = base, volcano, config, out_dir
         self.budget_usd = budget_usd  # per UTC day of the clock, under the tag alerts:<date>
@@ -338,9 +379,17 @@ class AlertWatcher:
             "ORDER BY captured_at DESC LIMIT ?", (camera_id, to_iso(ctx.now), to_iso(ctx.now), n)).fetchall()
 
     def _follow_up(self, ctx: ToolContext, last: sqlite3.Row, state: State, onset: sqlite3.Row | None) -> bool:
-        """True if the camera's next frame needs a look at once: after an episode-size sighting while quiet (Task 7
-        adds: after a miss on a camera that saw this episode's fountain)."""
-        return state == "quiet" and bool(last["episode"])
+        """True if the camera's next frame needs a look at once: after an episode-size sighting while quiet, or
+        after a miss on a camera that saw this episode's fountain."""
+        if state == "quiet":
+            return bool(last["episode"])
+        return last["size"] == "none" and self._saw(ctx, last["camera_id"], onset)
+
+    def _saw(self, ctx: ToolContext, camera_id: str, onset: sqlite3.Row | None) -> bool:
+        return onset is not None and ctx.conn.execute(
+            "SELECT 1 FROM alert_checks WHERE camera_id = ? AND size != 'none' AND captured_at >= ? "
+            "AND captured_at <= ? AND clock <= ? LIMIT 1",
+            (camera_id, onset["seen_at"], to_iso(ctx.now), to_iso(ctx.now))).fetchone() is not None
 
     def _consider(self, ctx: ToolContext, client: MetaClient, camera: Camera, rule: CameraRule,
                   frame: sqlite3.Row, report: AlertReport) -> None:
@@ -376,9 +425,112 @@ class AlertWatcher:
                                  (frame["width"], frame["height"]))
         size = size_of(sighting, rule)
         answer, episode = None, size == "large"
+        if state == "quiet" and size == "ambiguous":
+            answer = self._ask(ctx, client, camera, frame, report)
+            episode = answer is not None and sustained(answer)
         look_id = self._store_look(ctx, frame, stats, sighting, size, answer, episode)
         report.looks.append({"camera_id": camera.id, "frame_id": frame["id"], "captured_at": frame["captured_at"],
                              "size": size, "episode": episode})
+        if state == "quiet" and episode:
+            self._onset(ctx, client, camera, frame, look_id, answer, report)
+        elif state == "fountaining" and size == "none":
+            self._end(ctx, camera, frame, onset, report)
+
+    def _ask(self, ctx: ToolContext, client: MetaClient, camera: Camera, frame: sqlite3.Row,
+             report: AlertReport) -> dict[str, Any] | None:
+        """Muse Spark's comparison of the frame with the camera's newest frame at least COMPARE_AGO older (or, after a
+        gap, its oldest frame of the last COMPARE_SPAN); None if there is none or the call failed."""
+        captured = parse_utc(frame["captured_at"])
+        earlier = ctx.conn.execute(
+            "SELECT * FROM frames WHERE camera_id = ? AND captured_at BETWEEN ? AND ? ORDER BY captured_at DESC LIMIT 1",
+            (camera.id, to_iso(captured - COMPARE_SPAN), to_iso(captured - COMPARE_AGO))).fetchone()
+        if earlier is None:
+            earlier = ctx.conn.execute(
+                "SELECT * FROM frames WHERE camera_id = ? AND captured_at >= ? AND captured_at < ? "
+                "ORDER BY captured_at LIMIT 1",
+                (camera.id, to_iso(captured - COMPARE_SPAN), frame["captured_at"])).fetchone()
+        if earlier is None:
+            report.errors.append(f"{camera.id} frame {frame['id']}: no earlier frame for Muse Spark to compare with")
+            return None
+        minutes = round((captured - parse_utc(earlier["captured_at"])) / timedelta(minutes=1))
+        images = [load_for_upload(ctx.data_dir / row["path"], max_side=1280)[1] for row in (earlier, frame)]
+        try:
+            return self._compare(client, images[0], images[1], minutes)
+        except (openai.APIError, ValueError, KeyError) as exc:
+            report.errors.append(f"{camera.id} frame {frame['id']}: Muse Spark failed: {type(exc).__name__}: {exc}"[:300])
+            return None
+
+    def _onset(self, ctx: ToolContext, client: MetaClient, camera: Camera, frame: sqlite3.Row, look_id: int,
+               answer: dict[str, Any] | None, report: AlertReport) -> None:
+        """Raise the onset if this episode-size look and the camera's previous one are consecutive, once Muse Spark
+        has confirmed one of them (it is asked now if it has not)."""
+        looks = self._looks(ctx, camera.id, 2)  # this look, then the one before it
+        if len(looks) < 2 or not looks[1]["episode"]:
+            return
+        if parse_utc(looks[0]["captured_at"]) - parse_utc(looks[1]["captured_at"]) > PAIR_WITHIN:
+            return
+        if answer is None and looks[1]["spark"] is None:
+            answer = self._ask(ctx, client, camera, frame, report)
+            if answer is None:
+                return  # asked again with the next frame, which is a follow-up
+            confirmed = sustained(answer)
+            with ctx.conn:
+                ctx.conn.execute("UPDATE alert_checks SET spark = ?, episode = ? WHERE id = ?",
+                                 (json.dumps(answer, ensure_ascii=False), int(confirmed), look_id))
+            if not confirmed:
+                return
+        self._raise(ctx, "onset", camera, frame, looks[0], seen_at=looks[1]["captured_at"],
+                    seen_by=short_name(camera), report=report)
+
+    def _end(self, ctx: ToolContext, camera: Camera, frame: sqlite3.Row, onset: sqlite3.Row,
+             report: AlertReport) -> None:
+        """Raise the end if every camera that saw this episode's fountain missed it on its last two looks or has not
+        looked for BLIND_AFTER, and at least one missed it twice."""
+        now = to_iso(ctx.now)
+        seen = [row[0] for row in ctx.conn.execute(
+            "SELECT DISTINCT camera_id FROM alert_checks WHERE size != 'none' AND captured_at >= ? "
+            "AND captured_at <= ? AND clock <= ? ORDER BY camera_id", (onset["seen_at"], now, now))]
+        if camera.id not in seen:
+            return
+        sightings, missed_twice = [], False
+        for camera_id in seen:
+            looks = self._looks(ctx, camera_id, 2)
+            sightings.append(ctx.conn.execute(
+                "SELECT camera_id, captured_at FROM alert_checks WHERE camera_id = ? AND size != 'none' "
+                "AND captured_at <= ? AND clock <= ? ORDER BY captured_at DESC LIMIT 1",
+                (camera_id, now, now)).fetchone())
+            if len(looks) == 2 and all(look["size"] == "none" for look in looks):
+                missed_twice = True
+            elif looks and ctx.now - parse_utc(looks[0]["captured_at"]) <= BLIND_AFTER:
+                return
+        if not missed_twice:
+            return
+        last = max(sightings, key=lambda row: row["captured_at"])
+        look = self._looks(ctx, camera.id, 1)[0]
+        self._raise(ctx, "end", camera, frame, look, seen_at=last["captured_at"],
+                    seen_by=short_name(ctx.camera(last["camera_id"])), report=report, onset=onset,
+                    cameras=tuple(seen))
+
+    def _raise(self, ctx: ToolContext, kind: Kind, camera: Camera, frame: sqlite3.Row, look: sqlite3.Row, *,
+               seen_at: str, seen_by: str, report: AlertReport, onset: sqlite3.Row | None = None,
+               cameras: tuple[str, ...] = ()) -> None:
+        volcano = ctx.sources.volcanoes[self.volcano]
+        overlay = draw_alert_frame(ctx.data_dir, frame, look, self.out_dir / f"{ctx.now:%Y%m%dT%H%MZ}_{kind}")
+        texts = alert_texts(kind, volcano, camera=short_name(camera), captured_at=frame["captured_at"],
+                            seen_at=seen_at, seen_by=seen_by,
+                            onset_at=None if onset is None else onset["seen_at"],
+                            cameras=tuple(short_name(ctx.camera(camera_id)) for camera_id in cameras))
+        names = {"name": volcano.name, "agency": volcano.official_agency, "url": volcano.official_url}
+        alert = store_alert(ctx.conn, Alert(
+            volcano=self.volcano, volcano_name=volcano.name, utc_offset_hours=volcano.utc_offset_hours, kind=kind,
+            clock=to_iso(ctx.now), created_at=to_iso(self._wall_clock()), camera_id=camera.id,
+            camera_name=short_name(camera), frame_id=frame["id"], captured_at=frame["captured_at"],
+            seen_at=seen_at, seen_by=seen_by, overlay=overlay, official_agency=volcano.official_agency,
+            official_url=volcano.official_url, disclaimer_en=DISCLAIMER_EN.format(**names),
+            disclaimer_es=DISCLAIMER_ES.format(**names), **texts))
+        report.alerts.append({"id": alert.id, "kind": kind, "camera_id": camera.id,
+                              "captured_at": frame["captured_at"]})
+        log.info("alert %s: %s on %s at %s", alert.id, kind, camera.id, frame["captured_at"])
 
     def _store_look(self, ctx: ToolContext, frame: sqlite3.Row, stats: ImageStats, sighting: Sighting | None,
                     size: Size, answer: dict[str, Any] | None, episode: bool) -> int:
