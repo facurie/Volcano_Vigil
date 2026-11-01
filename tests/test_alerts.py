@@ -53,6 +53,15 @@ def test_the_best_sighting_is_the_top_score_moved_to_the_frames_pixels():
     assert sighting.area == pytest.approx(200 * 100 / (2048 * 1152))
 
 
+def test_the_box_scales_each_axis_by_its_own_factor_and_a_one_pixel_box_keeps_its_size():
+    # sent at 1920x1080, the frame is 960x1080: x halves, y stays; the 1-px-wide box (11..12 -> 6..6) is widened
+    sighting = best_sighting([obj(1, 1, left=11, top=10)], sent=(1920, 1080), frame=(960, 1080))
+
+    assert sighting.box == (6, 10, 7, 11)
+    assert sighting.mask.shape == (1, 1)
+    assert sighting.area == pytest.approx(1 / (1920 * 1080))
+
+
 def test_objects_under_sams_floor_are_no_sighting():
     assert best_sighting([obj(400, 400, score=0.49)], sent=(1920, 1080), frame=(1920, 1080)) is None
     assert best_sighting([], sent=(1920, 1080), frame=(1920, 1080)) is None
