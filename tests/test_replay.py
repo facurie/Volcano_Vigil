@@ -1,10 +1,12 @@
 import json
 import subprocess
+from contextlib import closing
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
 import httpx
+import openai
 import pytest
 
 from test_agent_tools import T0, context, frame_jpeg
@@ -16,6 +18,7 @@ from vigil import db, replay
 from vigil.agent.bulletin import BulletinDraft, CitedMeasurement, build_bulletin, store_bulletin
 from vigil.episodes import EP55, QUIET_WINDOWS
 from vigil.ingest.store import FrameStore
+from vigil.meta.client import MetaClient
 from vigil.phases import PHASES
 from vigil.pipeline import StepReport
 from vigil.replay import (ALERT_HEADER, OffGridError, activity_rows, alert_rows, bulletin_rows, feed, main,
@@ -386,3 +389,82 @@ def test_a_quiet_window_report_counts_the_alerts_as_false_alarms(conn):
 
     report = quiet_report(conn, window)
     assert "**Alerts raised: 1** (expected none)." in report and "| onset | 2026-10-17T01:00:00Z |" in report
+
+
+def test_the_alerts_never_see_past_the_clock_in_a_database_that_already_holds_every_frame(conn, tmp_path):
+    source, ids = alert_source(tmp_path)
+    feed(source, conn, V1_ONLY.cameras, T0 - 30 * M, T0 + 30 * M)  # as inside run_replay, after the pipeline loop
+    fakes = Fakes()
+    fakes.sam = {frame_id: (LARGE if minute >= 6 else SMALL) for minute, frame_id in ids.items()}
+
+    replay_alerts(source, alert_watcher(conn, tmp_path, fakes), T0, T0 + 20 * M)
+
+    assert conn.execute("SELECT COUNT(*) FROM alert_checks").fetchone()[0] > 0
+    assert conn.execute("SELECT COUNT(*) FROM alert_checks WHERE captured_at > clock").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM alerts WHERE captured_at > clock").fetchone()[0] == 0
+    assert [row[0] for row in conn.execute("SELECT kind FROM alerts")] == ["onset"]
+
+
+def test_an_alerts_replay_cut_short_mid_run_resumes_without_repeating_an_alert(conn, tmp_path):
+    source, ids = alert_source(tmp_path)
+    fakes = Fakes()
+    fakes.sam = {frame_id: LARGE for frame_id in ids.values()}
+    replay_alerts(source, alert_watcher(conn, tmp_path, fakes), T0, T0 + 12 * M)
+    alerts_before = conn.execute("SELECT id, clock FROM alerts").fetchall()
+    with conn:  # the run died after the watcher's step at +8 but before it stored the tick
+        conn.execute("DELETE FROM alert_ticks WHERE clock >= ?", (to_iso(T0 + 8 * M),))
+
+    ran = replay_alerts(source, alert_watcher(conn, tmp_path, fakes), T0, T0 + 20 * M)
+
+    assert ran == 13  # ticks 8 to 20
+    assert [tuple(row) for row in conn.execute("SELECT id, clock FROM alerts")] == [tuple(r) for r in alerts_before]
+    assert conn.execute("SELECT COUNT(*) FROM alert_ticks").fetchone()[0] == 20
+    assert conn.execute("SELECT COUNT(*) FROM (SELECT frame_id FROM alert_checks GROUP BY frame_id "
+                        "HAVING COUNT(*) > 1)").fetchone()[0] == 0
+
+
+def test_run_replay_runs_the_alerts_and_puts_them_in_the_timeline(conn, tmp_path):
+    source, ids = alert_source(tmp_path)
+    fakes = Fakes()
+    fakes.sam = {frame_id: (LARGE if minute >= 6 else SMALL) for minute, frame_id in ids.items()}
+
+    timeline = run_replay(source, context(conn, tmp_path), episode(T0, T0 + 20 * M), tmp_path / "replay", step=10 * M,
+                          pipeline=FakePipeline(conn), alerts=alert_watcher(conn, tmp_path, fakes), spark_video=False)
+
+    assert [alert["kind"] for alert in timeline["alerts"]] == ["onset"]
+    onset, end = timeline["comparison"]["alerts"]
+    assert onset[0] == "fountaining started" and onset[1] != "none" and onset[2] == timeline["alerts"][0]["seen_by"]
+    assert end[:2] == ["fountaining stopped", "none"]
+    assert "SAM looks" in timeline["alert_looks"]
+    assert "## Fountaining alerts" in (tmp_path / "replay" / "report.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("seconds, text", [(-680, "-11 min"), (-12, "+0 min"), (12, "+0 min"), (360, "+6 min")])
+def test_alert_times_are_whole_minutes_and_never_minus_zero(seconds, text):
+    assert replay._minutes(to_iso(T0 + timedelta(seconds=seconds)), T0) == text
+
+
+def test_cli_refuses_an_episode_and_a_quiet_window_together(capsys):
+    with pytest.raises(SystemExit):
+        main(["--episode", "55", "--quiet", "overflows"])
+
+    assert "not allowed with" in capsys.readouterr().err
+
+
+def test_cli_replays_a_quiet_window_and_writes_its_report(cli_env, monkeypatch, capsys):
+    monkeypatch.setattr("vigil.settings.load_dotenv", lambda: None)
+    sdk = openai.OpenAI(base_url="https://api.meta.ai/v1", api_key="test-key", max_retries=0,
+                        http_client=httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500))))
+    monkeypatch.setattr(MetaClient, "from_env", staticmethod(lambda ledger: MetaClient(sdk, ledger)))
+    window = QUIET_WINDOWS["overflows"]
+    with closing(db.connect(cli_env / "vigil.sqlite")) as stored:
+        for minutes in (5, 15):
+            when = window.start + minutes * M
+            FrameStore(stored, cli_env).add("kilauea-v1", scene_jpeg(minutes, lava=False), captured_at=when,
+                                            timestamp_source="ashcam", fetched_at=when)
+
+    main(["--quiet", "overflows"])
+
+    report = (cli_env / "replay" / "overflows" / "report.md").read_text(encoding="utf-8")
+    assert "**Alerts raised: 0** (expected none)." in report
+    assert report in capsys.readouterr().out

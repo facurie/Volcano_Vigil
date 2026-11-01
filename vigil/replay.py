@@ -241,7 +241,7 @@ def activity_rows(conn: sqlite3.Connection, episode: Episode) -> list[list[str]]
 
 
 def _minutes(later: str, earlier: datetime) -> str:
-    return f"{(parse_utc(later) - earlier) / timedelta(minutes=1):+.0f} min"
+    return f"{round((parse_utc(later) - earlier) / timedelta(minutes=1)):+d} min"
 
 
 def alert_rows(conn: sqlite3.Connection, episode: Episode) -> list[list[str]]:
@@ -360,7 +360,8 @@ def _quiet_main(parser: argparse.ArgumentParser, settings: Settings, window: Qui
                                 "BETWEEN ? AND ?", (*config.cameras, to_iso(window.start), to_iso(window.end)))
         if not stored.fetchone()[0]:
             parser.error(f"{settings.db_path} has no frames of the {window.key} window; backfill them")
-        with closing(db.connect(out_dir / "vigil.sqlite")) as conn,                 httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+        with closing(db.connect(out_dir / "vigil.sqlite")) as conn, \
+                httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
             client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
             watcher = AlertWatcher(context_from_settings(settings, conn, http, window.start, client),
                                    window.volcano, config, out_dir / "alerts", budget_usd=settings.alert_reserve_usd)
