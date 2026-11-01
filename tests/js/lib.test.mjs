@@ -65,6 +65,7 @@ test("the banner shows the onset while fountaining, and an end for six hours", (
   const end = { kind: "end", clock: "2026-10-17T19:09:00Z" };
   assert.equal(bannerAlert([onset], "fountaining", "2026-10-17T15:00:00Z"), onset);
   assert.equal(bannerAlert([end, onset], "quiet", "2026-10-17T19:30:00Z"), end);
+  assert.equal(bannerAlert([end, onset], "quiet", "2026-10-18T01:09:00Z"), end); // exactly six hours: still shown
   assert.equal(bannerAlert([end, onset], "quiet", "2026-10-18T01:10:00Z"), null);
   assert.equal(bannerAlert([], "quiet", "2026-10-17T15:00:00Z"), null);
 });
