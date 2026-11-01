@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from typing import Any
 
 import httpx
@@ -82,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
     settings = Settings.from_env()
     if not settings.telegram_token or not settings.telegram_chat:
         parser.error("set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (in .env locally, as Space secrets on the Space)")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")  # a Windows console cannot show 'ī' in the channel's name
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # its request lines would print the token
     with httpx.Client() as http:

@@ -1,5 +1,7 @@
+import io
 import json
 import logging
+import sys
 
 import httpx
 import pytest
@@ -105,6 +107,19 @@ def test_cli_check_prints_the_summary_and_never_the_token(env, monkeypatch, caps
     assert "@b posts to Volcano Vigil (-1001, channel): administrator, may post: yes" in out
     assert TOKEN not in out
     assert logging.getLogger("httpx").level == logging.WARNING  # its request lines would print the token
+
+
+def test_cli_check_prints_a_channel_name_a_windows_console_cannot_show(env, monkeypatch):
+    monkeypatch.setattr(Telegram, "check", lambda self: {"bot": "@b", "chat": "Volcano Vigil · Kīlauea",
+                                                         "chat_id": -1001, "type": "channel",
+                                                         "status": "administrator", "can_post": True})
+    console = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(console, encoding="cp1252"))
+
+    main(["check"])
+
+    sys.stdout.flush()
+    assert b"posts to Volcano Vigil \xb7 K?lauea (-1001, channel)" in console.getvalue()
 
 
 def test_cli_test_posts_a_message_that_says_it_is_not_an_alert(env, monkeypatch, capsys):
