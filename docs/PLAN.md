@@ -292,7 +292,8 @@ Decided on 2026-11-01: a Hugging Face Docker Space (PRO), after Oracle Cloud tur
   - Ingest, pipeline and the dashboard run as separate processes of one container, under a small supervisor
     (`deploy/start.sh`). They are not threads in one process: the CLIs already exist, and SAM mask decoding stays off
     the web server.
-  - `MODEL_API_KEY` and `HF_TOKEN` are Space secrets, and `DAILY_BUDGET_USD=3` is in the image.
+  - `MODEL_API_KEY` and `HF_TOKEN` are Space secrets, and `DAILY_BUDGET_USD=5` is in the image (raised from $3 on
+    2026-11-01 with the owner's OK, after the first live hour cost $0.16).
   - The code is private and the app is public ("protected" visibility).
 - [x] **State that survives restarts:**
   - A Space loses its disk on every restart (confirmed in the docs). `vigil-persist` saves the database, the frames and

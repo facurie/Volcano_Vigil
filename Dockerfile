@@ -21,7 +21,7 @@ USER vigil
 ENV PYTHONUNBUFFERED=1 \
     DATA_DIR=/app/data \
     DB_PATH=/app/data/vigil.sqlite \
-    DAILY_BUDGET_USD=3 \
+    DAILY_BUDGET_USD=5 \
     HF_HUB_DISABLE_PROGRESS_BARS=1
 EXPOSE 7860
 CMD ["bash", "deploy/start.sh"]

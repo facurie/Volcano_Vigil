@@ -1894,3 +1894,4 @@ The suite went from 556 to 597 tests.
 - **A live agent run costs about $0.13**, against the $0.03–0.08 estimate; it is close to the replay's $0.147 per bulletin. At that rate the pipeline spends about $3.5–4 a day, and the $3 cap stops calls late in the UTC day (about 09:00–14:00 HST). Phase 8 needs headroom anyway: raising the cap or writing bulletins less often is the owner's call.
 - **On Windows, `pip install -e` fails while a `vigil-*.exe` runs** (WinError 32 on the script). It leaves a `~olcano_vigil-*.dist-info` folder and a broken install. Rerun it when nothing runs, and do not reinstall while another agent runs a CLI.
 - **The Space's run log is an SSE stream that never idles.** A reader has to stop on wall time, not on a read timeout.
+- **The cap is now $5 a UTC day** (2026-11-01, the owner's OK after these numbers). The hourly bulletins stay, and Phase 8's alerts get headroom.

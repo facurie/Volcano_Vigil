@@ -23,7 +23,7 @@ Volcano Vigil runs as one Hugging Face Docker Space, `facurie/volcano-vigil`, on
 | 6 | `vigil-pipeline --volcano kilauea` | Every 5 min: quality gate, one SAM window per camera per hour, measurements, an hourly bulletin. The only service that spends money; restarted if it exits |
 | 7 | `vigil-persist run --interval 300` | Saves the state every 5 min and once more when the Space stops |
 
-All of them run one image as uid 1000 with `DAILY_BUDGET_USD=3`, on the data dir `/app/data`. SQLite in WAL mode
+All of them run one image as uid 1000 with `DAILY_BUDGET_USD=5`, on the data dir `/app/data`. SQLite in WAL mode
 lets them write and read at once. Secrets (`MODEL_API_KEY`, `HF_TOKEN`) are Space secrets, which reach the
 processes as environment variables; they are never in git or in the image.
 
@@ -87,7 +87,8 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
 ## Costs
 
 - Space and bucket: $0 beyond the PRO subscription ($9/month; PRO includes 1 TB of private storage).
-- Meta Model API: the pipeline costs about $2–3 a day, capped at $3 a UTC day. Hitting the cap stops SAM, Muse Spark
+- Meta Model API: the pipeline costs about $3.5–4 a day (about $0.16 an hour, most of it the hourly agent run), capped
+  at $5 a UTC day; the cap was raised from $3 on 2026-11-01 with the owner's OK. Hitting the cap stops SAM, Muse Spark
   and bulletins until 00:00 UTC (14:00 HST); ingest and the dashboard go on.
 - If the daily visit is ever missed or the 2 vCPU fall behind: `CPU Upgrade` costs $0.03/hour (about $0.72/day) and
   never sleeps. Switch to it only with the owner's OK.
