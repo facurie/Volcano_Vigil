@@ -50,8 +50,8 @@ class FakeBucket:
             self.files[key] = Path(source).read_bytes()
 
     def download_bucket_files(self, bucket_id, files, *, raise_on_missing_files=False):
-        self._enter("download_bucket_files")
         """Like the real API: a missing file is skipped silently unless `raise_on_missing_files` is set."""
+        self._enter("download_bucket_files")
         for key, target in files:
             if key not in self.files:
                 if raise_on_missing_files:
