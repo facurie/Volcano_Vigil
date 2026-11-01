@@ -29,7 +29,7 @@ import logging
 import sqlite3
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -339,6 +339,7 @@ class AlertWatcher:
         return tuple(self.config.cameras)
 
     def step(self, now: datetime) -> AlertReport:
+        now = now.astimezone(timezone.utc)  # the budget tag's date and the alert folders' names are UTC
         report = AlertReport(now)
         if self.base.client is None:
             report.errors.append("no Meta client: SAM cannot look for a fountain")
@@ -425,14 +426,18 @@ class AlertWatcher:
                                  (frame["width"], frame["height"]))
         size = size_of(sighting, rule)
         answer, episode = None, size == "large"
+        look_id = self._store_look(ctx, frame, stats, sighting, size, answer, episode)  # SAM is paid: keep its look
+        entry = {"camera_id": camera.id, "frame_id": frame["id"], "captured_at": frame["captured_at"],
+                 "size": size, "episode": episode}
+        report.looks.append(entry)
         if state == "quiet" and size == "ambiguous":
             answer = self._ask(ctx, client, camera, frame, report)
-            episode = answer is not None and sustained(answer)
-        look_id = self._store_look(ctx, frame, stats, sighting, size, answer, episode)
-        report.looks.append({"camera_id": camera.id, "frame_id": frame["id"], "captured_at": frame["captured_at"],
-                             "size": size, "episode": episode})
+            if answer is not None:
+                episode = sustained(answer)
+                self._set_spark(ctx, look_id, answer, episode)
+                entry["episode"] = episode
         if state == "quiet" and episode:
-            self._onset(ctx, client, camera, frame, look_id, answer, report)
+            entry["episode"] = self._onset(ctx, client, camera, frame, look_id, answer, report)
         elif state == "fountaining" and size == "none":
             self._end(ctx, camera, frame, onset, report)
 
@@ -460,39 +465,45 @@ class AlertWatcher:
             report.errors.append(f"{camera.id} frame {frame['id']}: Muse Spark failed: {type(exc).__name__}: {exc}"[:300])
             return None
 
+    def _set_spark(self, ctx: ToolContext, look_id: int, answer: dict[str, Any], episode: bool) -> None:
+        with ctx.conn:
+            ctx.conn.execute("UPDATE alert_checks SET spark = ?, episode = ? WHERE id = ?",
+                             (json.dumps(answer, ensure_ascii=False), int(episode), look_id))
+
     def _onset(self, ctx: ToolContext, client: MetaClient, camera: Camera, frame: sqlite3.Row, look_id: int,
-               answer: dict[str, Any] | None, report: AlertReport) -> None:
+               answer: dict[str, Any] | None, report: AlertReport) -> bool:
         """Raise the onset if this episode-size look and the camera's previous one are consecutive, once Muse Spark
-        has confirmed one of them (it is asked now if it has not)."""
+        has confirmed one of them (it is asked now if it has not). False if Muse Spark said this look is not a
+        sustained fountain, so that it no longer counts as an episode-size look."""
         looks = self._looks(ctx, camera.id, 2)  # this look, then the one before it
         if len(looks) < 2 or not looks[1]["episode"]:
-            return
+            return True
         if parse_utc(looks[0]["captured_at"]) - parse_utc(looks[1]["captured_at"]) > PAIR_WITHIN:
-            return
+            return True
         if answer is None and looks[1]["spark"] is None:
             answer = self._ask(ctx, client, camera, frame, report)
             if answer is None:
-                return  # asked again with the next frame, which is a follow-up
+                return True  # asked again with the next frame, which is a follow-up
             confirmed = sustained(answer)
-            with ctx.conn:
-                ctx.conn.execute("UPDATE alert_checks SET spark = ?, episode = ? WHERE id = ?",
-                                 (json.dumps(answer, ensure_ascii=False), int(confirmed), look_id))
+            self._set_spark(ctx, look_id, answer, confirmed)
             if not confirmed:
-                return
+                return False
         self._raise(ctx, "onset", camera, frame, looks[0], seen_at=looks[1]["captured_at"],
                     seen_by=short_name(camera), report=report)
+        return True
 
     def _end(self, ctx: ToolContext, camera: Camera, frame: sqlite3.Row, onset: sqlite3.Row,
              report: AlertReport) -> None:
         """Raise the end if every camera that saw this episode's fountain missed it on its last two looks or has not
-        looked for BLIND_AFTER, and at least one missed it twice."""
+        looked for BLIND_AFTER, and at least one missed it twice. The alert names the cameras that missed it twice,
+        never a blind one: its last look saw the fountain."""
         now = to_iso(ctx.now)
         seen = [row[0] for row in ctx.conn.execute(
             "SELECT DISTINCT camera_id FROM alert_checks WHERE size != 'none' AND captured_at >= ? "
             "AND captured_at <= ? AND clock <= ? ORDER BY camera_id", (onset["seen_at"], now, now))]
         if camera.id not in seen:
             return
-        sightings, missed_twice = [], False
+        sightings, missed_twice = [], []
         for camera_id in seen:
             looks = self._looks(ctx, camera_id, 2)
             sightings.append(ctx.conn.execute(
@@ -500,7 +511,7 @@ class AlertWatcher:
                 "AND captured_at <= ? AND clock <= ? ORDER BY captured_at DESC LIMIT 1",
                 (camera_id, now, now)).fetchone())
             if len(looks) == 2 and all(look["size"] == "none" for look in looks):
-                missed_twice = True
+                missed_twice.append(camera_id)
             elif looks and ctx.now - parse_utc(looks[0]["captured_at"]) <= BLIND_AFTER:
                 return
         if not missed_twice:
@@ -509,7 +520,7 @@ class AlertWatcher:
         look = self._looks(ctx, camera.id, 1)[0]
         self._raise(ctx, "end", camera, frame, look, seen_at=last["captured_at"],
                     seen_by=short_name(ctx.camera(last["camera_id"])), report=report, onset=onset,
-                    cameras=tuple(seen))
+                    cameras=tuple(missed_twice))
 
     def _raise(self, ctx: ToolContext, kind: Kind, camera: Camera, frame: sqlite3.Row, look: sqlite3.Row, *,
                seen_at: str, seen_by: str, report: AlertReport, onset: sqlite3.Row | None = None,

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 import numpy as np
+import openai
 import pytest
 from PIL import Image
 
@@ -17,6 +18,7 @@ from vigil.alerts import (CAPTION_MAX, LAVA_GLOW, NOTE_EN, NOTE_ES, Alert, Alert
 from vigil.config import ConfigError, Volcano
 from vigil.meta.ledger import BudgetExceeded
 from vigil.meta.sam import SamObject
+from vigil.timeutil import to_iso
 
 ROOT = Path(__file__).resolve().parent.parent
 RULE = CameraRule(fountain_area=0.06, ambiguous_area=0.03)
@@ -211,6 +213,7 @@ class Fakes:
         self.answer = SUSTAINED
         self.asked = []         # minutes between the two frames of each Muse Spark comparison
         self.raises = None      # an exception SAM raises
+        self.compare_raises = None  # an exception Muse Spark raises
 
     def segment(self, client, frame_id, jpeg):
         if self.raises is not None:
@@ -222,6 +225,8 @@ class Fakes:
 
     def compare(self, client, earlier, now, minutes):
         self.asked.append(minutes)
+        if self.compare_raises is not None:
+            raise self.compare_raises
         return self.answer
 
 
@@ -481,6 +486,9 @@ def test_a_camera_that_has_gone_blind_does_not_hold_the_end_back(conn, store, tm
     assert kinds == ["onset", "end"]
     end = conn.execute("SELECT * FROM alerts WHERE kind = 'end'").fetchone()
     assert end["camera_id"] == "kilauea-v1" and end["seen_at"] >= "2026-10-17T13:40:00Z"
+    # K2 was blind: it is not named as having no fountain, since its last look (13:20) saw one
+    text = load_alert(conn, 2).text_en
+    assert "No lava fountain on kilauea-v1 since" in text and "kilauea-k2" not in text
 
 
 def test_the_alerts_state_survives_a_new_watcher(conn, store, tmp_path, fakes):
@@ -490,3 +498,231 @@ def test_the_alerts_state_survives_a_new_watcher(conn, store, tmp_path, fakes):
 
     assert fresh.state(T0 + 12 * M)[0] == "fountaining"
     assert fresh.state(T0 + 9 * M)[0] == "quiet"  # bounded by the clock: the onset was raised at 13:10
+
+
+# --- the clock bounds, the error paths and the cadence's edges -------------------------------------------------------
+
+API_ERROR = openai.APIConnectionError(request=httpx.Request("POST", "https://api.meta.ai/v1/responses"))
+# rows a resumed replay leaves after the new clock: about a frame captured later, or made later (minutes after T0)
+LATER = [pytest.param(30, 0, id="captured-after-the-clock"), pytest.param(-11, 30, id="made-after-the-clock")]
+
+
+def put_look(conn, store, camera_id, minute, *, clock=None, size="none", episode=0):
+    """An alert_checks row for a new frame captured `minute` minutes after T0, made at `clock` minutes after T0 (by
+    default its capture time): what an earlier run, or a replay that is resumed, leaves in the table."""
+    frame_id = add(store, camera_id, T0 + minute * M)
+    made = T0 + (minute if clock is None else clock) * M
+    with conn:
+        conn.execute("INSERT INTO alert_checks (frame_id, camera_id, captured_at, clock, glow, size, episode) "
+                     "VALUES (?, ?, ?, ?, 0.1, ?, ?)",
+                     (frame_id, camera_id, to_iso(T0 + minute * M), to_iso(made), size, episode))
+    return frame_id
+
+
+def put_onset(conn):
+    """The onset alert of a fountain first seen 20 minutes before T0 and raised 14 minutes before it."""
+    return store_alert(conn, make_alert("onset", clock=to_iso(T0 - 14 * M), seen_at=to_iso(T0 - 20 * M)))
+
+
+def fountaining(conn, store):
+    """V1 saw the fountain from 20 to 12 minutes before T0 and missed it 6 minutes before."""
+    put_onset(conn)
+    put_look(conn, store, "kilauea-v1", -20, size="large", episode=1)
+    put_look(conn, store, "kilauea-v1", -12, size="large", episode=1)
+    put_look(conn, store, "kilauea-v1", -6)
+
+
+def step_with_a_miss(conn, store, tmp_path, fakes):
+    """A step at T0 whose new V1 frame shows no fountain."""
+    add(store, "kilauea-v1", T0)
+    return watcher(conn, tmp_path, fakes).step(T0)
+
+
+def test_a_look_of_a_frame_captured_after_the_clock_does_not_hide_the_frame_of_the_clock(conn, store, tmp_path, fakes):
+    put_look(conn, store, "kilauea-v1", 30, clock=0)
+    frame_id = add(store, "kilauea-v1", T0)
+
+    watcher(conn, tmp_path, fakes, V1_ONLY).step(T0)
+
+    assert fakes.looked == [frame_id]
+
+
+@pytest.mark.parametrize("captured, clock", LATER)
+def test_a_large_look_after_the_clock_does_not_complete_an_onset_pair(conn, store, tmp_path, fakes, captured, clock):
+    put_look(conn, store, "kilauea-v1", -12)  # the last look that exists at T0: it saw nothing
+    put_look(conn, store, "kilauea-v1", captured, clock=clock, size="large", episode=1)
+    frame_id = add(store, "kilauea-v1", T0)
+    fakes.sam = {frame_id: LARGE}
+
+    report = watcher(conn, tmp_path, fakes, V1_ONLY).step(T0)
+
+    assert fakes.looked == [frame_id]
+    assert report.alerts == [] and fakes.asked == []
+
+
+@pytest.mark.parametrize("captured, clock", LATER)
+def test_a_sighting_after_the_clock_does_not_hold_the_end_back(conn, store, tmp_path, fakes, captured, clock):
+    fountaining(conn, store)
+    put_look(conn, store, "kilauea-k2", -3)  # K2's one recent miss: had K2 seen this fountain, it would hold the end
+    put_look(conn, store, "kilauea-k2", captured, clock=clock, size="large", episode=1)
+
+    report = step_with_a_miss(conn, store, tmp_path, fakes)
+
+    assert [a["kind"] for a in report.alerts] == ["end"]
+
+
+@pytest.mark.parametrize("captured, clock", LATER)
+def test_a_miss_after_the_clock_is_not_a_second_miss(conn, store, tmp_path, fakes, captured, clock):
+    put_onset(conn)
+    put_look(conn, store, "kilauea-v1", -20, size="large", episode=1)
+    put_look(conn, store, "kilauea-v1", -12, size="large", episode=1)  # V1's last look at T0 saw the fountain
+    put_look(conn, store, "kilauea-v1", captured, clock=clock)         # a miss that does not exist yet
+
+    report = step_with_a_miss(conn, store, tmp_path, fakes)
+
+    assert len(fakes.looked) == 1 and report.alerts == []  # the new miss is the first in a row
+
+
+@pytest.mark.parametrize("captured, clock", LATER)
+def test_the_end_names_the_fountains_last_sighting_as_of_the_clock(conn, store, tmp_path, fakes, captured, clock):
+    fountaining(conn, store)
+    put_look(conn, store, "kilauea-v1", captured, clock=clock, size="large", episode=1)
+
+    report = step_with_a_miss(conn, store, tmp_path, fakes)
+
+    assert [a["kind"] for a in report.alerts] == ["end"]
+    assert conn.execute("SELECT seen_at FROM alerts WHERE kind = 'end'").fetchone()[0] == to_iso(T0 - 12 * M)
+
+
+@pytest.mark.parametrize("captured, clock", [pytest.param(30, -8, id="captured-after-the-clock"),
+                                             pytest.param(-9, 30, id="made-after-the-clock")])  # the step is at -6
+def test_a_sighting_after_the_clock_does_not_make_a_miss_a_follow_up(conn, store, tmp_path, fakes, captured, clock):
+    put_onset(conn)
+    put_look(conn, store, "kilauea-v1", -8)  # V1 has not seen this fountain, and missed it at -8
+    put_look(conn, store, "kilauea-v1", captured, clock=clock, size="large", episode=1)
+    add(store, "kilauea-v1", T0 - 6 * M)
+
+    watcher(conn, tmp_path, fakes, V1_ONLY).step(T0 - 6 * M)
+
+    assert fakes.looked == []  # two minutes after the last look, while fountaining: not due
+
+
+def test_muse_spark_never_compares_a_frame_with_one_captured_after_it(conn, store, tmp_path, fakes):
+    v1 = series(store, "kilauea-v1", T0, 0, 4)  # the frame asked about is the oldest: nothing is earlier
+    fakes.sam = {v1[0]: AMBIGUOUS}
+
+    report = watcher(conn, tmp_path, fakes, V1_ONLY).step(T0)
+
+    assert fakes.asked == []
+    assert any("no earlier frame" in error for error in report.errors)
+
+
+def test_two_cameras_that_both_missed_it_twice_are_both_named_in_the_end(conn, store, tmp_path, fakes):
+    fountaining(conn, store)
+    put_look(conn, store, "kilauea-k2", -14, size="large", episode=1)
+    put_look(conn, store, "kilauea-k2", -5)
+    put_look(conn, store, "kilauea-k2", -2)
+
+    step_with_a_miss(conn, store, tmp_path, fakes)
+
+    alert = load_alert(conn, 2)
+    assert alert.kind == "end"
+    assert "No lava fountain on kilauea-k2 and kilauea-v1 since 12:48 local time" in alert.text_en
+    assert "Ninguna fuente de lava en kilauea-k2 y kilauea-v1 desde las 12:48" in alert.text_es
+
+
+def test_a_failed_sam_call_is_reported_stores_no_look_and_is_not_retried_by_the_next_step(conn, store, tmp_path,
+                                                                                         fakes):
+    frames = series(store, "kilauea-v1", T0, 0, 4)
+    w = watcher(conn, tmp_path, fakes, V1_ONLY)
+    fakes.raises = API_ERROR
+
+    first = w.step(T0)
+    fakes.raises = None
+    second = w.step(T0 + 1 * M)
+
+    assert first.looks == [] and len(first.errors) == 1 and "APIConnectionError" in first.errors[0]
+    assert f"frame {frames[0]}" in first.errors[0]
+    assert conn.execute("SELECT COUNT(*) FROM alert_checks").fetchone()[0] == 0
+    assert second.looks == [] and second.errors == [] and fakes.looked == []  # the failed frame is not tried again
+    third = w.step(T0 + 2 * M)
+    assert fakes.looked == [frames[2]] and len(third.looks) == 1  # the next frame is looked at
+
+
+@pytest.mark.parametrize("error", [API_ERROR, ValueError("not JSON")], ids=["api-error", "value-error"])
+def test_a_failing_muse_spark_call_holds_the_onset_back_and_is_asked_again_with_the_next_frame(
+        conn, store, tmp_path, fakes, error):
+    v1 = series(store, "kilauea-v1", T0, -40, 20)
+    fakes.sam = {frame_id: (LARGE if minute >= 6 else SMALL) for minute, frame_id in v1.items()}
+    fakes.compare_raises = error
+    w = watcher(conn, tmp_path, fakes, V1_ONLY)
+
+    reports = run(w, T0, 0, 10)
+
+    assert alerts_of(conn) == []
+    assert [e for report in reports for e in report.errors if "Muse Spark failed" in e]
+    fakes.compare_raises = None
+    run(w, T0, 11, 12)  # frame 12 is a follow-up of the episode-size look at 10: Muse Spark is asked again
+    assert [tuple(row)[:3] for row in alerts_of(conn)] == [("onset", "kilauea-v1", "2026-10-17T13:12:00Z")]
+    assert fakes.asked == [30, 30]
+
+
+def test_a_look_is_stored_before_muse_spark_is_asked_so_a_failure_never_pays_sam_twice(conn, store, tmp_path, fakes):
+    v1 = series(store, "kilauea-v1", T0, -40, 12)
+    fakes.sam = {v1[8]: AMBIGUOUS}
+    earlier = conn.execute("SELECT path FROM frames WHERE id = ?", (v1[-22],)).fetchone()[0]
+    (tmp_path / earlier).unlink()  # the frame Muse Spark would compare with is unreadable
+
+    reports = run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 12)
+
+    row = conn.execute("SELECT size, spark, episode FROM alert_checks WHERE frame_id = ?", (v1[8],)).fetchone()
+    assert tuple(row) == ("ambiguous", None, 0)
+    assert fakes.looked.count(v1[8]) == 1
+    assert any(f"frame {v1[8]}" in error for r in reports for error in r.errors)
+
+
+def test_the_report_matches_the_stored_look_when_muse_spark_says_overflow(conn, store, tmp_path, fakes):
+    v1 = series(store, "kilauea-v1", T0, -40, 12)
+    fakes.sam = {frame_id: (LARGE if minute >= 6 else SMALL) for minute, frame_id in v1.items()}
+    fakes.answer = OVERFLOW
+
+    reports = run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 12)
+
+    look = next(entry for r in reports for entry in r.looks if entry["frame_id"] == v1[10])
+    stored = conn.execute("SELECT episode FROM alert_checks WHERE frame_id = ?", (v1[10],)).fetchone()[0]
+    assert (look["episode"], stored) == (False, 0)
+
+
+def test_the_budget_tag_is_the_utc_day_of_a_clock_in_another_zone(conn, store, tmp_path, fakes):
+    now = datetime(2026, 10, 17, 20, 0, tzinfo=timezone(timedelta(hours=-10)))  # 2026-10-18 06:00 UTC
+    add(store, "kilauea-v1", now)
+
+    watcher(conn, tmp_path, fakes, V1_ONLY, now=now).step(now)
+
+    assert fakes.tags == ["alerts:2026-10-18"]
+
+
+@pytest.mark.parametrize("gap, kinds", [(10, ["onset"]), (12, [])])
+def test_two_episode_size_looks_make_an_onset_only_when_at_most_ten_minutes_apart(conn, store, tmp_path, fakes, gap,
+                                                                                   kinds):
+    first = add(store, "kilauea-v1", T0)
+    second, third = add(store, "kilauea-v1", T0 + 8 * M), add(store, "kilauea-v1", T0 + (8 + gap) * M)
+    fakes.sam = {first: SMALL, second: LARGE, third: LARGE}
+
+    run(watcher(conn, tmp_path, fakes, V1_ONLY), T0, 0, 8 + gap)
+
+    assert [row["kind"] for row in alerts_of(conn)] == kinds
+
+
+@pytest.mark.parametrize("seconds, looks", [(419, 1), (420, 2)])
+def test_a_frame_seven_minutes_after_the_last_look_is_due_but_not_one_second_earlier(conn, store, tmp_path, fakes,
+                                                                                      seconds, looks):
+    add(store, "kilauea-v1", T0)
+    late = T0 + timedelta(seconds=seconds)
+    add(store, "kilauea-v1", late)
+    w = watcher(conn, tmp_path, fakes, V1_ONLY)
+
+    w.step(T0)
+    w.step(late)
+
+    assert len(fakes.looked) == looks
