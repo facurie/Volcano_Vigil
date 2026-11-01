@@ -21,3 +21,11 @@ def test_a_read_only_connection_never_creates_a_database(tmp_path):
     with pytest.raises(FileNotFoundError):
         db.connect_readonly(tmp_path / "missing.sqlite")
     assert not (tmp_path / "missing.sqlite").exists()
+
+
+def test_the_schema_has_the_alert_tables(conn):
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+    assert {"alert_checks", "alerts", "alert_ticks"} <= tables
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(alert_checks)")}
+    assert {"box_left", "box_top", "box_right", "box_bottom", "mask_rle", "size", "episode", "spark"} <= columns

@@ -188,6 +188,49 @@ CREATE TABLE IF NOT EXISTS replay_ticks (    -- one step of a replay's simulated
     clock  TEXT PRIMARY KEY,  -- UTC simulated time
     report TEXT NOT NULL      -- JSON: the pipeline's step report plus the frames fed
 );
+
+CREATE TABLE IF NOT EXISTS alert_checks (    -- one SAM look at one frame by the fountaining alerts (vigil.alerts)
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    frame_id    INTEGER NOT NULL REFERENCES frames (id),
+    camera_id   TEXT    NOT NULL,
+    captured_at TEXT    NOT NULL,  -- UTC capture time of the frame
+    clock       TEXT    NOT NULL,  -- UTC time of the watcher's step: now live, the simulated time in a replay
+    glow        REAL    NOT NULL,  -- the frame's glow fraction (vigil.quality)
+    score       REAL,              -- SAM's best 'lava fountain' object; this and the box and mask NULL for none
+    area        REAL,              -- its mask's share of the frame
+    box_left    INTEGER,           -- half-open box in the frame's own pixels
+    box_top     INTEGER,
+    box_right   INTEGER,
+    box_bottom  INTEGER,
+    mask_rle    TEXT,              -- JSON COCO RLE of the box-sized mask
+    size        TEXT    NOT NULL,  -- none | small | ambiguous | large
+    spark       TEXT,              -- Muse Spark's comparison (JSON) when it was asked
+    episode     INTEGER NOT NULL,  -- 1 if the look counts as an episode-size fountain
+    UNIQUE (frame_id)
+);
+CREATE INDEX IF NOT EXISTS idx_alert_checks_camera ON alert_checks (camera_id, captured_at);
+
+CREATE TABLE IF NOT EXISTS alerts (          -- one change of a volcano's fountaining state (vigil.alerts)
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    volcano       TEXT    NOT NULL,
+    kind          TEXT    NOT NULL,  -- onset | end
+    clock         TEXT    NOT NULL,  -- UTC time the watcher raised it
+    created_at    TEXT    NOT NULL,  -- UTC wall clock
+    camera_id     TEXT    NOT NULL,  -- the camera whose frame shows the change
+    frame_id      INTEGER NOT NULL REFERENCES frames (id),
+    captured_at   TEXT    NOT NULL,  -- UTC capture time of that frame
+    seen_at       TEXT    NOT NULL,  -- onset: the first episode-size sighting; end: the fountain's last sighting
+    body          TEXT    NOT NULL,  -- the whole alert as JSON (vigil.alerts.Alert)
+    sent_at       TEXT,              -- UTC, when Telegram took it; NULL if not posted
+    send_attempts INTEGER NOT NULL DEFAULT 0,
+    send_error    TEXT               -- the last Telegram failure
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_clock ON alerts (volcano, clock);
+
+CREATE TABLE IF NOT EXISTS alert_ticks (     -- one step of a replay's fountaining alerts (vigil.replay)
+    clock  TEXT PRIMARY KEY,  -- UTC simulated time
+    report TEXT NOT NULL      -- JSON: the watcher's step report
+);
 """
 
 

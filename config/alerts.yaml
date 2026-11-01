@@ -1,0 +1,13 @@
+# Fountaining alerts (vigil.alerts): the cameras the watcher looks at and, for each, the share of the frame a SAM
+# 'lava fountain' mask must cover to count as an episode-size fountain (fountain_area). Between ambiguous_area and
+# fountain_area, Muse Spark compares the frame with the camera's frame from 30 minutes earlier. Every onset is
+# confirmed by Muse Spark before it is raised.
+# Set on 2026-11-01 from the Oct 16-17 overflow frames and episode 55, before any replay of the alerts ran, and
+# never tuned to HVO's times (docs/research/alerts_calibration.md). The shares belong to each camera's framing.
+cameras:
+  kilauea-v1:            # zoomed on the cone (8.9-9.6x): overflow domes and cascades <= 0.033, ep55's fountain >= 0.137
+    fountain_area: 0.06
+    ambiguous_area: 0.03
+  kilauea-k2:            # 1.7 km away: no fountain on 34 overflow-night frames; ep55's fountain 0.016-0.023 from 04:22
+    fountain_area: 0.01
+    ambiguous_area: 0.005
