@@ -1,0 +1,9 @@
+# The Dockerfile copies only what it names, and this keeps secrets and data out of any build context too.
+.env
+.env.*
+data/
+.venv/
+.git/
+**/__pycache__/
+tests/
+docs/
