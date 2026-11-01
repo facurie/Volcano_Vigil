@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The Space container's entry point (docs/DEPLOY.md): restore the state, start the dashboard, catch up on the frames
-# missed while the Space was down, then run the live services next to the state saver.
+# missed while the Space was down, then run the live services (ingest, the pipeline and the fountaining alerts) next
+# to the state saver.
 set -uo pipefail
 
 BUCKET=facurie/vigil-state
@@ -35,6 +36,8 @@ supervise vigil-ingest --lookback-hours 24 &
 ingest_pid=$!
 supervise vigil-pipeline --volcano kilauea &
 pipeline_pid=$!
+supervise vigil-alerts --volcano kilauea &
+alerts_pid=$!
 vigil-persist run --bucket "$BUCKET" --interval 300 &
 persist_pid=$!
 
@@ -42,8 +45,8 @@ persist_pid=$!
 # files agree; then the dashboard.
 stop() {
   trap '' TERM INT
-  kill "$ingest_pid" "$pipeline_pid" 2>/dev/null
-  wait "$ingest_pid" "$pipeline_pid"
+  kill "$ingest_pid" "$pipeline_pid" "$alerts_pid" 2>/dev/null
+  wait "$ingest_pid" "$pipeline_pid" "$alerts_pid"
   kill "$persist_pid" 2>/dev/null && wait "$persist_pid"
   kill "$web_pid" 2>/dev/null
   exit "${1:-0}"

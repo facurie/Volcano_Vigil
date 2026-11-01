@@ -21,7 +21,8 @@ Volcano Vigil runs as one Hugging Face Docker Space, `facurie/volcano-vigil`, on
 | 4 | `vigil-ingest --once --lookback-hours 24` | Catches up on the last 24 h of KPcam and K2cam from AshCam |
 | 5 | `vigil-ingest --lookback-hours 24` | Polls KPcam and K2cam (AshCam) and F1cam (`M.jpg`); restarted if it exits |
 | 6 | `vigil-pipeline --volcano kilauea` | Every 5 min: quality gate, one SAM window per camera per hour, measurements, an hourly bulletin. The only service that spends money; restarted if it exits |
-| 7 | `vigil-persist run --interval 300` | Saves the state every 5 min and once more when the Space stops |
+| 7 | `vigil-alerts --volcano kilauea` | Every minute: looks for lava fountaining and posts each new alert to Telegram; restarted if it exits (see "Fountaining alerts and Telegram") |
+| 8 | `vigil-persist run --interval 300` | Saves the state every 5 min and once more when the Space stops |
 
 All of them run one image as uid 1000 with `DAILY_BUDGET_USD=5`, on the data dir `/app/data`. SQLite in WAL mode
 lets them write and read at once. Secrets (`MODEL_API_KEY`, `HF_TOKEN`) are Space secrets, which reach the
@@ -39,7 +40,7 @@ processes as environment variables; they are never in git or in the image.
    - `MODEL_API_KEY`: the value of that line in the local `.env`;
    - `HF_TOKEN`: the token of step 2.
 
-   Phase 8 adds the Telegram token the same way.
+   The Telegram bot token is added the same way (see "Fountaining alerts and Telegram").
 5. **Deploy:** commit, then `.venv/Scripts/vigil-space.exe deploy --repo facurie/volcano-vigil`. The Hub builds the
    image (a few minutes) and starts it. Watch it with the commands under "Operate".
 
@@ -83,6 +84,30 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
   Resume with `HfApi().restart_space("facurie/volcano-vigil")`.
 - After a new replay of episode 55: run `vigil-mirror push --episode 55 --repo facurie/volcano-vigil-ep55` locally,
   then redeploy. `vigil-mirror pull` fetches what changed.
+
+## Fountaining alerts and Telegram
+
+- **What runs:** `vigil-alerts --volcano kilauea`, every minute, supervised like ingest and the pipeline. It watches
+  the alert cameras for a lava fountain, stores each onset and end in the `alerts` table (with their frames under
+  `data/alerts/`, which `vigil-persist` saves) and posts it to the public Telegram channel
+  [Volcano Vigil · Kīlauea](https://t.me/volcano_vigil_kilauea), through the bot `@volcano_vigil_bot`.
+- **Its spend:** the Meta API calls it makes carry the tag `alerts:<date>` (one per UTC day) and may cost at most
+  $0.75 a day (`ALERT_RESERVE_USD`, set in the image). They count inside the $5 cap: the pipeline stops at $4.25, so
+  the alerts always have their share.
+- **The secrets:** `TELEGRAM_BOT_TOKEN` is a Space secret (the value BotFather gave; never in git or the image) and
+  `TELEGRAM_CHAT_ID` a public Space variable: the channel's numeric id, `-1004340718752`, which is not a secret.
+  Check them locally with `vigil-telegram check`, and post a test message that is not an alert with
+  `vigil-telegram test`.
+- **Its log lines:** read the run log as under "Operate" (the code block there), and grep it for `Telegram:` (a post
+  that failed) and `ALERT` (an alert raised).
+- **The alerts, read from the bucket's copy of the database** (copy it as under "Operate"):
+
+  `.venv/Scripts/python.exe -I -c "import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); print(*c.execute('SELECT id, kind, clock, captured_at, sent_at, send_error FROM alerts').fetchall(), sep='
+')" <scratch>/ledger.sqlite`
+
+  `sent_at` is empty and `send_error` says why when a post to Telegram failed.
+- **A longer catch-up at start:** the V1 camera, which only the alerts use, adds about 720 frames per 24 h to the
+  catch-up, so the start takes about 5 minutes more (about 0.4 s per frame).
 
 ## Costs
 

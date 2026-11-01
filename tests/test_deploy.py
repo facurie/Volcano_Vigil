@@ -34,6 +34,7 @@ def test_the_image_carries_the_daily_budget_and_the_dirs_every_service_shares():
     dockerfile = text("Dockerfile")
 
     assert "DAILY_BUDGET_USD=5" in dockerfile
+    assert "ALERT_RESERVE_USD=0.75" in dockerfile
     assert "DATA_DIR=/app/data" in dockerfile and "DB_PATH=/app/data/vigil.sqlite" in dockerfile
     assert "mkdir data && chown vigil:vigil data" in dockerfile
 
@@ -65,6 +66,7 @@ def test_the_entry_point_runs_the_existing_clis_with_the_projects_arguments():
     assert "vigil-ingest --once --lookback-hours 24" in script
     assert "supervise vigil-ingest --lookback-hours 24 &" in script
     assert "supervise vigil-pipeline --volcano kilauea &" in script
+    assert "supervise vigil-alerts --volcano kilauea &" in script
     assert 'vigil-persist run --bucket "$BUCKET" --interval 300 &' in script
     commands = set(re.findall(r"^(?:supervise )?(vigil-[a-z]+)", script, re.MULTILINE))
     assert commands <= set(pyproject()["project"]["scripts"])
@@ -83,8 +85,8 @@ def test_the_services_stop_before_the_last_save_so_nothing_writes_during_it():
     supervise = script[script.index("supervise() {"):script.index("supervise vigil-ingest")]
     assert 'trap \'kill "$child"' in supervise  # a TERM to the supervisor reaches the service it runs
     stop = script[script.index("stop() {"):]
-    order = ['kill "$ingest_pid" "$pipeline_pid"', 'wait "$ingest_pid" "$pipeline_pid"', 'kill "$persist_pid"',
-             'wait "$persist_pid"']
+    order = ['kill "$ingest_pid" "$pipeline_pid" "$alerts_pid"', 'wait "$ingest_pid" "$pipeline_pid" "$alerts_pid"',
+             'kill "$persist_pid"', 'wait "$persist_pid"']
     positions = [stop.index(step) for step in order]
     assert positions == sorted(positions)
 

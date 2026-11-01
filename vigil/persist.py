@@ -1,10 +1,10 @@
 """Keep the live state across restarts of a Hugging Face Docker Space, whose disk is lost whenever it restarts.
 
-The state goes to a private Hugging Face bucket: the frames and the bulletins as files, and the database as one
-self-contained copy. They are saved in that order, so a saved row never points at a file the bucket lacks. `restore`
-runs at every start; `run` saves every few minutes and once more when it is stopped. A restart therefore costs at
-most the last interval of work, and the Meta API cost ledger, a table of the database, keeps the daily cap across
-restarts.
+The state goes to a private Hugging Face bucket: the frames, the bulletins and the alerts' frames as files, and the
+database as one self-contained copy. They are saved in that order, so a saved row never points at a file the bucket
+lacks. `restore` runs at every start; `run` saves every few minutes and once more when it is stopped. A restart
+therefore costs at most the last interval of work, and the Meta API cost ledger, a table of the database, keeps the
+daily cap across restarts.
 
     vigil-persist restore --bucket facurie/vigil-state
     vigil-persist run --bucket facurie/vigil-state --interval 300
@@ -28,7 +28,7 @@ from vigil.settings import Settings
 
 log = logging.getLogger(__name__)
 
-FOLDERS = ("frames", "bulletins")  # saved as files, before the database
+FOLDERS = ("frames", "bulletins", "alerts")  # saved as files, before the database
 DB_KEY = "db/vigil.sqlite"
 
 
@@ -37,9 +37,9 @@ def _uri(bucket: str, *parts: str) -> str:
 
 
 def backup(api: Any, data_dir: Path, db_path: Path, bucket: str) -> None:
-    """Save the frames and bulletins under `data_dir` and then the database at `db_path` to `bucket`. A frame still
-    being written (`*.part`) is skipped. Only changed files are transferred, and files deleted here stay in the
-    bucket. The database is copied with SQLite's backup, which is safe while other processes write to it."""
+    """Save the frames, bulletins and alerts' frames under `data_dir` and then the database at `db_path` to `bucket`.
+    A frame still being written (`*.part`) is skipped. Only changed files are transferred, and files deleted here stay
+    in the bucket. The database is copied with SQLite's backup, which is safe while other processes write to it."""
     for name in FOLDERS:
         if (data_dir / name).is_dir():
             api.sync_bucket(str(data_dir / name), _uri(bucket, name), quiet=True, exclude=["*.part"])

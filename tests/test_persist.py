@@ -71,13 +71,15 @@ class FakeBucket:
 
 @pytest.fixture
 def data(tmp_path):
-    """A data dir as the live services leave it: a frame, a bulletin image, a file of the replay and a database
-    that has spent $0.42."""
+    """A data dir as the live services leave it: a frame, a bulletin image, an alert's frame, a file of the replay
+    and a database that has spent $0.42."""
     data = tmp_path / "data"
     (data / "frames" / "kilauea-kp" / "2026-11-01").mkdir(parents=True)
     (data / "frames" / "kilauea-kp" / "2026-11-01" / "a.jpg").write_bytes(b"frame")
     (data / "bulletins" / "run1").mkdir(parents=True)
     (data / "bulletins" / "run1" / "bulletin.html").write_bytes(b"<p>bulletin</p>")
+    (data / "alerts" / "20261102T1310Z_onset").mkdir(parents=True)
+    (data / "alerts" / "20261102T1310Z_onset" / "frame1.jpg").write_bytes(b"alert")
     (data / "replay" / "ep55").mkdir(parents=True)
     (data / "replay" / "ep55" / "timeline.json").write_bytes(b"{}")
     with closing(db.connect(data / "vigil.sqlite")) as conn:
@@ -92,13 +94,13 @@ def spent(database):
         return conn.execute("SELECT SUM(cost_usd) FROM api_calls").fetchone()[0]
 
 
-def test_backup_saves_the_frames_the_bulletins_and_the_database_but_not_the_replay(data):
+def test_backup_saves_the_frames_the_bulletins_the_alerts_and_the_database_but_not_the_replay(data):
     bucket = FakeBucket()
 
     backup(bucket, data, data / "vigil.sqlite", BUCKET)
 
-    assert sorted(bucket.files) == ["bulletins/run1/bulletin.html", "db/vigil.sqlite",
-                                    "frames/kilauea-kp/2026-11-01/a.jpg"]
+    assert sorted(bucket.files) == ["alerts/20261102T1310Z_onset/frame1.jpg", "bulletins/run1/bulletin.html",
+                                    "db/vigil.sqlite", "frames/kilauea-kp/2026-11-01/a.jpg"]
 
 
 def test_backup_leaves_out_a_frame_that_is_still_being_written(data):
@@ -128,7 +130,7 @@ def test_backup_saves_the_files_before_the_database(data):
 
     backup(bucket, data, data / "vigil.sqlite", BUCKET)
 
-    assert bucket.calls == ["sync_bucket", "sync_bucket", "batch_bucket_files"]
+    assert bucket.calls == ["sync_bucket", "sync_bucket", "sync_bucket", "batch_bucket_files"]
 
 
 def test_restore_brings_back_what_backup_saved(data, tmp_path):
@@ -141,6 +143,7 @@ def test_restore_brings_back_what_backup_saved(data, tmp_path):
     assert restored is True
     assert (fresh / "frames" / "kilauea-kp" / "2026-11-01" / "a.jpg").read_bytes() == b"frame"
     assert (fresh / "bulletins" / "run1" / "bulletin.html").read_bytes() == b"<p>bulletin</p>"
+    assert (fresh / "alerts" / "20261102T1310Z_onset" / "frame1.jpg").read_bytes() == b"alert"
     assert spent(fresh / "vigil.sqlite") == 0.42
 
 
