@@ -41,6 +41,7 @@ class Camera(BaseModel):
     license: str = Field(min_length=1)
     attribution: str = Field(min_length=1)
     enabled: bool = False
+    track: bool = True  # the pipeline tracks it hourly with SAM video; False: ingested for the alerts only
     poll_minutes: float = Field(default=5, gt=0)
     kind: CameraKind = "visible"
     ashcam_code: str | None = None  # USGS AshCam archive code, e.g. kilauea-kp-cam

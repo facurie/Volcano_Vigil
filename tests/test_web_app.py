@@ -66,7 +66,8 @@ def test_config_names_the_volcano_its_cameras_and_the_replays_on_disk(client):
 
     assert (config["volcano"]["name"], config["volcano"]["utc_offset_hours"]) == ("Kīlauea", -10)
     assert config["vent"]["lat"] == 19.40496
-    assert config["live"] == {"cameras": ["kilauea-k2", "kilauea-kp", "kilauea-f1"], "available": True}
+    assert config["live"] == {"cameras": ["kilauea-v1", "kilauea-k2", "kilauea-kp", "kilauea-f1"],
+                              "available": True}
     assert [(r["episode"], r["start"], r["end"], r["step_minutes"]) for r in config["replays"]] == [
         ("55", "2026-10-17T13:00:00Z", "2026-10-17T19:30:00Z", 5)]
     assert config["disclaimer"]["es"].startswith("Lectura automática")
@@ -84,7 +85,8 @@ def test_live_answers_at_the_wall_clock(client, live, tmp_path):
 
     assert cameras["clock"] == to_iso(NOW)
     assert [(c["camera_id"], c["condition"]) for c in cameras["cameras"]] == [
-        ("kilauea-k2", "no_frames"), ("kilauea-kp", "stale"), ("kilauea-f1", "no_frames")]
+        ("kilauea-v1", "no_frames"), ("kilauea-k2", "no_frames"), ("kilauea-kp", "stale"),
+        ("kilauea-f1", "no_frames")]
 
 
 def test_a_replay_answers_at_its_simulated_clock(client, replayed, tmp_path):

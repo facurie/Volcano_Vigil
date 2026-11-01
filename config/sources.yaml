@@ -1,7 +1,8 @@
 # Camera sources for Volcano Vigil.
 #
 # Every camera declares its license and attribution. A camera is fetched only
-# when `enabled: true`.
+# when `enabled: true`. `track: false` keeps a camera out of the pipeline's hourly SAM
+# tracking (it still gets free local verdicts).
 # `ashcam_code` names the camera in the USGS AshCam archive (about 31 days of
 # frames with exact capture times); `vigil-backfill` downloads from it.
 # `live_source: ashcam` polls the archive instead of M.jpg: every 2-min (KPcam
@@ -31,7 +32,8 @@ cameras:
     attribution: U.S. Geological Survey
     ashcam_code: kilauea-v1-cam
     live_source: ashcam
-    enabled: false
+    enabled: true
+    track: false        # ingested for the fountaining alerts (config/alerts.yaml), never tracked hourly
     poll_minutes: 2
     notes: PTZ camera; pan/tilt/zoom and an HST timestamp are burned into the frame.
   - id: kilauea-k2

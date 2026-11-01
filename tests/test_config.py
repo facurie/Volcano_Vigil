@@ -127,3 +127,11 @@ def test_the_repo_sources_give_each_volcanos_local_time():
     sources = load_sources(REPO / "config" / "sources.yaml")
 
     assert sources.volcanoes["kilauea"].utc_offset_hours == -10      # HST, no daylight saving
+
+
+def test_a_camera_is_tracked_unless_it_says_otherwise_and_v1_is_ingested_for_alerts_only():
+    sources = load_sources(REPO / "config" / "sources.yaml")
+    cameras = {camera.id: camera for camera in sources.cameras}
+
+    assert cameras["kilauea-k2"].track and cameras["kilauea-kp"].track
+    assert cameras["kilauea-v1"].enabled and not cameras["kilauea-v1"].track

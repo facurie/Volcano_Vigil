@@ -2,10 +2,11 @@
 
 One step at time `now`, for one volcano's cameras:
 1. the quality gate gives a verdict to every frame of the last hours that has none (local checks, and Muse
-   Spark for the uncertain ones when there is a client);
+   Spark for the uncertain ones when there is a client; a camera with `track: false` gets local verdicts only);
 2. every closed window (one per camera per hour, the Phase 2 cost rule) with enough usable frames that lacks
    a run of some target is tracked, for the missing targets only, with SAM 3.1 video, and a calibrated
-   camera's new detections are measured;
+   camera's new detections are measured (a camera with `track: false` is never tracked: it is ingested for
+   the alerts);
 3. at each full `agent_every` after the pipeline started, the agent writes a bulletin.
 A window counts as closed once `settle` has passed after its end, so that late frames are in; the replay, whose
 frames are all on time, settles for nothing. The agent waits for the same `settle`: live, the 14:00 bulletin runs
@@ -142,7 +143,8 @@ class Pipeline:
         spark = self.config.spark if ctx.client is not None else "never"
         try:
             for camera in self._cameras:
-                result = gate.assess_range(camera.id, ctx.now - self.config.lookback, ctx.now, spark=spark)
+                result = gate.assess_range(camera.id, ctx.now - self.config.lookback, ctx.now,
+                                           spark=spark if camera.track else "never")
                 report.assessed += len(result.verdicts)
                 report.usable += sum(verdict.usable for verdict in result.verdicts)
                 report.errors += result.errors
@@ -171,6 +173,8 @@ class Pipeline:
 
     def _track_windows(self, ctx: ToolContext, report: StepReport, flush: bool) -> None:
         for camera in self._cameras:
+            if not camera.track:
+                continue
             for start, end in self._windows(ctx.now, flush):
                 missing = self._missing(ctx, camera, start)
                 if not missing or self._attempts.get((camera.id, start), 0) >= MAX_WINDOW_ATTEMPTS:

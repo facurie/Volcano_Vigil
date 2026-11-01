@@ -7,7 +7,7 @@ import openai
 import pytest
 
 from test_agent_loop import SOURCES_YAML
-from test_agent_tools import SIZE, T0, add_frame, add_run, context, store  # store is a fixture
+from test_agent_tools import SIZE, SOURCES, T0, add_frame, add_run, context, store  # store is a fixture
 from test_metrics import kp_calibration
 from vigil import tracking
 from vigil.agent.bulletin import Written
@@ -440,3 +440,29 @@ def test_a_forced_agent_retries_a_failed_run_at_its_clock_and_gives_up_after_two
     assert fakes.agent_clocks == [START + 30 * M] * 2
     assert "agent at 2026-10-17T13:30:00Z: gave up after 2 failed runs" in reports[2].errors
     assert reports[3].errors == []
+
+
+def untracked_v1(conn, tmp_path, fakes, **config):
+    """A pipeline over K2 and V1, where V1 is ingested for the alerts only (track: false)."""
+    sources = SOURCES.model_copy(update={"cameras": [
+        camera.model_copy(update={"track": False}) if camera.id == "kilauea-v1" else camera
+        for camera in SOURCES.cameras]})
+    base = dataclasses.replace(context(conn, tmp_path, client="a Meta client", now=START), sources=sources)
+    config = {"volcano": "kilauea", "cameras": ("kilauea-k2", "kilauea-v1"), "bulletin_dir": tmp_path / "bulletins",
+              "agent_every": None, **config}
+    return Pipeline(base, PipelineConfig(**config), track=fakes.track, measure=fakes.measure, write=fakes.write)
+
+
+def test_a_camera_that_is_not_tracked_gets_local_verdicts_and_no_sam_window(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-k2", 0)
+    v1 = frames(conn, store, "kilauea-v1", 0, usable=None)
+
+    # spark="all" would ask Muse Spark about every frame the local checks pass; the client here is a string, so
+    # any call for V1 would fail
+    report = untracked_v1(conn, tmp_path, fakes, spark="all").step(START + 2 * H)
+
+    assert report.assessed == len(v1)
+    rows = conn.execute(f"SELECT decided_by FROM frame_quality WHERE frame_id IN ({','.join('?' * len(v1))})",
+                        v1).fetchall()
+    assert [row["decided_by"] for row in rows] == ["local"] * len(v1)
+    assert [camera for camera, _, _ in fakes.tracked] == ["kilauea-k2"]
