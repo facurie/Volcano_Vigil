@@ -77,6 +77,18 @@ def test_the_state_is_saved_one_last_time_when_the_space_stops():
     assert 'kill "$persist_pid"' in script and 'wait "$persist_pid"' in script
 
 
+def test_the_services_stop_before_the_last_save_so_nothing_writes_during_it():
+    script = text("deploy", "start.sh")
+
+    supervise = script[script.index("supervise() {"):script.index("supervise vigil-ingest")]
+    assert 'trap \'kill "$child"' in supervise  # a TERM to the supervisor reaches the service it runs
+    stop = script[script.index("stop() {"):]
+    order = ['kill "$ingest_pid" "$pipeline_pid"', 'wait "$ingest_pid" "$pipeline_pid"', 'kill "$persist_pid"',
+             'wait "$persist_pid"']
+    positions = [stop.index(step) for step in order]
+    assert positions == sorted(positions)
+
+
 def test_every_runtime_dependency_is_pinned_for_the_image():
     def name(requirement):
         return re.split(r"[<>=!~\[ ;]", requirement, maxsplit=1)[0].lower().replace("_", "-")

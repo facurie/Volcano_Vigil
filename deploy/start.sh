@@ -16,12 +16,19 @@ web_pid=$!
 # Frames from the last 24 h that AshCam still has, so the first hours the pipeline tracks are complete.
 vigil-ingest --once --lookback-hours 24 || echo "catch-up failed; the ingest service below retries" >&2
 
-# Run a service again whenever it exits (for example, the pipeline before MODEL_API_KEY is set).
+# Run a service again whenever it exits (for example, the pipeline before MODEL_API_KEY is set). A TERM to the
+# supervisor stops the service too.
 supervise() {
+  child=""
+  trap 'kill "$child" 2>/dev/null; wait "$child"; exit 0' TERM
   while true; do
-    "$@"
+    "$@" &
+    child=$!
+    wait "$child"
     echo "$1 exited with status $?; restarting in 10 s" >&2
-    sleep 10
+    sleep 10 &
+    child=$!
+    wait "$child"
   done
 }
 supervise vigil-ingest --lookback-hours 24 &
@@ -31,15 +38,18 @@ pipeline_pid=$!
 vigil-persist run --bucket "$BUCKET" --interval 300 &
 persist_pid=$!
 
-# On a stop, let the saver make its last save (SIGTERM) before anything else goes.
+# On a stop, first stop the services that write, so the saver's last save (on SIGTERM) sees the database and the
+# files agree; then the dashboard.
 stop() {
   trap '' TERM INT
+  kill "$ingest_pid" "$pipeline_pid" 2>/dev/null
+  wait "$ingest_pid" "$pipeline_pid"
   kill "$persist_pid" 2>/dev/null && wait "$persist_pid"
-  kill "$ingest_pid" "$pipeline_pid" "$web_pid" 2>/dev/null
-  exit 0
+  kill "$web_pid" 2>/dev/null
+  exit "${1:-0}"
 }
 trap stop TERM INT
 
 wait "$web_pid"
 echo "the dashboard exited with status $?; stopping the Space" >&2
-exit 1
+stop 1
