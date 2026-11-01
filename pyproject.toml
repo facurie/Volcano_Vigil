@@ -44,6 +44,7 @@ vigil-mirror = "vigil.mirror:main"
 vigil-persist = "vigil.persist:main"
 vigil-space = "vigil.space:main"
 vigil-telegram = "vigil.telegram:main"
+vigil-alerts = "vigil.alerts:main"
 
 [tool.setuptools.packages.find]
 include = ["vigil*"]

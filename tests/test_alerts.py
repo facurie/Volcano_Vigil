@@ -1,5 +1,6 @@
 import io
 import json
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -12,12 +13,14 @@ from PIL import Image
 from test_agent_tools import context, store  # store: fixture
 from test_meta_client import FakeApi, make_client
 from vigil import db, masks
-from vigil.alerts import (CAPTION_MAX, LAVA_GLOW, NOTE_EN, NOTE_ES, Alert, AlertConfig, AlertWatcher, CameraRule,
-                          Sighting, alert_texts, best_sighting, caption, draw_alert_frame, duration_text, load_alert,
-                          load_alert_config, size_of, store_alert)
+from vigil.alerts import (CAPTION_MAX, LAVA_GLOW, MAX_SEND_ATTEMPTS, NOTE_EN, NOTE_ES, Alert, AlertConfig,
+                          AlertWatcher, CameraRule, Sighting, alert_texts, best_sighting, caption, draw_alert_frame,
+                          duration_text, load_alert, load_alert_config, main, post_replay, send_pending, size_of,
+                          store_alert)
 from vigil.config import ConfigError, Volcano
 from vigil.meta.ledger import BudgetExceeded
 from vigil.meta.sam import SamObject
+from vigil.telegram import TelegramError
 from vigil.timeutil import to_iso
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -726,3 +729,90 @@ def test_a_frame_seven_minutes_after_the_last_look_is_due_but_not_one_second_ear
     w.step(late)
 
     assert len(fakes.looked) == looks
+
+
+# --- posting and the command line ------------------------------------------------------------------------------------
+
+
+class FakeTelegram:
+    def __init__(self, fail=False):
+        self.posts, self.fail = [], fail
+
+    def send_photo(self, photo, text):
+        if self.fail:
+            raise TelegramError("sendPhoto: 500 Internal Server Error")
+        self.posts.append((photo, text))
+        return len(self.posts)
+
+
+def stored(conn, tmp_path, clock="2026-11-02T13:08:00Z"):
+    (tmp_path / "alerts" / "x").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "alerts" / "x" / "frame1.jpg").write_bytes(b"\xff\xd8jpeg")
+    return store_alert(conn, make_alert(clock=clock, overlay="alerts/x/frame1.jpg"))
+
+
+NOW = datetime(2026, 11, 2, 13, 9, tzinfo=timezone.utc)
+
+
+def test_a_new_alert_is_posted_once_with_its_frame_and_caption(conn, tmp_path):
+    alert = stored(conn, tmp_path)
+    telegram = FakeTelegram()
+
+    assert send_pending(conn, telegram, tmp_path, NOW) == []
+    assert send_pending(conn, telegram, tmp_path, NOW) == []
+
+    assert telegram.posts == [(b"\xff\xd8jpeg", caption(alert))]
+    assert conn.execute("SELECT sent_at FROM alerts").fetchone()[0] == "2026-11-02T13:09:00Z"
+
+
+def test_a_failed_post_is_tried_again_and_given_up_after_five_attempts(conn, tmp_path):
+    stored(conn, tmp_path)
+    telegram = FakeTelegram(fail=True)
+
+    errors = [send_pending(conn, telegram, tmp_path, NOW) for _ in range(MAX_SEND_ATTEMPTS + 2)]
+
+    assert [len(e) for e in errors] == [1] * MAX_SEND_ATTEMPTS + [0, 0]
+    row = conn.execute("SELECT sent_at, send_attempts, send_error FROM alerts").fetchone()
+    assert (row[0], row[1]) == (None, MAX_SEND_ATTEMPTS) and "500" in row[2]
+
+
+def test_an_alert_older_than_two_hours_is_never_posted(conn, tmp_path):
+    stored(conn, tmp_path, clock="2026-11-02T10:00:00Z")
+    telegram = FakeTelegram()
+
+    send_pending(conn, telegram, tmp_path, NOW)
+
+    assert telegram.posts == []
+
+
+def test_a_replays_alerts_are_posted_oldest_first_each_marked_as_a_replay(tmp_path):
+    folder = tmp_path / "replay" / "ep55"
+    (tmp_path / "alerts" / "x").mkdir(parents=True)
+    (tmp_path / "alerts" / "x" / "frame1.jpg").write_bytes(b"\xff\xd8jpeg")
+    with closing(db.connect(folder / "vigil.sqlite")) as replay:
+        store_alert(replay, make_alert("end", clock="2026-10-17T19:00:00Z", overlay="alerts/x/frame1.jpg"))
+        store_alert(replay, make_alert("onset", clock="2026-10-17T13:08:00Z", overlay="alerts/x/frame1.jpg"))
+    telegram = FakeTelegram()
+
+    ids = post_replay(tmp_path, "55", telegram)
+
+    assert ids == [1, 2]
+    assert [text.splitlines()[2] for _, text in telegram.posts] == [
+        make_alert("onset").headline_en, make_alert("end").headline_en]
+    assert all(text.startswith("REPLAY of episode 55 (2026-10-17): not a live alert.") for _, text in telegram.posts)
+
+
+def test_cli_refuses_an_alert_camera_that_is_not_enabled(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr("vigil.settings.load_dotenv", lambda: None)
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(
+        "volcanoes:\n  kilauea: {name: Kilauea, country: US, official_agency: HVO, official_url: 'https://x'}\n"
+        "cameras:\n  - {id: kilauea-k2, name: K2cam, volcano: kilauea, url: 'https://x/k2.jpg',\n"
+        "     license: PD, attribution: USGS, enabled: true}\n", encoding="utf-8")
+    monkeypatch.setenv("SOURCES_PATH", str(sources))
+    monkeypatch.setenv("ALERTS_PATH", str(ROOT / "config" / "alerts.yaml"))  # watches kilauea-v1 too
+
+    with pytest.raises(SystemExit):
+        main(["--volcano", "kilauea", "--once"])
+
+    assert "kilauea-v1" in capsys.readouterr().err

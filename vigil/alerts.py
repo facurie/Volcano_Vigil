@@ -23,33 +23,42 @@ alerts to Telegram (vigil.telegram); a replay never does.
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import json
 import logging
 import sqlite3
+import sys
+import time
 from collections.abc import Callable, Mapping
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 import numpy as np
 import openai
 import yaml
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from vigil import masks
+from vigil import db, masks
 from vigil.agent.bulletin import COLORS, DISCLAIMER_EN, DISCLAIMER_ES, OVERLAY_WIDTH
+from vigil.agent.loop import context_from_settings
 from vigil.agent.tools import ToolContext
-from vigil.config import Camera, ConfigError, Volcano
+from vigil.config import Camera, ConfigError, Volcano, load_sources
+from vigil.episodes import EPISODES
 from vigil.imaging import load_for_upload
 from vigil.meta.client import MetaClient
-from vigil.meta.ledger import BudgetExceeded
+from vigil.meta.ledger import BudgetExceeded, CostLedger
 from vigil.meta.sam import SamObject, fit_mask
 from vigil.overlay import Layer, draw_layers
 from vigil.quality import ImageStats, check_local, measure
+from vigil.settings import Settings
 from vigil.sun import solar_elevation
+from vigil.telegram import Telegram, TelegramError, describe
 from vigil.timeutil import parse_utc, to_iso, utcnow
 from vigil.tracking import detection_mask
 
@@ -555,3 +564,99 @@ class AlertWatcher:
                  None if sighting is None else sighting.score, None if sighting is None else sighting.area, *box,
                  None if sighting is None else json.dumps(masks.encode(sighting.mask)), size,
                  None if answer is None else json.dumps(answer, ensure_ascii=False), int(episode))).lastrowid
+
+
+SEND_WITHIN = timedelta(hours=2)  # an alert older than this is never posted (after a long outage, say)
+MAX_SEND_ATTEMPTS = 5
+REPLAY_NOTE = "REPLAY of episode {key} ({date}): not a live alert. / REPETICIÓN del episodio {key}: no es una alerta en vivo."
+
+
+def send_pending(conn: sqlite3.Connection, telegram: Telegram, data_dir: Path, now: datetime) -> list[str]:
+    """Post the alerts raised in the last SEND_WITHIN that are not posted yet, oldest first; returns the failures. A
+    failed post is tried again on later steps, MAX_SEND_ATTEMPTS times in all."""
+    errors = []
+    rows = conn.execute(
+        "SELECT id, body FROM alerts WHERE sent_at IS NULL AND send_attempts < ? AND clock >= ? ORDER BY clock, id",
+        (MAX_SEND_ATTEMPTS, to_iso(now - SEND_WITHIN))).fetchall()
+    for row in rows:
+        alert = Alert.model_validate_json(row["body"])
+        try:
+            telegram.send_photo((data_dir / alert.overlay).read_bytes(), caption(alert))
+        except (TelegramError, OSError) as exc:
+            with conn:
+                conn.execute("UPDATE alerts SET send_attempts = send_attempts + 1, send_error = ? WHERE id = ?",
+                             (str(exc)[:300], row["id"]))
+            errors.append(f"alert {row['id']} not posted: {exc}"[:300])
+            continue
+        with conn:
+            conn.execute("UPDATE alerts SET sent_at = ?, send_error = NULL WHERE id = ?", (to_iso(now), row["id"]))
+    return errors
+
+
+def post_replay(data_dir: Path, key: str, telegram: Telegram) -> list[int]:
+    """Post an episode's replayed alerts, each marked as a replay (for demos); returns the message ids."""
+    path = data_dir / "replay" / f"ep{key}" / "vigil.sqlite"
+    with closing(db.connect_readonly(path)) as conn:
+        alerts = [Alert.model_validate_json(row[0]) for row in conn.execute("SELECT body FROM alerts ORDER BY clock")]
+    prefix = REPLAY_NOTE.format(key=key, date=EPISODES[key].start.date().isoformat())
+    return [telegram.send_photo((data_dir / alert.overlay).read_bytes(), caption(alert, prefix)) for alert in alerts]
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Watch a volcano's alert cameras (config/alerts.yaml) for lava "
+                                                 "fountaining starting and stopping, and post each change to "
+                                                 "Telegram. Run vigil-ingest alongside it.")
+    parser.add_argument("--volcano", required=True, help="volcano id from the sources file, e.g. kilauea")
+    parser.add_argument("--interval", type=float, default=1, help="minutes between steps (default 1)")
+    parser.add_argument("--once", action="store_true", help="run one step and exit")
+    parser.add_argument("--post-replay", metavar="EPISODE", choices=sorted(EPISODES),
+                        help="post that episode's replayed alerts to Telegram, marked as a replay, and exit")
+    args = parser.parse_args(argv)
+    if args.interval <= 0:
+        parser.error("--interval must be positive")
+    settings = Settings.from_env()
+    sources = load_sources(settings.sources_path)
+    if args.volcano not in sources.volcanoes:
+        parser.error(f"unknown volcano {args.volcano!r} in {settings.sources_path}")
+    config = load_alert_config(settings.alerts_path)
+    enabled = {camera.id for camera in sources.enabled_cameras() if camera.volcano == args.volcano}
+    missing = [camera_id for camera_id in config.cameras if camera_id not in enabled]
+    if missing:
+        parser.error(f"alert cameras not enabled for {args.volcano} in {settings.sources_path}: {', '.join(missing)}")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # its request lines would print the Telegram token
+    with closing(db.connect(settings.db_path)) as conn, httpx.Client() as telegram_http, \
+            httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
+        telegram = (Telegram(telegram_http, settings.telegram_token, settings.telegram_chat)
+                    if settings.telegram_token and settings.telegram_chat else None)
+        if args.post_replay:
+            if telegram is None:
+                parser.error("set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to post")
+            print(f"posted messages {post_replay(settings.data_dir, args.post_replay, telegram)}")
+            return
+        if telegram is None:
+            log.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set: alerts are stored but not posted")
+        else:
+            try:
+                log.info("Telegram: %s", describe(telegram.check()))
+            except TelegramError as exc:
+                log.warning("Telegram check failed (posts are still tried): %s", exc)
+        client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+        watcher = AlertWatcher(context_from_settings(settings, conn, http, utcnow(), client, sources), args.volcano,
+                               config, settings.data_dir / "alerts", budget_usd=settings.alert_reserve_usd)
+        while True:
+            try:
+                report = watcher.step(utcnow())
+                if telegram is not None:
+                    report.errors += send_pending(conn, telegram, settings.data_dir, utcnow())
+                if report.looks or report.alerts or report.errors:
+                    print(report.summary(), flush=True)
+            except Exception:
+                if args.once:
+                    raise
+                log.exception("the step failed; the next one tries again")
+            if args.once:
+                return
+            time.sleep(args.interval * 60)
