@@ -33,6 +33,14 @@ export function zone(offsetHours) {
   return `UTC${offsetHours < 0 ? "−" : "+"}${Math.abs(offsetHours)}`;
 }
 
+// The alert the banner shows: the onset while the volcano is fountaining, or the newest end for `hours` after it.
+export function bannerAlert(alerts, state, clock, hours = 6) {
+  const newest = alerts[0];
+  if (!newest) return null;
+  if (state === "fountaining") return newest;
+  return newest.kind === "end" && Date.parse(clock) - Date.parse(newest.clock) <= hours * 3_600_000 ? newest : null;
+}
+
 export function number(value, decimals = 0) {
   return value.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }

@@ -28,12 +28,13 @@ from vigil import masks
 from vigil.agent import render
 from vigil.agent.bulletin import COLORS, DISCLAIMER_EN, DISCLAIMER_ES, Bulletin
 from vigil.agent.tools import STALE_AFTER, calibrated
+from vigil.alerts import Alert
 from vigil.calibration import Calibration
 from vigil.config import Camera, Sources
 from vigil.episodes import DRIFT_HEADER, END_HEADER, HEIGHT_HEADER, Episode
 from vigil.overlay import Layer, draw_layers
 from vigil.phases import HEADER as PHASES_HEADER
-from vigil.replay import ACTIVITY_HEADER, BULLETIN_HEADER, STEP
+from vigil.replay import ACTIVITY_HEADER, ALERT_HEADER, BULLETIN_HEADER, STEP
 from vigil.timeutil import parse_utc, to_iso
 
 # A rejected frame's condition: its first reason in this order (vigil.gate's reasons).
@@ -47,6 +48,7 @@ JPEG_QUALITY = 82
 RESULT_TABLES = (  # the replay's comparison with the official values, as report.md titles it
     ("What the bulletins quoted against the official values", BULLETIN_HEADER, "bulletins"),
     ("Activity against the official times", ACTIVITY_HEADER, "activity"),
+    ("Fountaining alerts against the official times", ALERT_HEADER, "alerts"),
     ("Measurements against the official values", HEIGHT_HEADER, "heights"),
     ("End of fountaining", END_HEADER, "ends"),
     ("Drift", DRIFT_HEADER, "drift"),
@@ -267,6 +269,25 @@ def bulletins(scene: Scene, limit: int = 20) -> list[dict[str, Any]]:
     return out
 
 
+def alerts(scene: Scene, limit: int = 10) -> dict[str, Any]:
+    """The volcano's fountaining alerts raised by the clock, newest first, and the state they leave it in. A database
+    from before the alerts existed has none."""
+    try:
+        rows = scene.conn.execute("SELECT body FROM alerts WHERE volcano = ? AND clock <= ? "
+                                  "ORDER BY clock DESC, id DESC LIMIT ?", (scene.volcano, scene.now, limit)).fetchall()
+    except sqlite3.OperationalError:  # no such table: a replay mirrored before Phase 8
+        return {"state": "quiet", "alerts": []}
+    out = []
+    for row in rows:
+        a = Alert.model_validate_json(row["body"])
+        out.append({"id": a.id, "kind": a.kind, "clock": a.clock, "captured_at": a.captured_at, "seen_at": a.seen_at,
+                    "seen_by": a.seen_by, "camera_id": a.camera_id, "frame_id": a.frame_id, "overlay": a.overlay,
+                    "official_agency": a.official_agency, "official_url": a.official_url,
+                    "en": {"headline": a.headline_en, "text": a.text_en, "disclaimer": a.disclaimer_en},
+                    "es": {"headline": a.headline_es, "text": a.text_es, "disclaimer": a.disclaimer_es}})
+    return {"state": "fountaining" if out and out[0]["kind"] == "onset" else "quiet", "alerts": out}
+
+
 def _parsed(text: str | None) -> Any:
     """A stored JSON text as data; the text itself if it is not JSON (Muse Spark may send broken arguments)."""
     if text is None:
@@ -313,7 +334,8 @@ def replay_state(scene: Scene, folder: Path) -> dict[str, Any]:
     results = None
     if timeline is not None and scene.clock >= episode.end:
         comparison = timeline["comparison"]
-        tables = [{"title": title, "header": header, "rows": comparison[key]} for title, header, key in RESULT_TABLES]
+        tables = [{"title": title, "header": header, "rows": comparison[key]} for title, header, key in RESULT_TABLES
+                  if key in comparison]
         if timeline.get("phases"):
             tables.append({"title": "Episode phases", "header": PHASES_HEADER, "rows": timeline["phases"]["rows"]})
         results = {"tables": tables, "cost_usd": timeline["cost_usd"]}

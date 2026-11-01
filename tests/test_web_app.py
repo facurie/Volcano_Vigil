@@ -198,3 +198,23 @@ def test_the_image_route_sends_a_scaled_jpeg_with_its_masks(client, replayed, tm
     assert answer.headers["content-type"] == "image/jpeg"
     assert Image.open(io.BytesIO(answer.content)).size == (320, 180)
     assert answer.content != plain.content
+
+
+def test_alerts_endpoint_answers_with_the_state_live_and_in_replay(client):
+    live = client.get("/api/alerts")
+    replay = client.get("/api/alerts", params=AT)
+
+    assert live.status_code == 200 and live.json()["state"] == "quiet" and live.json()["alerts"] == []
+    assert replay.status_code == 200 and replay.json()["clock"] == to_iso(T0)
+
+
+def test_media_serves_alert_frames_too(tmp_path):
+    data = tmp_path / "data"
+    (data / "alerts" / "x").mkdir(parents=True)
+    (data / "alerts" / "x" / "frame1.jpg").write_bytes(b"jpeg")
+    (data / "replay" / "ep55" / "alerts" / "y").mkdir(parents=True)
+    (data / "replay" / "ep55" / "alerts" / "y" / "frame2.jpg").write_bytes(b"jpeg")
+
+    assert media_file(data, "alerts/x/frame1.jpg") is not None
+    assert media_file(data, "replay/ep55/alerts/y/frame2.jpg") is not None
+    assert media_file(data, "frames/kilauea-v1/a.jpg") is None

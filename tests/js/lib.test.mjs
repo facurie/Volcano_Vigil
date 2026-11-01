@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { age, bearing, destination, feet, localDate, localTime, number, plusMinus, stamp, ticks, zone } from "../../vigil/web/static/js/lib.js";
+import { age, bannerAlert, bearing, destination, feet, localDate, localTime, number, plusMinus, stamp, ticks, zone } from "../../vigil/web/static/js/lib.js";
 
 test("local time shifts by the volcano's offset, never the browser's zone", () => {
   assert.equal(localTime("2026-10-17T14:55:05Z", -10), "04:55");
@@ -58,4 +58,13 @@ test("a stamp carries the local date when it is not the clock's local day", () =
   assert.equal(stamp("2026-10-17T19:25:09Z", clock, -10, true), "2026-10-17 09:25:09");
   assert.equal(stamp("2026-10-27T09:30:00Z", clock, -10), "2026-10-26 23:30"); // the previous local day
   assert.equal(stamp("2026-10-27T09:30:00Z", clock, 0), "09:30");
+});
+
+test("the banner shows the onset while fountaining, and an end for six hours", () => {
+  const onset = { kind: "onset", clock: "2026-10-17T13:10:00Z" };
+  const end = { kind: "end", clock: "2026-10-17T19:09:00Z" };
+  assert.equal(bannerAlert([onset], "fountaining", "2026-10-17T15:00:00Z"), onset);
+  assert.equal(bannerAlert([end, onset], "quiet", "2026-10-17T19:30:00Z"), end);
+  assert.equal(bannerAlert([end, onset], "quiet", "2026-10-18T01:10:00Z"), null);
+  assert.equal(bannerAlert([], "quiet", "2026-10-17T15:00:00Z"), null);
 });

@@ -1,14 +1,17 @@
 import io
 import json
+import sqlite3
 from datetime import timedelta
 
 import pytest
 from PIL import Image
 
+from test_alerts import make_alert
 from test_agent_tools import SOURCES, T0, add_frame, add_measurement, add_run, add_track, detection_ids
 from test_metrics import kp_calibration
 from test_replay import bulletin_at, top
 from vigil.agent import render
+from vigil.alerts import store_alert
 from vigil.agent.bulletin import DISCLAIMER_EN, DISCLAIMER_ES, Evidence
 from vigil.episodes import EP55, HEIGHT_HEADER
 from vigil.ingest.store import FrameStore
@@ -331,3 +334,42 @@ def test_a_frame_whose_file_is_gone_has_no_image(conn, store, tmp_path):
 
     with pytest.raises(LookupError, match="file"):
         views.frame_image(scene(conn, tmp_path), gone, width=320)
+
+
+def test_alerts_show_only_those_raised_by_the_clock_and_the_state_they_leave(conn, tmp_path):
+    store_alert(conn, make_alert("onset", clock="2026-10-17T13:10:00Z"))
+    store_alert(conn, make_alert("end", clock="2026-10-17T19:09:00Z"))
+
+    before = views.alerts(scene(conn, tmp_path, clock=parse_utc("2026-10-17T13:09:59Z")))
+    during = views.alerts(scene(conn, tmp_path, clock=parse_utc("2026-10-17T15:00:00Z")))
+    after = views.alerts(scene(conn, tmp_path, clock=parse_utc("2026-10-17T19:30:00Z")))
+
+    assert (before["state"], before["alerts"]) == ("quiet", [])
+    assert during["state"] == "fountaining" and [a["kind"] for a in during["alerts"]] == ["onset"]
+    assert after["state"] == "quiet" and [a["kind"] for a in after["alerts"]] == ["end", "onset"]
+    shown = during["alerts"][0]
+    assert set(shown) >= {"id", "kind", "clock", "captured_at", "seen_at", "seen_by", "camera_id", "overlay",
+                          "official_agency", "official_url", "en", "es"}
+    assert set(shown["en"]) == {"headline", "text", "disclaimer"}
+
+
+def test_a_database_from_before_the_alerts_has_none(tmp_path):
+    old = sqlite3.connect(tmp_path / "old.sqlite")
+    old.execute("CREATE TABLE frames (id INTEGER)")
+    old.row_factory = sqlite3.Row
+
+    assert views.alerts(scene(old, tmp_path)) == {"state": "quiet", "alerts": []}
+
+
+def test_the_replays_results_list_the_alerts_table_when_the_timeline_has_one(conn, tmp_path):
+    folder = tmp_path / "replay" / "ep55"
+    folder.mkdir(parents=True)
+    row = ["fountaining started", "03:07", "V1cam", "03:19", "-12 min", "03:10", "-9 min", "03:43", "-33 min"]
+    comparison = {"heights": [], "ends": [], "drift": [], "bulletins": [], "activity": [], "alerts": [row]}
+    (folder / "timeline.json").write_text(json.dumps({"step_minutes": 5, "comparison": comparison, "phases": None,
+                                                      "cost_usd": 1.4}), encoding="utf-8")
+
+    shown = views.replay_state(scene(conn, tmp_path, clock=EP55.end, episode=EP55), folder)
+
+    table = next(t for t in shown["results"]["tables"] if t["title"] == "Fountaining alerts against the official times")
+    assert table["rows"] == [row]

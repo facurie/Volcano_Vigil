@@ -41,8 +41,8 @@ MEDIA_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 
 def media_file(data_dir: Path, path: str) -> Path | None:
-    """A bulletin image under the data dir (an evidence overlay, inside a `bulletins` folder); None for anything
-    else: frames, databases, pages, or a path that leaves the data dir."""
+    """A bulletin's evidence overlay or an alert's frame under the data dir (inside a `bulletins` or `alerts`
+    folder); None for anything else: frames, databases, pages, or a path that leaves the data dir."""
     root = data_dir.resolve()
     try:
         target = (root / path).resolve()
@@ -50,7 +50,8 @@ def media_file(data_dir: Path, path: str) -> Path | None:
             return None
     except (OSError, ValueError):  # e.g. a NUL byte in the path
         return None
-    return target if "bulletins" in target.relative_to(root).parts[:-1] else None
+    folders = target.relative_to(root).parts[:-1]
+    return target if "bulletins" in folders or "alerts" in folders else None
 
 
 def _clock(at: str | None, default: datetime) -> datetime:
@@ -179,6 +180,10 @@ def create_app(settings: Settings | None = None, *, volcano: str = "kilauea",
     @app.get("/api/bulletins")
     def bulletins(seen: Seen, limit: Annotated[int, Query(ge=1, le=100)] = 20) -> dict:
         return {"clock": seen.now, "bulletins": views.bulletins(seen, limit)}
+
+    @app.get("/api/alerts")
+    def alerts(seen: Seen) -> dict:
+        return {"clock": seen.now, **views.alerts(seen)}
 
     @app.get("/api/agent/trace")
     def trace(seen: Seen, run_id: int | None = None) -> dict:

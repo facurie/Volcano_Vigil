@@ -65,6 +65,12 @@ button, select, input { font: inherit; color: inherit; }
 .clock[data-mode="replay"] .clock-local { color: var(--lava); }
 .clock-zone, .clock-utc { font: 400 12px/1 var(--font-mono); color: var(--tephra); }
 .notice { margin: 0; padding: 7px var(--s5); background: var(--notice); border-bottom: 1px solid var(--notice-rule); font-size: 12.5px; line-height: 1.45; color: var(--steam); text-wrap: pretty; }
+/* The fountaining banner under the notice: a word and a time in the fountain's colour, never an alert level. */
+.alert-banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); padding: 7px var(--s5); background: var(--basalt-2); border-bottom: 1px solid var(--rule-strong); font-size: 13px; line-height: 1.45; color: var(--steam); }
+.alert-banner[hidden] { display: none; }
+.alert-tag { font: 600 11px/1 var(--font-cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--lava); }
+.alert-tag[data-kind="end"] { color: var(--ash); }
+.alert-banner a { color: var(--ash); }
 .notice-tag { font: 600 11px/1 var(--font-cond); letter-spacing: 0.08em; text-transform: uppercase; color: var(--sulfur); margin-right: var(--s2); }
 
 /* The console: the frame leads; the bulletins sit beside it at the frame's height. */
@@ -87,6 +93,7 @@ button, select, input { font: inherit; color: inherit; }
 }
 @media (max-width: 640px) {
   .bar { flex-wrap: wrap; padding: var(--s2) var(--s4); row-gap: var(--s2); }
+  .alert-banner { padding: 6px var(--s4); }
   .mark-place { display: none; } .clock { margin-left: 0; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

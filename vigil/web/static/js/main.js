@@ -7,6 +7,7 @@
 import * as api from "./api.js";
 import { el, fill } from "./dom.js";
 import * as lib from "./lib.js";
+import { renderAlert } from "./alerts.js";
 import { renderDrum } from "./drum.js";
 import { renderFeed } from "./feed.js";
 import { renderMap } from "./map.js";
@@ -175,6 +176,7 @@ async function load() {
   const strips = Promise.allSettled(cameraIds.map((id) => call("/api/frames", { camera: id }))).then((results) =>
     Object.fromEntries(results.flatMap((r, i) => (r.status === "fulfilled" ? [[cameraIds[i], r.value.frames]] : []))));
   const bulletins = call("/api/bulletins");
+  const alerts = call("/api/alerts");
   const trace = call("/api/agent/trace", { run_id: wantedRun }).catch((error) => {
     if (wantedRun === null || !error.message.startsWith("404")) throw error;
     if (mine === generation) state.runId = null;  // the traced run is after this clock
@@ -187,14 +189,14 @@ async function load() {
       return null;
     });
 
-  const names = ["cameras", "measuringId", "latest", "measuring", "series", "strips", "bulletins", "trace", "replay",
-    "pinned"];
-  const settled = await Promise.allSettled([cameras, measuringId, latest, measuring, series, strips, bulletins, trace,
-    replay, pinned]);
+  const names = ["cameras", "measuringId", "latest", "measuring", "series", "strips", "bulletins", "alerts", "trace",
+    "replay", "pinned"];
+  const settled = await Promise.allSettled([cameras, measuringId, latest, measuring, series, strips, bulletins, alerts,
+    trace, replay, pinned]);
   if (mine !== generation) return;  // a newer load took over
 
   const data = Object.fromEntries(names.map((name, i) => [name, settle(settled[i])]));
-  const answered = [data.cameras, data.latest, data.bulletins, data.trace, data.series, data.replay]
+  const answered = [data.cameras, data.latest, data.bulletins, data.alerts, data.trace, data.series, data.replay]
     .map((r) => r.value?.clock).find(Boolean);
   const clock = answered ?? state.clock ?? state.config.now;
   last = {
@@ -222,6 +224,7 @@ function paint() {
       console.error(problem);  // one broken panel must not take the rest of the page down
     }
   };
+  draw($("alert-banner"), renderAlert, ["alerts"], () => value("alerts"));
   const panel = (name) => document.querySelector(`.panel.${name}`);
 
   draw(panel("viewer"), renderViewer, ["cameras", "latest"], () => ({

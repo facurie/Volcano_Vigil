@@ -22,6 +22,13 @@ def test_the_notice_is_in_the_page_itself_not_added_by_a_script():
     assert 'class="notice"' in page and "{{notice_lead}}" in page and 'href="{{official_url}}"' in page
 
 
+def test_the_alert_banner_sits_in_the_sticky_top_under_the_notice():
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    top = page[page.index('<div class="top">'):page.index("</div>", page.index('class="notice"'))]
+
+    assert 'id="alert-banner"' in top and top.index('class="notice"') < top.index('id="alert-banner"')
+
+
 def test_leaflet_is_pinned_with_its_integrity_hashes():
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     assert ('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" '
