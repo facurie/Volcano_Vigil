@@ -57,8 +57,8 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
 - Stage: `HfApi().get_space_runtime("facurie/volcano-vigil").stage` (`BUILDING`, `RUNNING`, `RUNTIME_ERROR`, …).
 - Logs, `build` or `run` (the run log streams, so the command stops after 20 s without news):
 
-  ```python
-  # .venv/Scripts/python.exe -I - run <<'EOF'
+  ```bash
+  .venv/Scripts/python.exe -I - run <<'EOF'
   import sys
   import httpx
   from huggingface_hub import get_token
@@ -71,7 +71,7 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
               print(line)
   except httpx.ReadTimeout:
       pass
-  # EOF
+  EOF
   ```
 - Today's Meta API spend (UTC day) and the frames per camera, from the bucket's copy of the database (at most
   5 minutes old):
