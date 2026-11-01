@@ -11,17 +11,27 @@ at every start, and files already up to date are not downloaded again.
 
 from __future__ import annotations
 
+import argparse
+import logging
 import shutil
 import sqlite3
+import tempfile
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
+from typing import Any
+
+from huggingface_hub import HfApi, snapshot_download
 
 from vigil import db
 from vigil.agent.bulletin import DISCLAIMER_EN
-from vigil.config import Volcano
-from vigil.episodes import Episode
+from vigil.config import Volcano, load_sources
+from vigil.episodes import EPISODES, Episode
 from vigil.replay import replay_dir
+from vigil.settings import Settings
 from vigil.timeutil import to_iso
+
+log = logging.getLogger(__name__)
 
 DB_NAME = "vigil.sqlite"
 
@@ -112,3 +122,63 @@ starts, because the USGS AshCam archive keeps frames for only about 31 days.
 - Winds in the database: Open-Meteo (https://open-meteo.com), CC BY 4.0.
 - Everything else (masks, measurements, bulletins, timeline): Volcano Vigil, CC BY 4.0.
 """
+
+
+def _patterns(episode: Episode) -> list[str]:
+    """The dataset paths that belong to the episode's mirror."""
+    return ["frames/**", f"replay/ep{episode.key}/**"]
+
+
+def push(api: HfApi, data_dir: Path, episode: Episode, volcano: Volcano, repo_id: str) -> int:
+    """Upload the episode's mirror to the public dataset `repo_id`, creating the dataset if needed. Mirrored files
+    that the episode no longer has are deleted from the dataset. Returns how many files were uploaded."""
+    with tempfile.TemporaryDirectory() as tmp:
+        staged = stage(data_dir, episode, volcano, Path(tmp))
+        api.create_repo(repo_id, repo_type="dataset", private=False, exist_ok=True)
+        api.upload_folder(repo_id=repo_id, repo_type="dataset", folder_path=tmp,
+                          commit_message=f"Mirror episode {episode.key}: {len(staged)} files",
+                          delete_patterns=_patterns(episode))
+    return len(staged)
+
+
+def pull(data_dir: Path, episode: Episode, repo_id: str, *,
+         download: Callable[..., Any] = snapshot_download) -> Path:
+    """Restore the episode's mirror from the dataset `repo_id` into the data dir; returns the replay's database.
+    Files already up to date are not downloaded again. If the Hub cannot be reached but an earlier pull left the
+    database, the failure is logged and that copy is kept; without a copy it is raised."""
+    database = replay_dir(data_dir, episode) / DB_NAME
+    try:
+        download(repo_id=repo_id, repo_type="dataset", local_dir=data_dir, allow_patterns=_patterns(episode))
+    except Exception as exc:  # any Hub or network failure: the copy on disk, if there is one, still serves
+        if not database.is_file():
+            raise
+        log.warning("episode %s: could not refresh the mirror from %s (%s); keeping the copy in %s",
+                    episode.key, repo_id, exc, data_dir)
+    if not database.is_file():
+        raise FileNotFoundError(f"{repo_id} has no {database.relative_to(data_dir).as_posix()}")
+    return database
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Mirror an episode's replay to a public Hugging Face dataset "
+                                                 "(push), or restore it into the data dir (pull).")
+    parser.add_argument("action", choices=["push", "pull"])
+    parser.add_argument("--episode", required=True, help="episode key, e.g. 55")
+    parser.add_argument("--repo", required=True, help="dataset id, e.g. facurie/volcano-vigil-ep55")
+    args = parser.parse_args(argv)
+    episode = EPISODES.get(args.episode)
+    if episode is None:
+        parser.error(f"no episode {args.episode!r}; known: {', '.join(EPISODES)}")
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    settings = Settings.from_env()
+    if args.action == "push":
+        volcano = load_sources(settings.sources_path).volcanoes[episode.volcano]
+        count = push(HfApi(), settings.data_dir, episode, volcano, args.repo)
+        print(f"episode {episode.key}: {count} files pushed to https://huggingface.co/datasets/{args.repo}")
+    else:
+        print(f"episode {episode.key} restored: {pull(settings.data_dir, episode, args.repo)}")
+
+
+if __name__ == "__main__":
+    main()

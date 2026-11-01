@@ -20,6 +20,7 @@ dependencies = [
     "pydantic>=2.7",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "huggingface_hub>=2.4",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +40,7 @@ vigil-bulletin = "vigil.agent.bulletin:main"
 vigil-pipeline = "vigil.pipeline:main"
 vigil-replay = "vigil.replay:main"
 vigil-web = "vigil.web.app:main"
+vigil-mirror = "vigil.mirror:main"
 
 [tool.setuptools.packages.find]
 include = ["vigil*"]
