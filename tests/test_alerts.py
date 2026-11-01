@@ -705,6 +705,11 @@ def test_the_budget_tag_is_the_utc_day_of_a_clock_in_another_zone(conn, store, t
     assert fakes.tags == ["alerts:2026-10-18"]
 
 
+def test_a_step_refuses_a_clock_without_a_time_zone(conn, tmp_path, fakes):
+    with pytest.raises(ValueError, match="time zone"):
+        watcher(conn, tmp_path, fakes, V1_ONLY).step(datetime(2026, 10, 17, 13, 0))
+
+
 @pytest.mark.parametrize("gap, kinds", [(10, ["onset"]), (12, [])])
 def test_two_episode_size_looks_make_an_onset_only_when_at_most_ten_minutes_apart(conn, store, tmp_path, fakes, gap,
                                                                                    kinds):
@@ -783,6 +788,59 @@ def test_an_alert_older_than_two_hours_is_never_posted(conn, tmp_path):
     send_pending(conn, telegram, tmp_path, NOW)
 
     assert telegram.posts == []
+
+
+def test_alerts_are_posted_oldest_first_so_an_end_never_precedes_its_onset(conn, tmp_path):
+    (tmp_path / "alerts" / "x").mkdir(parents=True)
+    (tmp_path / "alerts" / "x" / "frame1.jpg").write_bytes(b"\xff\xd8jpeg")
+    end = make_alert("end", clock="2026-11-02T13:08:00Z")  # stored first, so it has the lower id
+    onset = make_alert("onset", clock="2026-11-02T12:30:00Z")
+    store_alert(conn, end)
+    store_alert(conn, onset)
+    telegram = FakeTelegram()
+
+    send_pending(conn, telegram, tmp_path, NOW)
+
+    assert [text for _, text in telegram.posts] == [caption(onset), caption(end)]
+
+
+class RefusingTelegram(FakeTelegram):
+    """Refuses its first post as Telegram.send_photo does a caption over the limit."""
+
+    def __init__(self):
+        super().__init__()
+        self.refused = False
+
+    def send_photo(self, photo, text):
+        if not self.refused:
+            self.refused = True
+            raise ValueError("caption is 1100 characters; Telegram's limit is 1024")
+        return super().send_photo(photo, text)
+
+
+def test_a_post_refused_with_a_value_error_counts_as_an_attempt_and_does_not_block_newer_alerts(conn, tmp_path):
+    stored(conn, tmp_path, clock="2026-11-02T12:30:00Z")
+    newer = stored(conn, tmp_path, clock="2026-11-02T13:08:00Z")
+    telegram = RefusingTelegram()
+
+    errors = send_pending(conn, telegram, tmp_path, NOW)
+
+    assert len(errors) == 1 and "1024" in errors[0]
+    assert telegram.posts == [(b"\xff\xd8jpeg", caption(newer))]
+    assert conn.execute("SELECT send_attempts, sent_at FROM alerts ORDER BY clock").fetchall()[0][:] == (1, None)
+
+
+def test_a_stored_body_that_no_longer_validates_counts_as_an_attempt_and_does_not_block_newer_alerts(conn, tmp_path):
+    stored(conn, tmp_path, clock="2026-11-02T12:30:00Z")
+    stored(conn, tmp_path, clock="2026-11-02T13:08:00Z")
+    with conn:
+        conn.execute("UPDATE alerts SET body = '{}' WHERE clock = '2026-11-02T12:30:00Z'")
+    telegram = FakeTelegram()
+
+    errors = send_pending(conn, telegram, tmp_path, NOW)
+
+    assert len(errors) == 1 and len(telegram.posts) == 1
+    assert conn.execute("SELECT send_attempts FROM alerts ORDER BY clock").fetchall()[0][0] == 1
 
 
 def test_a_replays_alerts_are_posted_oldest_first_each_marked_as_a_replay(tmp_path):

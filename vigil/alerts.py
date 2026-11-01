@@ -348,6 +348,8 @@ class AlertWatcher:
         return tuple(self.config.cameras)
 
     def step(self, now: datetime) -> AlertReport:
+        if now.tzinfo is None:
+            raise ValueError("the alert clock needs a time zone")
         now = now.astimezone(timezone.utc)  # the budget tag's date and the alert folders' names are UTC
         report = AlertReport(now)
         if self.base.client is None:
@@ -444,7 +446,6 @@ class AlertWatcher:
             if answer is not None:
                 episode = sustained(answer)
                 self._set_spark(ctx, look_id, answer, episode)
-                entry["episode"] = episode
         if state == "quiet" and episode:
             entry["episode"] = self._onset(ctx, client, camera, frame, look_id, answer, report)
         elif state == "fountaining" and size == "none":
@@ -579,10 +580,10 @@ def send_pending(conn: sqlite3.Connection, telegram: Telegram, data_dir: Path, n
         "SELECT id, body FROM alerts WHERE sent_at IS NULL AND send_attempts < ? AND clock >= ? ORDER BY clock, id",
         (MAX_SEND_ATTEMPTS, to_iso(now - SEND_WITHIN))).fetchall()
     for row in rows:
-        alert = Alert.model_validate_json(row["body"])
         try:
+            alert = Alert.model_validate_json(row["body"])
             telegram.send_photo((data_dir / alert.overlay).read_bytes(), caption(alert))
-        except (TelegramError, OSError) as exc:
+        except (TelegramError, OSError, ValueError) as exc:  # a caption over the limit or a bad stored body, too
             with conn:
                 conn.execute("UPDATE alerts SET send_attempts = send_attempts + 1, send_error = ? WHERE id = ?",
                              (str(exc)[:300], row["id"]))
