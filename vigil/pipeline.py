@@ -280,7 +280,8 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     with closing(db.connect(settings.db_path)) as conn, \
             httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
-        client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
+        # the alerts keep their reserve of the cap (vigil-alerts)
+        client = MetaClient.from_env(CostLedger(conn, settings.pipeline_budget_usd))
         config = PipelineConfig(volcano=args.volcano, cameras=cameras, bulletin_dir=settings.data_dir / "bulletins",
                                 agent_every=timedelta(minutes=args.agent_every) if args.agent_every > 0 else None)
         pipeline = Pipeline(context_from_settings(settings, conn, http, utcnow(), client, sources), config)

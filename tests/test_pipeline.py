@@ -466,3 +466,29 @@ def test_a_camera_that_is_not_tracked_gets_local_verdicts_and_no_sam_window(conn
                         v1).fetchall()
     assert [row["decided_by"] for row in rows] == ["local"] * len(v1)
     assert [camera for camera, _, _ in fakes.tracked] == ["kilauea-k2"]
+
+
+def test_cli_leaves_the_alerts_their_reserve_of_the_daily_cap(cli_env, tmp_path, monkeypatch):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(SOURCES_YAML.replace(
+        "cameras: []",
+        "cameras:\n  - {id: kilauea-k2, name: K2cam, volcano: kilauea, url: 'https://example.org/k2.jpg',\n"
+        "     license: Public Domain, attribution: USGS, enabled: true}"), encoding="utf-8")
+    monkeypatch.setattr("vigil.settings.load_dotenv", lambda: None)
+    monkeypatch.setenv("DAILY_BUDGET_USD", "5")
+    monkeypatch.setenv("ALERT_RESERVE_USD", "0.75")
+    caps = []
+
+    class Stop(Exception):
+        pass
+
+    def from_env(ledger):
+        caps.append(ledger.daily_budget_usd)
+        raise Stop
+
+    monkeypatch.setattr("vigil.pipeline.MetaClient.from_env", from_env)
+
+    with pytest.raises(Stop):
+        main(["--volcano", "kilauea", "--once"])
+
+    assert caps == [4.25]

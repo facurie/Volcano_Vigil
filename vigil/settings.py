@@ -20,6 +20,15 @@ class Settings:
     calibration_path: Path
     user_agent: str
     daily_budget_usd: float
+    alerts_path: Path = Path("config/alerts.yaml")
+    alert_reserve_usd: float = 0.75   # of the daily cap, kept for the fountaining alerts (vigil.alerts)
+    telegram_token: str | None = None  # the alert bot's token: a secret, never printed
+    telegram_chat: str | None = None   # the public channel: @name or its numeric id
+
+    @property
+    def pipeline_budget_usd(self) -> float:
+        """What the pipeline may spend in a UTC day: the cap less the alerts' reserve."""
+        return max(0.0, self.daily_budget_usd - self.alert_reserve_usd)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -33,4 +42,8 @@ class Settings:
             calibration_path=Path(os.getenv("CALIBRATION_PATH", "config/calibration.yaml")),
             user_agent=os.getenv("HTTP_USER_AGENT", DEFAULT_USER_AGENT),
             daily_budget_usd=float(os.getenv("DAILY_BUDGET_USD", "5.00")),
+            alerts_path=Path(os.getenv("ALERTS_PATH", "config/alerts.yaml")),
+            alert_reserve_usd=float(os.getenv("ALERT_RESERVE_USD", "0.75")),
+            telegram_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
+            telegram_chat=os.getenv("TELEGRAM_CHAT_ID") or None,
         )
