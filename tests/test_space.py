@@ -50,6 +50,7 @@ def test_stage_unpacks_the_archive_and_puts_the_front_matter_on_the_readme(tmp_p
 
     assert staged == ["Dockerfile", "README.md", "vigil/__init__.py"]
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == space_readme("# Volcano Vigil\n")
+    assert b"\r" not in (tmp_path / "README.md").read_bytes()  # the Hub reads the front matter, so no CRLF
     assert (tmp_path / "Dockerfile").read_text(encoding="utf-8") == "FROM python:3.12-slim\n"
 
 

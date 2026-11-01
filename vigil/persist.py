@@ -37,12 +37,12 @@ def _uri(bucket: str, *parts: str) -> str:
 
 
 def backup(api: Any, data_dir: Path, db_path: Path, bucket: str) -> None:
-    """Save the frames and bulletins under `data_dir` and then the database at `db_path` to `bucket`. Only changed
-    files are transferred, and files deleted here stay in the bucket. The database is copied with SQLite's backup,
-    which is safe while other processes write to it."""
+    """Save the frames and bulletins under `data_dir` and then the database at `db_path` to `bucket`. A frame still
+    being written (`*.part`) is skipped. Only changed files are transferred, and files deleted here stay in the
+    bucket. The database is copied with SQLite's backup, which is safe while other processes write to it."""
     for name in FOLDERS:
         if (data_dir / name).is_dir():
-            api.sync_bucket(str(data_dir / name), _uri(bucket, name), quiet=True)
+            api.sync_bucket(str(data_dir / name), _uri(bucket, name), quiet=True, exclude=["*.part"])
     if db_path.is_file():
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / db_path.name

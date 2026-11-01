@@ -1,3 +1,4 @@
+import fnmatch
 import logging
 import sqlite3
 import threading
@@ -27,8 +28,9 @@ class FakeBucket:
         if self.fail:
             raise self.fail
 
-    def sync_bucket(self, source, dest, *, quiet=False):
+    def sync_bucket(self, source, dest, *, quiet=False, exclude=None):
         self._enter("sync_bucket")
+        assert quiet, "the real sync_bucket prints a plan on every call: pass quiet=True"
         if source.startswith(ROOT):  # bucket -> local
             prefix = source.removeprefix(ROOT) + "/"
             for key, content in self.files.items():
@@ -39,7 +41,7 @@ class FakeBucket:
         else:  # local -> bucket
             prefix = dest.removeprefix(ROOT)
             for path in Path(source).rglob("*"):
-                if path.is_file():
+                if path.is_file() and not any(fnmatch.fnmatch(path.name, pattern) for pattern in exclude or ()):
                     self.files[f"{prefix}/{path.relative_to(source).as_posix()}"] = path.read_bytes()
 
     def batch_bucket_files(self, bucket_id, *, add):
@@ -49,7 +51,12 @@ class FakeBucket:
 
     def download_bucket_files(self, bucket_id, files, *, raise_on_missing_files=False):
         self._enter("download_bucket_files")
+        """Like the real API: a missing file is skipped silently unless `raise_on_missing_files` is set."""
         for key, target in files:
+            if key not in self.files:
+                if raise_on_missing_files:
+                    raise FileNotFoundError(key)
+                continue
             Path(target).parent.mkdir(parents=True, exist_ok=True)
             Path(target).write_bytes(self.files[key])
 
@@ -94,6 +101,16 @@ def test_backup_saves_the_frames_the_bulletins_and_the_database_but_not_the_repl
                                     "frames/kilauea-kp/2026-11-01/a.jpg"]
 
 
+def test_backup_leaves_out_a_frame_that_is_still_being_written(data):
+    bucket = FakeBucket()
+    (data / "frames" / "kilauea-kp" / "2026-11-01" / "b.jpg.part").write_bytes(b"half a frame")
+
+    backup(bucket, data, data / "vigil.sqlite", BUCKET)
+
+    assert "frames/kilauea-kp/2026-11-01/b.jpg.part" not in bucket.files
+    assert "frames/kilauea-kp/2026-11-01/a.jpg" in bucket.files
+
+
 def test_the_saved_database_is_one_self_contained_copy_with_the_ledger(data, tmp_path):
     bucket = FakeBucket()
 
@@ -134,6 +151,14 @@ def test_restore_of_an_empty_bucket_is_a_first_start(tmp_path):
 
     assert restored is False
     assert not (fresh / "vigil.sqlite").exists()
+
+
+def test_restore_fails_when_the_bucket_lists_a_database_it_cannot_download(tmp_path):
+    bucket = FakeBucket()
+    bucket.files = {"db/other": b""}  # the root lists `db`, but `db/vigil.sqlite` is absent
+
+    with pytest.raises(FileNotFoundError):
+        restore(bucket, tmp_path, tmp_path / "vigil.sqlite", BUCKET)
 
 
 def test_restore_fails_when_the_bucket_cannot_be_reached(tmp_path):

@@ -45,7 +45,7 @@ def stage(archive: bytes, out: Path) -> list[str]:
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(out, filter="data")
     readme = out / "README.md"
-    readme.write_text(space_readme(readme.read_text(encoding="utf-8")), encoding="utf-8")
+    readme.write_text(space_readme(readme.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
     return sorted(path.relative_to(out).as_posix() for path in out.rglob("*") if path.is_file())
 
 
@@ -62,8 +62,11 @@ def deploy(api: HfApi, repo_id: str, archive: bytes, revision: str) -> int:
 
 def committed_tree() -> tuple[bytes, str]:
     """`git archive HEAD` as tar bytes, and the commit it archives."""
-    revision = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
-    archive = subprocess.run(["git", "archive", "--format=tar", "HEAD"], capture_output=True, check=True).stdout
+    root = Path(__file__).resolve().parents[1]  # this repository, wherever the command is run from
+    revision = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
+                              cwd=root).stdout.strip()
+    archive = subprocess.run(["git", "archive", "--format=tar", "HEAD"], capture_output=True, check=True,
+                             cwd=root).stdout
     return archive, revision
 
 
