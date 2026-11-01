@@ -19,7 +19,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (556 passing at the end of Phase 6, session 7; they include the dashboard's JS helper tests, run with node).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (597 passing at the end of Phase 7, session 10; they include the dashboard's JS helper tests, run with node).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -35,6 +35,7 @@
    - Every bulletin carries the "does not replace official alerts" disclaimer and a link to the official agency.
    - No RAG and no generic features.
 6. Remote: `github.com/facurie/Volcano_Vigil`. It is private now and must be made public before submission.
+7. Deployment: [DEPLOY.md](DEPLOY.md), with the Space's address and commands.
 
 ## Done in session 1 (2026-10-26)
 
@@ -282,20 +283,37 @@ config/calibration.yaml   per camera and PTZ preset              (exists, phase 
 
 ## Phase 7: Sat Oct 31. Deployment
 
-- [ ] **Hugging Face Spaces (Docker):**
-  - `Dockerfile` from `python:3.12-slim` with ffmpeg.
-  - The ingest worker runs in-process with the web app.
-  - Secrets are Space secrets. Set `DAILY_BUDGET_USD=3`.
-- [ ] **Episode 55 data that does not depend on AshCam (required):**
-  - Mirror the episode-55 frames (public domain) to a public HF dataset, and on startup load the replay from that mirror.
-  - Why it is required:
-    - AshCam's API is undocumented and can change without notice.
-    - Its Oct 17 frames expire around Nov 17.
-    - A Space without paid persistent storage loses its disk on every restart (confirm this here).
-  - On startup, backfill only the last days of live history from AshCam.
+Decided on 2026-11-01: a Hugging Face Docker Space (PRO), after Oracle Cloud turned out to need a credit card. Plan:
+[2026-10-31-phase-7-deploy.md](superpowers/plans/2026-10-31-phase-7-deploy.md). Runbook: [DEPLOY.md](DEPLOY.md).
+
+- [x] **Hugging Face Space (Docker), protected:**
+  - One image from `python:3.12-slim` with ffmpeg, installed with the versions the tests pass with
+    (`deploy/constraints.txt`).
+  - Ingest, pipeline and the dashboard run as separate processes of one container, under a small supervisor
+    (`deploy/start.sh`). They are not threads in one process: the CLIs already exist, and SAM mask decoding stays off
+    the web server.
+  - `MODEL_API_KEY` and `HF_TOKEN` are Space secrets, and `DAILY_BUDGET_USD=3` is in the image.
+  - The code is private and the app is public ("protected" visibility).
+- [x] **State that survives restarts:**
+  - A Space loses its disk on every restart (confirmed in the docs). `vigil-persist` saves the database, the frames and
+    the bulletins to a private bucket every 5 minutes and when the Space stops, and restores them at every start, so the
+    cost ledger and the cap hold across restarts.
+- [x] **Episode 55 data that does not depend on AshCam (required):**
+  - The 468 replay frames (public domain) and the replay's outputs are mirrored on the public dataset
+    [`facurie/volcano-vigil-ep55`](https://huggingface.co/datasets/facurie/volcano-vigil-ep55). The Space pulls them at
+    every start.
+  - On start, ingest catches up on the last 24 h from AshCam (`vigil-ingest --lookback-hours 24`).
   - Images never go into the git repo.
 
-**Acceptance:** a public URL is live, with ingest running and the replay working.
+**Acceptance:** a public URL is live, with ingest running and the replay working. Done:
+- https://facurie-volcano-vigil.hf.space answers anonymously, while the Space's code returns 401.
+- First start on 2026-11-01:
+  - the image built in about 40 s and the dashboard answered 37 s after the container started;
+  - the 24 h catch-up took 10 min, after which K2 and KP were 3 min old and F1 4 min, all "usable";
+  - the first live bulletin (16:07 UTC) was verified.
+- A restart restored the state in 28 s and the dashboard answered 32 s after the call. The bulletin, the frames and the
+  ledger came back, and ingest filled the frames captured meanwhile.
+- First hour's Meta API spend: $0.16.
 
 ## Phase 8: Sun Nov 1 – Mon Nov 2. Episode alerts
 
@@ -344,7 +362,7 @@ None left: the Telegram notifications became part of Phase 8.
 
 ## Budget
 
-Spent so far: $3.19 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger; Phase 6 made no Meta API call). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $3.35 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger; Phase 6 made no Meta API call; Phase 7 $0 for the mirror, the bucket and the Space, plus $0.16 for the live pipeline's first hour on 2026-11-01). From Phase 7 on, the live Space spends every day under its own cap; its ledger is the bucket's copy of the database ([DEPLOY.md](DEPLOY.md)). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 
@@ -358,3 +376,4 @@ Spent so far: $3.19 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality 
 | Episode 56 (HVO forecast of Oct 30: Nov 2–9) erupts during the hackathon or the judging | Keep `vigil-ingest` running locally from Oct 31. On restart it catches up gaps of up to 1 h by itself; `vigil-backfill` fills longer ones while AshCam keeps them (about 31 days). Phase 8's alerts run on the Space before Nov 2 |
 | The overflows before an episode glow like a fountain and fire a false onset alert | Phase 8's test set of Oct 16–17 overflow frames: no alert may fire on them |
 | Session quota runs out mid-task | This file plus the memory notes; commit often |
+| The free Space sleeps after 48 h without visitors, or the Hub restarts it | The owner opens the URL every 24 h; the state is saved every 5 minutes and restored at start ([DEPLOY.md](DEPLOY.md)) |

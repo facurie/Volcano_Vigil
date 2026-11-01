@@ -4,6 +4,8 @@
 
 Volcano observatories publish webcam images every few minutes, but nobody can look at every frame all day. Volcano Vigil does: it segments plumes and lava fountains with **SAM 3.1**, measures them with camera geometry (height in meters with uncertainty, drift direction), checks the drift against forecast winds, tracks each plume over time, and lets a **Muse Spark** agent decide what to look at and write a bilingual (ES/EN) bulletin that cites its evidence: frames, masks and numbers.
 
+**Live:** https://facurie-volcano-vigil.hf.space (the dashboard; the episode 55 replay is under "Replay").
+
 It is built and validated on **Kīlauea** (Hawaiʻi), whose USGS webcams are public domain and whose official reports give reference values to check the agent against. Cameras, vents and their geometry live in configuration (`config/sources.yaml`, `config/calibration.yaml`), so another volcano with openly licensed webcams can be added there.
 
 > [!IMPORTANT]
@@ -53,10 +55,11 @@ Work in progress during the hackathon. Implemented so far:
 - [x] SAM 3.1 video tracking over timelapses of usable frames, with per-frame masks ([episode 55 results](docs/research/tracking_ep55.md))
 - [x] Camera geometry with lens distortion, calibrated from the Moon (KPcam); heights ± σ by Monte Carlo, area and drift per detection ([calibration](docs/research/calibration_ep55.md))
 - [x] First validation against USGS episode 55 values ([VALIDATION.md](docs/VALIDATION.md))
-- [ ] Wind comparison
-- [ ] Muse Spark agent and bulletins
-- [ ] Episode 55 replay and validation
-- [ ] Dashboard and deployment
+- [x] Wind comparison
+- [x] Muse Spark agent and bulletins
+- [x] Episode 55 replay and validation
+- [x] Dashboard, live and replay (`vigil-web`)
+- [x] Deployment as a Hugging Face Docker Space ([DEPLOY.md](docs/DEPLOY.md)), with episode 55 mirrored on [Hugging Face](https://huggingface.co/datasets/facurie/volcano-vigil-ep55)
 
 ## Running it
 

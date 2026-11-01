@@ -1827,3 +1827,70 @@ Decided on 2026-11-01: a Hugging Face Docker Space (PRO), after Oracle Cloud tur
 - **`sync_bucket` and `list_bucket_tree` semantics** are read from signatures and docs, not yet exercised. Task 9, Step 2 runs them against the real bucket before anything depends on them.
 - **The first start's race** is avoided by the catch-up (`vigil-ingest --once`) that runs before the pipeline starts. After a restart the restored frames are only minutes behind, so at worst one window is tracked a few frames short.
 - **The Hub's network.** AshCam, Open-Meteo and the Meta API must answer from it. Task 10, Step 4 shows it through the cameras' `minutes_ago`.
+
+## Execution notes
+
+### Execution notes (2026-11-01, session 10)
+
+**Commits.**
+
+| Task | Commits |
+|---|---|
+| Plan | 345d703 |
+| 1 | e22481e |
+| 2 | 2dd87e8 |
+| 3 | b0dbac5 |
+| 4 | c718887, and c918c0c and 8ffb0c6 for the review |
+| 5 | d7ee124, and c918c0c for the review |
+| 6 | a9fcccd, plus 73e53af |
+| 7 | 6bb6c2d, plus 629ca8f |
+| 8–10 | no code: the mirror, the bucket, the Space and its secrets, the first deploy of 629ca8f |
+
+The suite went from 556 to 597 tests.
+
+**Deviations from the plan.**
+- **The bucket API**, probed against the real bucket before Task 4 was written:
+  - `list_bucket_tree(bucket)` with `recursive` left at None returns every file with its full path (`db/vigil.sqlite`), not the top-level folders. With the plan's code, `restore` would have reported a first start on every restart, and the next save would have overwritten the good state and the day's ledger. `restore` passes `recursive=False`, and `FakeBucket` mimics both behaviours, so the round-trip test fails without it.
+  - `sync_bucket` prints a sync plan on every call; it runs with `quiet=True`.
+  - `download_bucket_files` skips a missing file silently by default; `restore` passes `raise_on_missing_files=True`.
+  - `sync_bucket` from a prefix the bucket lacks prints "Nothing to sync." and returns.
+- **Review fixes (Tasks 4–5):**
+  - `stage` wrote the Space's front matter with CRLF on Windows; it now writes LF.
+  - `backup` leaves out `*.jpg.part` files, which `FrameStore` renames once written.
+  - `committed_tree` runs git at the repository root, whatever the current directory.
+- **`deploy/start.sh`** (review of Task 6, then 73e53af):
+  - `supervise` passes a TERM on to the service it runs.
+  - `stop` stops ingest and the pipeline before the saver's last save, so the saved database and files agree. A dashboard that exits also gets that last save.
+  - This was checked by running `start.sh` under Git Bash with stub services: the services stop, then the final save runs, then the dashboard stops, and nothing is left running. A crashing service restarts every 10 s.
+- `HF_HUB_DISABLE_PROGRESS_BARS=1` is in the image, so the restore and the mirror pull do not fill the log.
+- Docker Desktop was not running here, so the first build was the Hub's.
+- **The first start tracks only from the pipeline's start hour.** Windows begin at `started_at`, so the "≤ $0.25 for the last 3 closed hours" never happened.
+- **The bucket also holds the episode 55 frames**, about 250 MB more than needed, because the mirror puts them under `frames/`. This is harmless: `restore` downloads them once more at each start, in seconds.
+- **"Protected" hides the Space's Hub page too** (401 anonymously), not only its code. Share `https://facurie-volcano-vigil.hf.space`.
+
+**Measured.**
+- **Mirror:**
+  - 510 files, 256.6 MB. The push took 28 s.
+  - An anonymous pull took 2 min 19 s from home and 22 s on the Space.
+  - SHA-256 and row counts are identical: 468 frames, 804 detections, 492 measurements, 7 bulletins, 78 ticks.
+- **Bucket round trip:** backup 6.4 s, restore 6.8 s.
+- **Build:** about 40 s (queued 15:46:09Z, image pushed 15:46:46Z). The Space was RUNNING at 15:47:33Z.
+- **First start:**
+  - The restore found no state ("first start") in 13 s, and the mirror pull took 22 s.
+  - The dashboard answered 37 s after the container started.
+  - The catch-up took 10 min: K2 7 min, then KP and F1 3 min. Afterwards K2 and KP were 3 min old and F1 4 min, all "usable".
+- **First pipeline steps:**
+  - The first step assessed 122 frames (88 usable).
+  - The 16:07Z step tracked K2 15:00–15:59 (53 detections) and wrote bulletin 1, verified. It took 8 min.
+- **Spend in the first hour:** $0.1624.
+  - Agent run 1: $0.1324, of which 7 turns $0.060, 4 `assess_frame` $0.037, 3 SAM windows (KP) $0.030 and 2 segmentations $0.005.
+  - The pipeline's SAM windows (K2): $0.030.
+- **Restart test:**
+  - The dashboard answered 32 s after `restart_space`. The restore of 643 MB (1,488 files) took 28 s, and the mirror was already up to date (3 s).
+  - The log said "state restored". Bulletin 1, the earlier frames and the ledger ($0.1624, 19 calls) came back.
+  - The K2 frame captured during the restart was ingested.
+
+**Learned.**
+- **A live agent run costs about $0.13**, against the $0.03–0.08 estimate; it is close to the replay's $0.147 per bulletin. At that rate the pipeline spends about $3.5–4 a day, and the $3 cap stops calls late in the UTC day (about 09:00–14:00 HST). Phase 8 needs headroom anyway: raising the cap or writing bulletins less often is the owner's call.
+- **On Windows, `pip install -e` fails while a `vigil-*.exe` runs** (WinError 32 on the script). It leaves a `~olcano_vigil-*.dist-info` folder and a broken install. Rerun it when nothing runs, and do not reinstall while another agent runs a CLI.
+- **The Space's run log is an SSE stream that never idles.** A reader has to stop on wall time, not on a read timeout.
