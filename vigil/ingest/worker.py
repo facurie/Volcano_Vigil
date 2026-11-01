@@ -5,6 +5,8 @@ archive fails, so they keep getting frames (every 10 min instead of 2).
 
 Run it standalone with `vigil-ingest` (or `python -m vigil.ingest.worker`);
 `--once` polls every enabled camera a single time and exits.
+`--lookback-hours N` lets each AshCam camera's poll fetch the frames it lacks from up to N hours ago
+(default 1), so a server catches up on its downtime when it starts.
 """
 
 from __future__ import annotations
@@ -30,6 +32,8 @@ log = logging.getLogger(__name__)
 
 # Upper bound on a single sleep, so Ctrl+C and stop requests are handled promptly.
 _MAX_WAIT_SECONDS = 5.0
+
+LOOKBACK = timedelta(hours=1)  # how far back an AshCam camera's poll fetches the frames it lacks, by default
 
 
 class SupportsIngest(Protocol):
@@ -65,10 +69,13 @@ class Fallback:
         return self._backup.ingest(camera)
 
 
-def build_router(store: FrameStore, http: httpx.Client) -> SourceRouter:
-    """The live ingestor of each source; AshCam cameras fall back to their image URL."""
+def build_router(store: FrameStore, http: httpx.Client, lookback: timedelta = LOOKBACK) -> SourceRouter:
+    """The live ingestor of each source; AshCam cameras fall back to their image URL. An AshCam camera's poll
+    fetches every archived frame it lacks from at most `lookback` ago, so a restart catches up on that much
+    downtime."""
     by_url = Ingestor(store, http)
-    return SourceRouter({"url": by_url, "ashcam": Fallback(AshcamIngestor(AshcamClient(http), store), by_url)})
+    ashcam = AshcamIngestor(AshcamClient(http), store, lookback=lookback)
+    return SourceRouter({"url": by_url, "ashcam": Fallback(ashcam, by_url)})
 
 
 class Worker:
@@ -110,7 +117,12 @@ class Worker:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Poll the enabled webcams and store new frames.")
     parser.add_argument("--once", action="store_true", help="poll every enabled camera once and exit")
+    parser.add_argument("--lookback-hours", type=float, default=LOOKBACK / timedelta(hours=1),
+                        help="how far back an AshCam camera's poll fetches the frames it lacks, so a restart "
+                             "catches up on that much downtime (default 1)")
     args = parser.parse_args(argv)
+    if args.lookback_hours <= 0:
+        parser.error("--lookback-hours must be positive")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     settings = Settings.from_env()
@@ -118,7 +130,8 @@ def main(argv: list[str] | None = None) -> None:
     conn = db.connect(settings.db_path)
     headers = {"User-Agent": settings.user_agent}
     with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as http:
-        worker = Worker(build_router(FrameStore(conn, settings.data_dir), http), sources.cameras)
+        router = build_router(FrameStore(conn, settings.data_dir), http, lookback=timedelta(hours=args.lookback_hours))
+        worker = Worker(router, sources.cameras)
         if args.once:
             for result in worker.run_once():
                 print(f"{result.camera_id}: {result.status}" + (f" ({result.error})" if result.error else ""))

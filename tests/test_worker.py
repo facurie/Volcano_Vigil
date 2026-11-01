@@ -1,12 +1,14 @@
 from datetime import timedelta
 
 import httpx
+import pytest
 
 from conftest import NOW, make_jpeg
 from test_ashcam import FakeAshcam, kp_camera
 from vigil.config import Camera
 from vigil.ingest.store import FrameStore, IngestResult
-from vigil.ingest.worker import Fallback, SourceRouter, Worker, build_router
+from vigil.ingest.worker import Fallback, SourceRouter, Worker, build_router, main
+from vigil.timeutil import utcnow
 
 
 def cam(camera_id, enabled=True, poll_minutes=5):
@@ -126,3 +128,80 @@ def test_cameras_on_ashcam_are_fed_from_their_image_url_while_the_archive_is_dow
     assert result.status == "new"
     [frame] = conn.execute("SELECT timestamp_source FROM frames").fetchall()
     assert frame["timestamp_source"] == "http_last_modified"
+
+
+def test_the_router_reaches_back_as_far_as_its_lookback_for_ashcam_cameras(conn, tmp_path):
+    archive = FakeAshcam()
+    camera = kp_camera().model_copy(update={"live_source": "ashcam"})
+    router = build_router(FrameStore(conn, tmp_path), httpx.Client(transport=httpx.MockTransport(archive)),
+                          lookback=timedelta(hours=24))
+
+    before = utcnow()
+    router.ingest(camera)
+    after = utcnow()
+
+    start = int(archive.list_requests()[0].url.params["startTimestamp"])
+    assert int((before - timedelta(hours=24)).timestamp()) <= start <= int((after - timedelta(hours=24)).timestamp())
+
+
+def test_the_router_reaches_back_one_hour_by_default(conn, tmp_path):
+    archive = FakeAshcam()
+    camera = kp_camera().model_copy(update={"live_source": "ashcam"})
+    router = build_router(FrameStore(conn, tmp_path), httpx.Client(transport=httpx.MockTransport(archive)))
+
+    before = utcnow()
+    router.ingest(camera)
+    after = utcnow()
+
+    start = int(archive.list_requests()[0].url.params["startTimestamp"])
+    assert int((before - timedelta(hours=1)).timestamp()) <= start <= int((after - timedelta(hours=1)).timestamp())
+
+
+CLI_SOURCES = """
+volcanoes:
+  kilauea:
+    name: Kīlauea
+    country: United States
+    official_agency: USGS Hawaiian Volcano Observatory
+    official_url: https://www.usgs.gov/volcanoes/kilauea
+cameras:
+  - id: kilauea-kp
+    name: KPcam
+    volcano: kilauea
+    url: https://example.org/KPcam/images/M.jpg
+    license: Public Domain
+    attribution: U.S. Geological Survey
+    ashcam_code: kilauea-kp-cam
+    live_source: ashcam
+    enabled: true
+"""
+
+
+@pytest.fixture
+def cli_env(monkeypatch, tmp_path):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(CLI_SOURCES, encoding="utf-8")
+    monkeypatch.setenv("SOURCES_PATH", str(sources))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "vigil.sqlite"))
+
+
+def test_cli_passes_its_lookback_to_the_router(cli_env, monkeypatch):
+    seen = {}
+
+    def fake_router(store, http, lookback):
+        seen["lookback"] = lookback
+        return RecordingIngestor()
+
+    monkeypatch.setattr("vigil.ingest.worker.build_router", fake_router)
+
+    main(["--once", "--lookback-hours", "24"])
+
+    assert seen["lookback"] == timedelta(hours=24)
+
+
+def test_cli_refuses_a_lookback_that_is_not_positive(cli_env, capsys):
+    with pytest.raises(SystemExit):
+        main(["--once", "--lookback-hours", "0"])
+
+    assert "--lookback-hours" in capsys.readouterr().err

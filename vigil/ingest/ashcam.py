@@ -142,8 +142,8 @@ def backfill(
 class AshcamIngestor:
     """Live polling through AshCam: store every frame archived since the newest one stored.
 
-    A poll reaches back at most `lookback`: the first poll stores that window,
-    and a longer gap (after downtime) is left to `vigil-backfill`.
+    A poll reaches back at most `lookback`: the first poll stores that window, and a longer gap
+    (after downtime) needs a longer lookback (`vigil-ingest --lookback-hours`) or `vigil-backfill`.
     """
 
     def __init__(
