@@ -98,12 +98,13 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
   `TELEGRAM_CHAT_ID` a public Space variable: the channel's numeric id, `-1004340718752`, which is not a secret.
   Check them locally with `vigil-telegram check`, and post a test message that is not an alert with
   `vigil-telegram test`.
-- **Its log lines:** read the run log as under "Operate" (the code block there), and grep it for `Telegram:` (a post
-  that failed) and `ALERT` (an alert raised).
+- **Its log lines:** read the run log as under "Operate" (the code block there), and grep it for `Telegram` (the
+  check at start: `may post: yes`, `Telegram check failed`, or the warning that the token or chat id is not set),
+  `ALERT` (each alert raised, as `ALERT onset #…` or `ALERT end #…`) and `not posted` (a post to Telegram that
+  failed).
 - **The alerts, read from the bucket's copy of the database** (copy it as under "Operate"):
 
-  `.venv/Scripts/python.exe -I -c "import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); print(*c.execute('SELECT id, kind, clock, captured_at, sent_at, send_error FROM alerts').fetchall(), sep='
-')" <scratch>/ledger.sqlite`
+  `.venv/Scripts/python.exe -I -c "import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); print(*c.execute('SELECT id, kind, clock, captured_at, sent_at, send_error FROM alerts').fetchall(), sep=chr(10))" <scratch>/ledger.sqlite`
 
   `sent_at` is empty and `send_error` says why when a post to Telegram failed.
 - **A longer catch-up at start:** the V1 camera, which only the alerts use, adds about 720 frames per 24 h to the
