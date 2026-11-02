@@ -664,6 +664,7 @@ The OpenAI SDK retries connection errors, 408, 409, 429 and ≥500 (including 50
 20. **Tools with structured output.** Combining `tools` with `text.format` is not explicitly documented; only `tool_search` with `json_schema` is forbidden [toolsearch].
 21. **Languages and knowledge cutoff.** Neither is listed for `muse-spark-1.3` on [models]. The help pages say the models are multilingual [help-languages][help-cutoff].
 22. **Hackathon specifics.** The `muse-spark-open-1026` ID, the Model API credit amount and the Official Rules link are all missing (section 9).
+23. **Measured: a video concept prompt finds the object where the video opens on it, then tracks it.** V1cam on 2026-11-02, phrase `steam`, MP4s of 2-minute snapshots at 1920x1080. A video that opened on four dusk frames (03:15-03:35Z, white steam) tracked the plume on all 62 frames through the night. The same night frames, in a video that opened at 04:59Z on glow-lit orange gas only, gave no object at all. So did every all-night V1cam window the live agent tracked from 09:09Z on, and so did its 16:05-17:06Z window, which opened at night and ended in daylight with white steam in view. SAM seems to need the object recognisable near the start of the video; it rarely, if ever, picks up a new one late. `vigil.tracking`'s `lead_in` puts earlier frames in front of a window for this reason, but at night those are night frames too. The test cost $0.0324.
 
 ---
 
