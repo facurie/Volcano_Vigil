@@ -395,11 +395,10 @@ def test_a_target_that_keeps_missing_is_given_up_too(conn, store, tmp_path, fake
     assert reports[2].errors[0] == "kilauea-kp 2026-10-17T13:00:00Z: gave up after 3 attempts"
 
 
-def agent_run(conn, clock, status, volcano="kilauea"):
+def agent_run(conn, clock, status, volcano="kilauea", started_at="2026-10-28T00:00:00Z"):
     with conn:
         conn.execute("INSERT INTO agent_runs (started_at, clock, volcano, task, model, status) "
-                     "VALUES ('2026-10-28T00:00:00Z', ?, ?, 'task', 'muse-spark-1.3', ?)",
-                     (to_iso(clock), volcano, status))
+                     "VALUES (?, ?, ?, 'task', 'muse-spark-1.3', ?)", (started_at, to_iso(clock), volcano, status))
 
 
 def test_a_run_that_ended_in_error_does_not_count_as_the_hours_bulletin(conn, tmp_path, fakes):
@@ -408,6 +407,25 @@ def test_a_run_that_ended_in_error_does_not_count_as_the_hours_bulletin(conn, tm
     pipeline(conn, tmp_path, fakes, settle=timedelta(0)).step(START + H + 5 * M)
 
     assert fakes.agent_clocks == [START + H + 5 * M]
+
+
+def test_a_run_still_running_after_half_an_hour_was_killed_and_the_hour_gets_its_bulletin(conn, tmp_path, fakes):
+    now = START + H + 40 * M
+    agent_run(conn, START + H + 5 * M, "running", started_at=to_iso(now - 31 * M))
+
+    pipeline(conn, tmp_path, fakes, settle=timedelta(0)).step(now)
+
+    assert fakes.agent_clocks == [now]
+
+
+def test_a_run_that_started_less_than_half_an_hour_ago_is_still_running_and_holds_the_agent_back(
+        conn, tmp_path, fakes):
+    now = START + H + 40 * M
+    agent_run(conn, START + H + 5 * M, "running", started_at=to_iso(now - 29 * M))
+
+    pipeline(conn, tmp_path, fakes, settle=timedelta(0)).step(now)
+
+    assert fakes.agent_clocks == []
 
 
 def test_two_failed_runs_in_an_hour_stop_the_agent_and_say_so_once(conn, tmp_path, fakes):

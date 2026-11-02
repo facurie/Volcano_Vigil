@@ -59,6 +59,7 @@ SETTLE = timedelta(minutes=5)
 MIN_WINDOW_FRAMES = 5
 MAX_WINDOW_ATTEMPTS = 3
 MAX_AGENT_ERRORS = 2
+RUN_STALE_AFTER = timedelta(minutes=30)  # a run still "running" after this long was killed
 AGENT_EVERY = timedelta(hours=1)
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -222,19 +223,22 @@ class Pipeline:
         boundary = floor_time(now - self.config.settle, every)
         if boundary <= self.started_at:
             return False
-        return not self._agent_settled(boundary, boundary + every, report)
+        return not self._agent_settled(boundary, boundary + every, now, report)
 
     def _ran_at(self, now: datetime, report: StepReport) -> bool:
-        return self._agent_settled(now, now + timedelta(seconds=1), report)
+        return self._agent_settled(now, now + timedelta(seconds=1), now, report)
 
-    def _agent_settled(self, low: datetime, high: datetime, report: StepReport) -> bool:
+    def _agent_settled(self, low: datetime, high: datetime, now: datetime, report: StepReport) -> bool:
         """True if the agent needs no more runs with a clock in [low, high): one did not end in error, or
         `MAX_AGENT_ERRORS` did (said once in a report). A run in error is run again, so a Ctrl-C or an API
-        failure does not lose the bulletin."""
+        failure does not lose the bulletin. A run still 'running' that started more than RUN_STALE_AFTER before
+        `now` was killed (a restart of the Space, say): it counts as a failed run."""
+        stale = to_iso(now - RUN_STALE_AFTER)
         finished, failed = self.base.conn.execute(
-            """SELECT COALESCE(SUM(status != 'error'), 0), COALESCE(SUM(status = 'error'), 0) FROM agent_runs
+            """SELECT COALESCE(SUM(NOT (status = 'error' OR status = 'running' AND started_at < ?)), 0),
+                      COALESCE(SUM(status = 'error' OR status = 'running' AND started_at < ?), 0) FROM agent_runs
                WHERE volcano = ? AND clock >= ? AND clock < ?""",
-            (self.config.volcano, to_iso(low), to_iso(high))).fetchone()
+            (stale, stale, self.config.volcano, to_iso(low), to_iso(high))).fetchone()
         if finished:
             return True
         if failed < MAX_AGENT_ERRORS:
