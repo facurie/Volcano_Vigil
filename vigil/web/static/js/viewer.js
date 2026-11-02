@@ -151,26 +151,41 @@ function renderReadout(root, { shown, camera, cameras, local, zone, short }) {
     return;
   }
   const m = plume?.measurements ?? {};
+  const f = shown.detections.find((d) => d.target === "fountain")?.measurements ?? {};
+  const meta = el("p", { class: "readout-meta" },
+    `${name} · frame ${shown.frame_id} · ${local(shown.captured_at, true)} ${zone} · SAM 3.1 mask, calibrated camera`);
+  if (!m.top_altitude && f.top_height) {
+    // a close camera sees the fountain whole while its plume runs off the top of the frame
+    const facts = [
+      ["Fountain top above sea level",
+        f.top_altitude && lib.plusMinus(f.top_altitude.value, f.top_altitude.sigma, f.top_altitude.unit)],
+    ].filter(([, value]) => value);
+    fill(root, hero("Lava fountain top above the vent", f.top_height),
+      el("dl", { class: "facts" }, facts.map(([label, value]) =>
+        el("div", {}, el("dt", { class: "label" }, label), el("dd", {}, value)))), meta);
+    return;
+  }
   if (!m.top_altitude) {
     fill(root, el("p", { class: "readout-note" }, "No plume measured on this frame."), sees);
     return;
   }
-  const top = m.top_altitude;
   const facts = [
     ["Above the vent", m.top_height && lib.plusMinus(m.top_height.value, m.top_height.sigma, m.top_height.unit)],
+    ["Fountain above the vent", f.top_height && lib.plusMinus(f.top_height.value, f.top_height.sigma, f.top_height.unit)],
     ["Plume side", m.drift_bearing
       && `${lib.plusMinus(m.drift_bearing.value, m.drift_bearing.sigma, m.drift_bearing.unit)} of the sightline`],
     ["Across the sightline", m.drift_offset && lib.plusMinus(m.drift_offset.value, m.drift_offset.sigma, m.drift_offset.unit)],
     ["Area", m.area && lib.plusMinus(m.area.value, m.area.sigma, m.area.unit)],
   ].filter(([, value]) => value);
-  fill(root,
-    el("div", { class: "hero" },
-      el("span", { class: "label" }, "Plume top above sea level"),
-      el("div", { class: "hero-figure" },
-        el("span", { class: "hero-value" }, lib.number(top.value)), el("span", { class: "hero-unit" }, "m")),
-      el("div", { class: "hero-sigma" }, `± ${lib.number(top.sigma)} m · ${lib.number(lib.feet(top.value))} ft`)),
+  fill(root, hero("Plume top above sea level", m.top_altitude),
     el("dl", { class: "facts" }, facts.map(([label, value]) =>
-      el("div", {}, el("dt", { class: "label" }, label), el("dd", {}, value)))),
-    el("p", { class: "readout-meta" },
-      `${name} · frame ${shown.frame_id} · ${local(shown.captured_at, true)} ${zone} · SAM 3.1 mask, calibrated camera`));
+      el("div", {}, el("dt", { class: "label" }, label), el("dd", {}, value)))), meta);
+}
+
+function hero(label, top) {
+  return el("div", { class: "hero" },
+    el("span", { class: "label" }, label),
+    el("div", { class: "hero-figure" },
+      el("span", { class: "hero-value" }, lib.number(top.value)), el("span", { class: "hero-unit" }, "m")),
+    el("div", { class: "hero-sigma" }, `± ${lib.number(top.sigma)} m · ${lib.number(lib.feet(top.value))} ft`));
 }
