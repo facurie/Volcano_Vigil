@@ -1,8 +1,8 @@
 from typing import get_args
 
 from vigil.agent.bulletin import ActivityLevel, Bulletin, CitedMeasurement, Evidence
-from vigil.agent.render import (LEVELS, METRICS, TARGETS, local_time, number, publish, table_header, table_rows, texts,
-                               to_html, to_markdown)
+from vigil.agent.render import (LEVELS, METRICS, TABLE_HEADER, TARGETS, local_time, number, publish, table_rows, to_html,
+                               to_markdown)
 from vigil.agent.tools import Metric
 from vigil.prompts import Target
 
@@ -17,26 +17,24 @@ def bulletin(**change):
     base = Bulletin(
         id=4, run_id=3, volcano="kilauea", volcano_name="Kīlauea", utc_offset_hours=-10,
         clock="2026-10-17T15:00:00Z", created_at="2026-10-28T18:00:00Z", activity_level="fountaining",
-        headline_en="Lava fountain and a tall plume", headline_es="Fuente de lava y una columna alta",
-        body_en="KPcam measured the plume top.\n\nThe wind pushes it southwest.",
-        body_es="KPcam midió el tope de la columna.\n\nEl viento la empuja al suroeste.",
+        headline="Lava fountain and a tall plume",
+        body="KPcam measured the plume top.\n\nThe wind pushes it southwest.",
         measurements=[
             CitedMeasurement(**measured, metric="top_altitude", value=6951, sigma=429, unit="m", verified=True,
                              captured_at="2026-10-17T14:55:05Z"),
             CitedMeasurement(**measured, metric="drift_bearing", value=224.4, sigma=2.1, unit="deg",
                              verified=False)],
-        evidence=[Evidence(frame_id=29, target="plume", caption_en="The plume at its peak.",
-                           caption_es="La columna en su máximo.", camera_id="kilauea-kp",
+        evidence=[Evidence(frame_id=29, target="plume", caption="The plume at its peak.",
+                           camera_id="kilauea-kp",
                            captured_at="2026-10-17T14:55:05Z", overlay="bulletins/run3/frame29_plume.jpg")],
         wind=WIND, official_agency="USGS Hawaiian Volcano Observatory (HVO)",
         official_url="https://www.usgs.gov/volcanoes/kilauea",
-        disclaimer_en="It does not replace official alerts or warnings.",
-        disclaimer_es="No reemplaza las alertas ni los avisos oficiales.",
+        disclaimer="It does not replace official alerts or warnings.",
         notes=["1 of 2 quoted number(s) match no stored measurement"])
     return base.model_copy(update=change)
 
 
-def test_every_level_target_and_metric_has_a_label_in_each_language():
+def test_every_level_target_and_metric_has_a_label():
     assert set(LEVELS) == set(get_args(ActivityLevel))
     assert set(TARGETS) == set(get_args(Target)) and set(METRICS) == set(get_args(Metric))
 
@@ -46,13 +44,13 @@ def test_times_are_shown_in_the_volcanos_local_time():
     assert local_time("2026-10-17T14:55:05Z", None) == "2026-10-17 14:55 UTC"
 
 
-def test_numbers_use_each_languages_separators():
-    assert (number(6951, "en"), number(6951, "es")) == ("6,951", "6.951")
-    assert (number(3.3, "en", 1), number(3.3, "es", 1)) == ("3.3", "3,3")
+def test_numbers_use_english_separators():
+    assert number(6951) == "6,951"
+    assert number(3.3, 1) == "3.3"
 
 
-def test_the_english_markdown_has_the_headline_numbers_wind_evidence_and_source():
-    text = to_markdown(bulletin(), "en", image_root="../../")
+def test_the_markdown_has_the_headline_numbers_wind_evidence_and_source():
+    text = to_markdown(bulletin(), image_root="../../")
 
     assert text.startswith("# Lava fountain and a tall plume\n")
     assert "Kīlauea · 2026-10-17 05:00 (UTC-10) · Activity: Lava fountain" in text
@@ -66,29 +64,18 @@ def test_the_english_markdown_has_the_headline_numbers_wind_evidence_and_source(
                          "(https://www.usgs.gov/volcanoes/kilauea)\n")
 
 
-def test_the_spanish_markdown_speaks_spanish():
-    text = to_markdown(bulletin(), "es")
-
-    assert text.startswith("# Fuente de lava y una columna alta\n")
-    assert "Actividad: Fuente de lava" in text and "> **No reemplaza las alertas ni los avisos oficiales.**" in text
-    assert "| columna: tope sobre el nivel del mar | kilauea-kp | 6.951 ± 429 m |" in text and "| sí |" in text
-    assert "a 3,3 m/s" in text and "coherente" in text
-    assert "Fuente oficial: [USGS Hawaiian Volcano Observatory (HVO)]" in text
-
-
 def test_a_calm_wind_is_not_judged():
     calm = {**WIND, "drift_check": {**WIND["drift_check"], "consistent": None}}
 
-    assert "too calm to tell" in to_markdown(bulletin(wind=calm), "en")
-    assert "demasiado calmo para juzgar" in to_markdown(bulletin(wind=calm), "es")
+    assert "too calm to tell" in to_markdown(bulletin(wind=calm))
 
 
-def test_the_html_page_has_both_languages_and_escapes_the_models_text():
-    page = to_html(bulletin(headline_en="<script>alert(1)</script>"))
+def test_the_html_page_is_one_english_article_and_escapes_the_models_text():
+    page = to_html(bulletin(headline="<script>alert(1)</script>"))
 
     assert "<script>alert" not in page and "&lt;script&gt;alert(1)&lt;/script&gt;" in page
-    assert '<article lang="en">' in page and '<article lang="es">' in page
-    assert page.count('class="disclaimer"') == 2
+    assert page.count("<article") == 1 and '<html lang="en">' in page
+    assert page.count('class="disclaimer"') == 1
     assert "<p>The wind pushes it southwest.</p>" in page
     assert '<a href="https://www.usgs.gov/volcanoes/kilauea">' in page
     assert '<img src="bulletins/run3/frame29_plume.jpg" alt="The plume at its peak.">' in page
@@ -98,9 +85,20 @@ def test_publish_writes_the_pages_where_the_overlays_resolve(tmp_path):
     folder = publish(bulletin(), tmp_path, tmp_path / "bulletins")
 
     assert folder == tmp_path / "bulletins" / "run3"
-    assert sorted(path.name for path in folder.iterdir()) == ["bulletin.en.md", "bulletin.es.md", "bulletin.html"]
-    assert "](../../bulletins/run3/frame29_plume.jpg)" in (folder / "bulletin.en.md").read_text(encoding="utf-8")
+    assert sorted(path.name for path in folder.iterdir()) == ["bulletin.html", "bulletin.md"]
+    assert "](../../bulletins/run3/frame29_plume.jpg)" in (folder / "bulletin.md").read_text(encoding="utf-8")
     assert 'src="../../bulletins/run3/frame29_plume.jpg"' in (folder / "bulletin.html").read_text(encoding="utf-8")
+
+
+def test_publish_removes_the_bilingual_pages_of_an_older_version(tmp_path):
+    folder = tmp_path / "bulletins" / "run3"
+    folder.mkdir(parents=True)
+    for name in ("bulletin.en.md", "bulletin.es.md"):
+        (folder / name).write_text("old", encoding="utf-8")
+
+    publish(bulletin(), tmp_path, tmp_path / "bulletins")
+
+    assert sorted(path.name for path in folder.iterdir()) == ["bulletin.html", "bulletin.md"]
 
 
 HOSTILE = '<b>&"x" onerror="alert(1)'
@@ -110,10 +108,10 @@ ESCAPED = "&lt;b&gt;&amp;&quot;x&quot; onerror=&quot;alert(1)"
 def test_every_text_the_model_wrote_is_escaped_in_the_html():
     measured = dict(camera_id=HOSTILE, target="plume", frame_ids=[29])
     page = to_html(bulletin(
-        body_en=HOSTILE, body_es=HOSTILE, notes=[HOSTILE],
+        body=HOSTILE, notes=[HOSTILE],
         measurements=[CitedMeasurement(**measured, metric="top_altitude", value=6951, sigma=429, unit="m",
                                        verified=True)],
-        evidence=[Evidence(frame_id=29, target="plume", caption_en=HOSTILE, caption_es=HOSTILE,
+        evidence=[Evidence(frame_id=29, target="plume", caption=HOSTILE,
                            camera_id="kilauea-kp", captured_at="2026-10-17T14:55:05Z",
                            overlay="bulletins/run3/frame29_plume.jpg")]))
 
@@ -129,7 +127,7 @@ def test_a_pipe_or_a_newline_in_a_cell_does_not_break_the_markdown_table():
     measured = CitedMeasurement(camera_id="a|b\nc", target="plume", metric="area", value=10, sigma=1, unit="m2",
                                 verified=True, frame_ids=[29])
 
-    text = to_markdown(bulletin(measurements=[measured]), "en")
+    text = to_markdown(bulletin(measurements=[measured]))
 
     row = next(line for line in text.splitlines() if "a\\|b c" in line)
     assert row.count("|") - row.count("\\|") == 7
@@ -137,9 +135,8 @@ def test_a_pipe_or_a_newline_in_a_cell_does_not_break_the_markdown_table():
 
 def test_the_public_table_helpers_give_the_markdown_tables_cells():
     b = bulletin()
-    markdown = to_markdown(b, "es")
+    markdown = to_markdown(b)
 
-    assert "| " + " | ".join(table_header("es")) + " |" in markdown
-    assert table_rows(b, "es")[0][2] == "6.951 ± 429 m"
-    assert all(cell in markdown for cell in table_rows(b, "es")[0])
-    assert texts(b, "en") == (b.headline_en, b.body_en, b.disclaimer_en)
+    assert "| " + " | ".join(TABLE_HEADER) + " |" in markdown
+    assert table_rows(b)[0][2] == "6,951 ± 429 m"
+    assert all(cell in markdown for cell in table_rows(b)[0])

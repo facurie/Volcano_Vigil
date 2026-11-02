@@ -201,7 +201,7 @@ function draw(root, instance) {
     return svg("polygon", {
       class: "drum-bulletin", role: "button", tabindex: "0", points: `${x(b.t) - 4},${M.top} ${x(b.t) + 4},${M.top} ${x(b.t)},${M.top + 7}`,
       onClick: open, onKeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } },
-    }, svg("title", {}, `Bulletin ${local(b.clock)} · ${b[state.lang].level}`));
+    }, svg("title", {}, `Bulletin ${local(b.clock)} · ${b.level}`));
   });
 
   // ---- hover and keyboard: a crosshair that snaps to the nearest measurement

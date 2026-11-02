@@ -24,7 +24,7 @@ from typing import Any
 from huggingface_hub import HfApi, snapshot_download
 
 from vigil import db
-from vigil.agent.bulletin import DISCLAIMER_EN
+from vigil.agent.bulletin import DISCLAIMER
 from vigil.config import Volcano, load_sources
 from vigil.episodes import EPISODES, Episode
 from vigil.replay import replay_dir
@@ -101,7 +101,7 @@ The webcam frames and the replay that the Volcano Vigil dashboard shows for {vol
 {to_iso(episode.start)} to {to_iso(episode.end)} (UTC). The dashboard's server downloads this dataset when it
 starts, because the USGS AshCam archive keeps frames for only about 31 days.
 
-> {DISCLAIMER_EN.format(**words)}
+> {DISCLAIMER.format(**words)}
 
 ## Contents
 

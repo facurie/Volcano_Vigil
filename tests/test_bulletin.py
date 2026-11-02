@@ -12,7 +12,7 @@ from test_agent_loop import FAKE_TOOLS, SOURCES_YAML, Script
 from test_agent_tools import (SIZE, T0, add_frame, add_measurement, add_run, add_track, context, detection_ids,
                               store)  # store is a fixture
 from test_meta_client import make_client, turn_body
-from vigil.agent.bulletin import (BULLETIN_FINISH, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
+from vigil.agent.bulletin import (BULLETIN_FINISH, DISCLAIMER, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
                                   DraftEvidence, DraftMeasurement, build_bulletin, draw_evidence, load_bulletin, main,
                                   run_wind, store_bulletin, verify, write_bulletin)
 from vigil.meta.client import MetaClient
@@ -21,14 +21,11 @@ from vigil.timeutil import to_iso
 
 DRAFT = {  # the shape of Muse Spark's answer in the Phase 5 planning probe
     "activity_level": "fountaining",
-    "headline_en": "Lava fountain and a tall plume at Kīlauea",
-    "headline_es": "Fuente de lava y una columna alta en el Kīlauea",
-    "body_en": "KPcam measured the plume top at 6,951 ± 429 m above sea level at 04:55.",
-    "body_es": "KPcam midió el tope de la columna a 6.951 ± 429 m sobre el nivel del mar a las 04:55.",
+    "headline": "Lava fountain and a tall plume at Kīlauea",
+    "body": "KPcam measured the plume top at 6,951 ± 429 m above sea level at 04:55.",
     "measurements": [{"camera_id": "kilauea-kp", "target": "plume", "metric": "top_altitude", "value": 6951,
                       "sigma": 429, "unit": "m", "frame_ids": [29]}],
-    "evidence": [{"frame_id": 29, "target": "plume", "caption_en": "The plume at its peak.",
-                  "caption_es": "La columna en su máximo."}],
+    "evidence": [{"frame_id": 29, "target": "plume", "caption": "The plume at its peak."}],
 }
 
 
@@ -55,6 +52,9 @@ def test_the_draft_format_has_the_draft_models_fields():
     items = {name: DRAFT_SCHEMA["properties"][name]["items"]["properties"] for name in ("measurements", "evidence")}
     assert list(items["measurements"]) == list(DraftMeasurement.model_fields)
     assert list(items["evidence"]) == list(DraftEvidence.model_fields)
+    assert set(DRAFT_SCHEMA["properties"]) == {"activity_level", "headline", "body", "measurements", "evidence"}
+    assert set(items["evidence"]) == {"frame_id", "target", "caption"}
+    assert "Spanish" not in BULLETIN_FINISH and "English" in BULLETIN_FINISH
     assert DRAFT_SCHEMA["properties"]["activity_level"]["enum"] == list(get_args(ActivityLevel))
     assert items["measurements"]["metric"]["enum"] == ["top_height", "top_altitude", "area", "drift_offset",
                                                        "drift_bearing"]
@@ -65,12 +65,12 @@ def test_a_draft_parses_from_muse_sparks_json():
 
     assert draft.activity_level == "fountaining"
     assert (draft.measurements[0].frame_ids, draft.measurements[0].value) == ([29], 6951)
-    assert draft.evidence[0].caption_es == "La columna en su máximo."
+    assert draft.evidence[0].caption == "The plume at its peak."
 
 
 @pytest.mark.parametrize("change", [
     {"activity_level": "red_alert"},
-    {"headline_en": ""},
+    {"headline": ""},
     {"disclaimer": "Not official."},
     {"measurements": [{**DRAFT["measurements"][0], "frame_ids": []}]},
     {"measurements": [{**DRAFT["measurements"][0], "sigma": -1}]},
@@ -222,12 +222,13 @@ def test_build_bulletin_checks_the_draft_and_adds_the_official_source_and_discla
     assert [m.verified for m in bulletin.measurements] == [True, False] and not bulletin.verified
     assert (bulletin.official_agency, bulletin.official_url) == ("USGS Hawaiian Volcano Observatory (HVO)",
                                                                  "https://www.usgs.gov/volcanoes/kilauea")
-    assert "does not replace official alerts" in bulletin.disclaimer_en
-    assert bulletin.disclaimer_en.endswith("https://www.usgs.gov/volcanoes/kilauea")
-    assert "No reemplaza las alertas" in bulletin.disclaimer_es
+    assert bulletin.disclaimer == DISCLAIMER.format(name="Kilauea", agency="USGS Hawaiian Volcano Observatory (HVO)",
+                                                    url="https://www.usgs.gov/volcanoes/kilauea")
+    assert "does not replace official alerts" in bulletin.disclaimer
+    assert bulletin.disclaimer.endswith("https://www.usgs.gov/volcanoes/kilauea")
     assert bulletin.evidence[0].overlay == f"bulletins/run3/frame{frame_id}_plume.jpg"
     assert bulletin.notes == ["1 of 2 quoted number(s) match no stored measurement"]
-    assert bulletin.wind is None and bulletin.headline_es == DRAFT["headline_es"]
+    assert bulletin.wind is None and bulletin.headline == DRAFT["headline"]
 
 
 def test_evidence_after_the_clock_or_beyond_three_frames_is_left_out(conn, store, tmp_path):
@@ -274,6 +275,7 @@ def test_a_stored_bulletin_loads_back_with_its_id(conn, tmp_path):
     row = conn.execute("SELECT * FROM bulletins").fetchone()
     assert (row["run_id"], row["activity_level"], row["verified"], row["clock"]) == (
         3, "fountaining", 0, "2026-10-17T15:00:00Z")
+    assert conn.execute("SELECT headline FROM bulletins").fetchone()[0] == DRAFT["headline"]
     with pytest.raises(KeyError):
         load_bulletin(conn, 2)
 
@@ -302,7 +304,7 @@ def test_the_agent_writes_the_bulletin_in_its_format_and_it_is_stored_and_publis
     assert (folder / "bulletin.html").exists() and (folder / f"frame{frame_id}_plume.jpg").exists()
 
 
-@pytest.mark.parametrize("answer", ["The plume is high.", json.dumps({**QUIET, "headline_en": ""}),
+@pytest.mark.parametrize("answer", ["The plume is high.", json.dumps({**QUIET, "headline": ""}),
                                     json.dumps({**QUIET, "activity_level": "red_alert"})])
 def test_a_final_answer_that_is_not_a_bulletin_stores_nothing(conn, tmp_path, answer):
     written = write(conn, tmp_path, Script(turn_body([], text=answer)))
@@ -344,7 +346,7 @@ def test_the_task_recalls_the_last_bulletin_before_the_clock_only(conn, tmp_path
                                      ("kilauea", "2026-10-17T15:00:00Z", "At the clock"),
                                      ("kilauea", "2026-10-17T16:00:00Z", "From later")):
         bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 1, draft, tmp_path / "bulletins")
-        store_bulletin(conn, bulletin.model_copy(update={"volcano": volcano, "clock": clock, "headline_en": headline,
+        store_bulletin(conn, bulletin.model_copy(update={"volcano": volcano, "clock": clock, "headline": headline,
                                                          "activity_level": "fountaining"}))
     api = Script(turn_body([], text=json.dumps(QUIET)))
 
@@ -374,7 +376,7 @@ def fake_meta(monkeypatch, api):
     monkeypatch.setattr("vigil.agent.bulletin.MetaClient.from_env", from_env)
 
 
-def test_cli_prints_the_trace_and_the_bulletin_in_both_languages(cli_env, monkeypatch, capsys):
+def test_cli_prints_the_trace_and_the_bulletin(cli_env, monkeypatch, capsys):
     fake_meta(monkeypatch, Script(turn_body([("list_cameras_status", "{}")], rid="resp_1"),
                                   turn_body([], text=json.dumps(QUIET))))
 
@@ -382,7 +384,7 @@ def test_cli_prints_the_trace_and_the_bulletin_in_both_languages(cli_env, monkey
 
     out = capsys.readouterr().out
     assert "at 2026-10-17T15:00:00Z (kilauea): done after 2 turns" in out
-    assert "# Lava fountain and a tall plume at Kīlauea" in out and "# Fuente de lava y una columna alta" in out
+    assert out.count("# Lava fountain and a tall plume at Kīlauea") == 1 and "Fuente" not in out
     assert "Kilauea · 2026-10-17 05:00 (UTC-10) · Activity: No usable view" in out
     assert (cli_env / "data" / "bulletins" / "run1" / "bulletin.html").exists()
 

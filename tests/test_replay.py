@@ -210,6 +210,7 @@ def test_a_bulletin_that_quoted_nothing_has_no_numbers_to_have_checked(source, c
                pipeline=FakePipeline(conn))
 
     report = (tmp_path / "replay" / "report.md").read_text(encoding="utf-8")
+    assert "| Time (local) | Activity | Headline | Numbers checked |" in report
     assert [line.split(" | ")[-1] for line in report.splitlines() if line.startswith(("| 04:00", "| 05:00"))] == [
         "- |", "yes |"]
 

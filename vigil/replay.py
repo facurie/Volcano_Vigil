@@ -319,8 +319,8 @@ def _checked(measurements: list[dict[str, Any]]) -> str:
 
 def report_markdown(timeline: dict[str, Any], episode: Episode) -> str:
     comparison, every = timeline["comparison"], timeline["agent_every_minutes"]
-    bulletins = [[local_time(b["clock"], episode.local), b["activity_level"], _cell(b["headline_en"]),
-                  _cell(b["headline_es"]), _checked(b["measurements"])]
+    bulletins = [[local_time(b["clock"], episode.local), b["activity_level"], _cell(b["headline"]),
+                  _checked(b["measurements"])]
                  for b in timeline["bulletins"]]
     agent = f"a bulletin every {every:g} min and at the end" if every else "no agent"
     sections = [
@@ -329,7 +329,7 @@ def report_markdown(timeline: dict[str, Any], episode: Episode) -> str:
         f"time: {len(timeline['ticks'])} steps of {timeline['step_minutes']:g} min, {agent}. "
         f"Meta API cost: ${timeline['cost_usd']:.2f}.", "",
         "## Bulletins", "",
-        table(["Time (local)", "Activity", "Headline", "Titular", "Numbers checked"], bulletins), "",
+        table(["Time (local)", "Activity", "Headline", "Numbers checked"], bulletins), "",
         "## What the bulletins quoted against the official values", "",
         table(BULLETIN_HEADER, comparison["bulletins"]), "",
         "## Activity against the official times", "", table(ACTIVITY_HEADER, comparison["activity"]), "",

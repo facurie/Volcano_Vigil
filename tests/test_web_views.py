@@ -12,7 +12,7 @@ from test_metrics import kp_calibration
 from test_replay import bulletin_at, top
 from vigil.agent import render
 from vigil.alerts import store_alert
-from vigil.agent.bulletin import DISCLAIMER_EN, DISCLAIMER_ES, Evidence
+from vigil.agent.bulletin import DISCLAIMER, Evidence
 from vigil.episodes import EP55, HEIGHT_HEADER
 from vigil.ingest.store import FrameStore
 from vigil.timeutil import parse_utc, to_iso
@@ -175,7 +175,7 @@ def test_a_series_unit_follows_its_metric_even_when_empty(conn, tmp_path):
         assert views.series(scene(conn, tmp_path), "kilauea-kp", "plume", metric, T0 - 60 * M)["unit"] == unit
 
 
-def test_bulletins_written_by_the_clock_come_newest_first_in_both_languages(conn, tmp_path):
+def test_bulletins_written_by_the_clock_come_newest_first_with_the_published_tables(conn, tmp_path):
     first = bulletin_at(conn, tmp_path, "2026-10-17T14:00:00Z",
                         measurements=[top(6964, 419, "2026-10-17T13:55:05Z")])
     second = bulletin_at(conn, tmp_path, "2026-10-17T15:00:00Z", level="degassing")
@@ -185,33 +185,32 @@ def test_bulletins_written_by_the_clock_come_newest_first_in_both_languages(conn
 
     assert [b["id"] for b in shown] == [second.id, first.id]
     old = shown[1]
-    assert (old["en"]["level"], old["es"]["level"]) == ("Lava fountain", "Fuente de lava")
-    assert old["en"]["when"] == "2026-10-17 14:00 UTC"  # the test volcano has no UTC offset
-    assert old["en"]["header"] == render.table_header("en")
-    assert old["es"]["rows"] == render.table_rows(first, "es") and old["es"]["rows"][0][2] == "6.964 ± 419 m"
-    assert (old["en"]["headline"], old["es"]["body"]) == (first.headline_en, first.body_es)
-    assert old["en"]["disclaimer"] == first.disclaimer_en and old["official_url"] == first.official_url
-    assert old["wind"] is None and old["en"]["wind_text"] is None and old["verified"] is True
+    assert old["level"] == "Lava fountain"
+    assert old["when"] == "2026-10-17 14:00 UTC"  # the test volcano has no UTC offset
+    assert old["header"] == render.TABLE_HEADER
+    assert old["rows"] == render.table_rows(first) and old["rows"][0][2] == "6,964 ± 419 m"
+    assert (old["headline"], old["body"]) == (first.headline, first.body)
+    assert old["disclaimer"] == first.disclaimer and old["official_url"] == first.official_url
+    assert old["wind"] is None and old["wind_text"] is None and old["verified"] is True
+    assert "en" not in old and "es" not in old
     assert len(views.bulletins(scene(conn, tmp_path), limit=1)) == 1
 
 
 def test_a_bulletin_shows_the_disclaimer_the_code_gives_now(conn, tmp_path):
     stored = bulletin_at(conn, tmp_path, "2026-10-17T14:00:00Z")
-    old = stored.model_copy(update={"disclaimer_en": "Automated reading by Vigía Andino.",
-                                    "disclaimer_es": "Lectura automática de Vigía Andino."})
+    old = stored.model_copy(update={"disclaimer": "Automated reading by Vigía Andino."})
     with conn:
         conn.execute("UPDATE bulletins SET body = ? WHERE id = ?", (old.model_dump_json(), stored.id))
 
     (shown,) = views.bulletins(scene(conn, tmp_path))
 
     words = {"name": stored.volcano_name, "agency": stored.official_agency, "url": stored.official_url}
-    assert shown["en"]["disclaimer"] == DISCLAIMER_EN.format(**words)
-    assert shown["es"]["disclaimer"] == DISCLAIMER_ES.format(**words)
+    assert shown["disclaimer"] == DISCLAIMER.format(**words)
 
 
 def test_a_bulletins_evidence_keeps_its_overlay_path_and_captions(conn, tmp_path):
     stored = bulletin_at(conn, tmp_path, "2026-10-17T14:00:00Z")
-    evidence = Evidence(frame_id=29, target="plume", caption_en="Plume", caption_es="Columna",
+    evidence = Evidence(frame_id=29, target="plume", caption="Plume",
                         camera_id="kilauea-kp", captured_at="2026-10-17T13:55:05Z",
                         overlay="bulletins/run1/frame29_plume.jpg")
     with conn:

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS frames (
@@ -177,8 +179,7 @@ CREATE TABLE IF NOT EXISTS bulletins (       -- one bulletin of an agent run (vi
     clock          TEXT    NOT NULL,  -- UTC time it describes: the agent's clock
     created_at     TEXT    NOT NULL,  -- UTC wall clock
     activity_level TEXT    NOT NULL,  -- no_view | quiet | degassing | incandescence | fountaining (never an alert level)
-    headline_en    TEXT    NOT NULL,
-    headline_es    TEXT    NOT NULL,
+    headline       TEXT    NOT NULL,
     verified       INTEGER NOT NULL,  -- 1 if every quoted number matched a stored measurement
     body           TEXT    NOT NULL   -- the whole bulletin as JSON (vigil.agent.bulletin.Bulletin)
 );
@@ -233,6 +234,57 @@ CREATE TABLE IF NOT EXISTS alert_ticks (     -- one step of a replay's fountaini
 );
 """
 
+SCHEMA_VERSION = 1  # PRAGMA user_version of a database _migrate has brought up to date
+BILINGUAL = ("headline", "body", "text", "caption", "disclaimer")  # texts stored as x_en and x_es until Phase 9
+BILINGUAL_JSON = (("bulletins", "body"), ("alerts", "body"), ("agent_runs", "final_text"), ("agent_steps", "text"))
+
+
+def english_only(record: dict[str, Any]) -> dict[str, Any]:
+    """A stored bulletin, alert or bulletin draft as published from Phase 9 on. Until then each of its texts came in
+    English (x_en) and Spanish (x_es): x_en becomes x and x_es is dropped, in its evidence items too."""
+    out = dict(record)
+    for name in BILINGUAL:
+        if f"{name}_en" in out:
+            out[name] = out.pop(f"{name}_en")
+        out.pop(f"{name}_es", None)
+    if isinstance(out.get("evidence"), list):
+        out["evidence"] = [english_only(item) if isinstance(item, dict) else item for item in out["evidence"]]
+    return out
+
+
+def _english_only_texts(conn: sqlite3.Connection) -> None:
+    """Version 1: everything published is in English, so the Spanish stored before is dropped."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(bulletins)")}
+    if "headline_es" in columns:
+        conn.execute("ALTER TABLE bulletins DROP COLUMN headline_es")
+        conn.execute("ALTER TABLE bulletins RENAME COLUMN headline_en TO headline")
+    for table, column in BILINGUAL_JSON:
+        rows = conn.execute(f"SELECT id, {column} FROM {table} WHERE instr({column}, '_es\"') > 0").fetchall()
+        for row_id, text in rows:
+            try:
+                record = json.loads(text)
+            except ValueError:
+                continue  # model commentary, not a stored record
+            if isinstance(record, dict):
+                conn.execute(f"UPDATE {table} SET {column} = ? WHERE id = ?",
+                             (json.dumps(english_only(record), ensure_ascii=False, separators=(",", ":")), row_id))
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Bring a database written by older code up to SCHEMA_VERSION, in one write transaction, so processes that open
+    it at the same time migrate it once."""
+    if conn.execute("PRAGMA user_version").fetchone()[0] >= SCHEMA_VERSION:
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+            _english_only_texts(conn)
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
 
 def connect(path: str | Path) -> sqlite3.Connection:
     path = Path(path)
@@ -242,6 +294,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 

@@ -26,7 +26,7 @@ from PIL import Image
 
 from vigil import masks
 from vigil.agent import render
-from vigil.agent.bulletin import COLORS, DISCLAIMER_EN, DISCLAIMER_ES, Bulletin
+from vigil.agent.bulletin import COLORS, DISCLAIMER, Bulletin
 from vigil.agent.tools import STALE_AFTER, calibrated
 from vigil.alerts import Alert
 from vigil.calibration import Calibration
@@ -242,21 +242,8 @@ def series(scene: Scene, camera_id: str, target: str, metric: str, since: dateti
             "official": official}
 
 
-def _language(b: Bulletin, lang: render.Lang) -> dict[str, Any]:
-    headline, body, _ = render.texts(b, lang)
-    # The disclaimer is the code's, never the model's: shown as the code gives it now (bulletins written before
-    # the rename to Volcano Vigil name the project Vigía Andino).
-    disclaimer = (DISCLAIMER_EN if lang == "en" else DISCLAIMER_ES).format(
-        name=b.volcano_name, agency=b.official_agency, url=b.official_url)
-    return {"headline": headline, "body": body, "disclaimer": disclaimer,
-            "level": render.LEVELS[b.activity_level][0 if lang == "en" else 1],
-            "when": render.local_time(b.clock, b.utc_offset_hours),
-            "header": render.table_header(lang), "rows": render.table_rows(b, lang),
-            "wind_text": render.wind_text(b, lang) if b.wind else None}
-
-
 def bulletins(scene: Scene, limit: int = 20) -> list[dict[str, Any]]:
-    """The volcano's bulletins written by the clock, newest first, in both languages with the published tables."""
+    """The volcano's bulletins written by the clock, newest first, with the published tables."""
     rows = scene.conn.execute("SELECT body FROM bulletins WHERE volcano = ? AND clock <= ? "
                               "ORDER BY clock DESC, id DESC LIMIT ?", (scene.volcano, scene.now, limit)).fetchall()
     out = []
@@ -265,7 +252,14 @@ def bulletins(scene: Scene, limit: int = 20) -> list[dict[str, Any]]:
         out.append({"id": b.id, "run_id": b.run_id, "clock": b.clock, "activity_level": b.activity_level,
                     "verified": b.verified, "official_agency": b.official_agency, "official_url": b.official_url,
                     "wind": b.wind, "evidence": [e.model_dump() for e in b.evidence], "notes": b.notes,
-                    "en": _language(b, "en"), "es": _language(b, "es")})
+                    "headline": b.headline, "body": b.body,
+                    # The disclaimer is the code's, never the model's: shown as the code gives it now (bulletins
+                    # written before the rename to Volcano Vigil name the project Vigía Andino).
+                    "disclaimer": DISCLAIMER.format(name=b.volcano_name, agency=b.official_agency,
+                                                    url=b.official_url),
+                    "level": render.LEVELS[b.activity_level], "when": render.local_time(b.clock, b.utc_offset_hours),
+                    "header": render.TABLE_HEADER, "rows": render.table_rows(b),
+                    "wind_text": render.wind_text(b) if b.wind else None})
     return out
 
 

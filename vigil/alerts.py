@@ -45,7 +45,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from vigil import db, masks
-from vigil.agent.bulletin import COLORS, DISCLAIMER_EN, DISCLAIMER_ES, OVERLAY_WIDTH
+from vigil.agent.bulletin import COLORS, DISCLAIMER, DISCLAIMER_ES, OVERLAY_WIDTH
 from vigil.agent.loop import context_from_settings
 from vigil.agent.tools import ToolContext
 from vigil.config import Camera, ConfigError, Volcano, load_sources
@@ -547,7 +547,7 @@ class AlertWatcher:
             clock=to_iso(ctx.now), created_at=to_iso(self._wall_clock()), camera_id=camera.id,
             camera_name=short_name(camera), frame_id=frame["id"], captured_at=frame["captured_at"],
             seen_at=seen_at, seen_by=seen_by, overlay=overlay, official_agency=volcano.official_agency,
-            official_url=volcano.official_url, disclaimer_en=DISCLAIMER_EN.format(**names),
+            official_url=volcano.official_url, disclaimer_en=DISCLAIMER.format(**names),
             disclaimer_es=DISCLAIMER_ES.format(**names), **texts))
         report.alerts.append({"id": alert.id, "kind": kind, "camera_id": camera.id,
                               "captured_at": frame["captured_at"]})

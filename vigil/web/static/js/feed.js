@@ -33,35 +33,33 @@ export function renderFeed(root, data, ctx) {
   // an id that is not visible at this clock (the clock moved back) falls back to the newest
   const openId = bulletins.some((b) => b.id === state.openBulletin) ? state.openBulletin : bulletins[0].id;
   const names = new Map((cameras ?? []).map((c) => [c.camera_id, lib.shortName(c.name)]));
-  fill(list, bulletins.map((b) => bulletin(b, b.id === openId, { state, local, timeOf, names, actions })));
+  fill(list, bulletins.map((b) => bulletin(b, b.id === openId, { local, timeOf, names, actions })));
 }
 
-function bulletin(b, open, { state, local, timeOf, names, actions }) {
-  const t = b[state.lang];
+function bulletin(b, open, { local, timeOf, names, actions }) {
   const [time, date] = timeOf(b.clock);
-  return el("li", { class: "bulletin", lang: state.lang, "aria-current": open ? "true" : null },
+  return el("li", { class: "bulletin", "aria-current": open ? "true" : null },
     el("button", { type: "button", class: "b-summary", "aria-expanded": String(open),
       onClick: () => actions.openBulletin(b.id) },
     el("span", { class: "b-time" }, time, date ? el("span", { class: "b-date" }, date) : null),
-    el("span", { class: "level", dataset: { level: b.activity_level } }, t.level),
-    el("span", { class: "b-headline" }, t.headline)),
-    open ? body(b, t, { state, local, names, actions }) : null);
+    el("span", { class: "level", dataset: { level: b.activity_level } }, b.level),
+    el("span", { class: "b-headline" }, b.headline)),
+    open ? body(b, { local, names, actions }) : null);
 }
 
-function body(b, t, { state, local, names, actions }) {
-  const caption = (e) => (state.lang === "es" ? e.caption_es : e.caption_en);
+function body(b, { local, names, actions }) {
   const safeUrl = /^https?:\/\//.test(b.official_url);
   return el("div", { class: "b-body" },
-    el("p", { class: "b-disclaimer" }, t.disclaimer),
-    t.body.split(/\n\s*\n/).map((paragraph) => el("p", {}, paragraph)),
-    t.rows.length ? el("ul", { class: "b-rows" }, t.rows.map((row) => el("li", { class: "b-row" },
+    el("p", { class: "b-disclaimer" }, b.disclaimer),
+    b.body.split(/\n\s*\n/).map((paragraph) => el("p", {}, paragraph)),
+    b.rows.length ? el("ul", { class: "b-rows" }, b.rows.map((row) => el("li", { class: "b-row" },
       el("div", { class: "b-row-main" }, el("span", {}, row[0]), el("span", { class: "b-row-value" }, row[2])),
-      el("div", { class: "b-row-meta" }, [1, 4, 3, 5].map((i) => `${t.header[i]} ${row[i]}`).join(" · "))))) : null,
-    t.wind_text ? el("p", { class: "b-wind" }, t.wind_text) : null,
+      el("div", { class: "b-row-meta" }, [1, 4, 3, 5].map((i) => `${b.header[i]} ${row[i]}`).join(" · "))))) : null,
+    b.wind_text ? el("p", { class: "b-wind" }, b.wind_text) : null,
     b.evidence.length ? el("div", { class: "b-evidence" }, b.evidence.map((e) => el("figure", {},
       el("img", { src: `/media/${e.overlay.split("/").map(encodeURIComponent).join("/")}`, loading: "lazy",
-        alt: caption(e) }),
-      el("figcaption", {}, caption(e), el("br"),
+        alt: e.caption }),
+      el("figcaption", {}, e.caption, el("br"),
         el("span", { class: "mono" }, `${names.get(e.camera_id) ?? e.camera_id}, ${local(e.captured_at)}`))))) : null,
     el("p", { class: "b-check" }, b.verified ? CHECKED : UNCHECKED,
       b.notes.length ? el("ul", {}, b.notes.map((note) => el("li", {}, note))) : null),
