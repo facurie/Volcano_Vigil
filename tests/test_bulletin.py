@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from datetime import timedelta
 from typing import get_args
 
@@ -539,7 +540,7 @@ RULES = {"kilauea-v1": CameraRule(fountain_area=0.06, ambiguous_area=0.03),
 BIG, SMALL = (60, 60, 120, 150), (60, 60, 90, 90)  # 5,400 px (6.5 % of a 384 x 216 frame) and 900 px (1.1 %)
 FOUNTAIN = {**DRAFT, "activity_level": "fountaining", "body": "A lava fountain plays at the vent.",
             "measurements": [], "evidence": []}
-NOTHING = "nothing stored confirms a lava fountain in the last hour"
+NOTHING = "the alert watcher reports no fountaining and no episode-size fountain was seen in the last hour"
 
 
 def put_alert(conn, kind, minutes, **fields):
@@ -686,6 +687,23 @@ def test_a_database_without_the_alerts_tables_counts_as_no_alerts(conn, store):
 
     assert "kilauea-v1" in evidence_at(conn)
     assert evidence_at(conn, rules={}) is None
+
+
+class LockedAlerts:
+    """A connection whose queries of the alerts tables fail as a database in use by another writer does."""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def execute(self, sql, *args):
+        if "alert" in sql:
+            raise sqlite3.OperationalError("database is locked")
+        return self.conn.execute(sql, *args)
+
+
+def test_an_error_other_than_a_missing_table_is_not_taken_for_no_alerts(conn):
+    with pytest.raises(sqlite3.OperationalError, match="locked"):
+        fountain_evidence(LockedAlerts(conn), "kilauea", RULES, T0)
 
 
 def test_the_task_tells_the_agent_that_nothing_confirms_a_fountain(conn, tmp_path):

@@ -74,11 +74,12 @@ short caption.
 - drift_bearing is the side of the camera's line of sight the plume sits on, not the direction it travels.
 Do not write a disclaimer or the official source: every bulletin gets them."""
 FOUNTAIN_CONFIRMED = "a lava fountain is confirmed ({}). Report fountaining only if the frames show it."
-FOUNTAIN_UNCONFIRMED = ("nothing stored confirms a lava fountain in the last hour, so do not report fountaining: "
-                        "spatter, bursts at the vent and glowing gas are incandescence.")
-FOUNTAIN_PROBLEM = ("Your draft says fountaining, but nothing stored confirms a lava fountain in the last hour. "
-                    "Spatter, bursts at the vent and glowing gas are incandescence. Answer again with the "
-                    "corrected bulletin.")
+FOUNTAIN_UNCONFIRMED = ("the alert watcher reports no fountaining and no episode-size fountain was seen in the last "
+                        "hour, so do not report fountaining: spatter, bursts at the vent and glowing gas are "
+                        "incandescence.")
+FOUNTAIN_PROBLEM = ("Your draft says fountaining, but the alert watcher reports no fountaining and no episode-size "
+                    "fountain was seen in the last hour. Spatter, bursts at the vent and glowing gas are "
+                    "incandescence. Answer again with the corrected bulletin.")
 
 
 class EvidenceError(Exception):
@@ -315,7 +316,9 @@ def fountain_evidence(conn: sqlite3.Connection, volcano_id: str, rules: Mapping[
         look = conn.execute("SELECT camera_id, captured_at FROM alert_checks WHERE episode = 1 AND clock <= ? "
                             "AND captured_at > ? AND captured_at <= ? ORDER BY captured_at DESC LIMIT 1",
                             (until, since, until)).fetchone()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc):  # e.g. "database is locked" must not read as no alerts
+            raise
         alert = look = None
     if alert is not None and alert["kind"] == "onset":
         return f"the alert watcher reported fountaining at {alert['clock']} and has not reported its end"
