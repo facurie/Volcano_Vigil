@@ -93,6 +93,7 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr("vigil.settings.load_dotenv", lambda: None)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "@volcano_vigil")
+    monkeypatch.delenv("TELEGRAM_API_URL", raising=False)
     monkeypatch.setenv("SOURCES_PATH", "config/sources.yaml")
 
 
@@ -131,6 +132,23 @@ def test_cli_test_posts_a_message_that_says_it_is_not_an_alert(env, monkeypatch,
     assert "not an alert" in sent[0] and "No es una alerta" in sent[0]
     assert "https://www.usgs.gov/volcanoes/kilauea" in sent[0]
     assert "message 9" in capsys.readouterr().out
+
+
+def test_cli_goes_through_the_relay_in_telegram_api_url(env, monkeypatch):
+    # Hugging Face Spaces cannot reach api.telegram.org, so the Space posts through a relay
+    monkeypatch.setenv("TELEGRAM_API_URL", "https://vigil-telegram.example.workers.dev/")
+    seen = []
+    client = httpx.Client
+
+    def through_mock(**kwargs):
+        return client(transport=httpx.MockTransport(lambda request: seen.append(request.url) or ok({"message_id": 9})))
+
+    monkeypatch.setattr(httpx, "Client", through_mock)
+
+    main(["test"])
+
+    assert [(url.host, url.path) for url in seen] == [("vigil-telegram.example.workers.dev",
+                                                      f"/bot{TOKEN}/sendMessage")]
 
 
 def test_cli_needs_the_token_and_the_channel(monkeypatch, capsys):

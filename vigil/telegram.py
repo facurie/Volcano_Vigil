@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # its request lines would print the token
     with httpx.Client() as http:
-        telegram = Telegram(http, settings.telegram_token, settings.telegram_chat)
+        telegram = Telegram(http, settings.telegram_token, settings.telegram_chat, settings.telegram_api)
         try:
             if args.action == "check":
                 print(describe(telegram.check()))

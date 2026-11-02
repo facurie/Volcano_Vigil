@@ -874,3 +874,29 @@ def test_cli_refuses_an_alert_camera_that_is_not_enabled(monkeypatch, tmp_path, 
         main(["--volcano", "kilauea", "--once"])
 
     assert "kilauea-v1" in capsys.readouterr().err
+
+
+def test_cli_posts_through_the_relay_in_telegram_api_url(monkeypatch, tmp_path):
+    # Hugging Face Spaces cannot reach api.telegram.org, so the Space posts through a relay
+    monkeypatch.setattr("vigil.settings.load_dotenv", lambda: None)
+    for name, value in {"TELEGRAM_BOT_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "@volcano_vigil",
+                        "TELEGRAM_API_URL": "https://vigil-telegram.example.workers.dev",
+                        "SOURCES_PATH": str(ROOT / "config" / "sources.yaml"),
+                        "ALERTS_PATH": str(ROOT / "config" / "alerts.yaml"), "DATA_DIR": str(tmp_path),
+                        "DB_PATH": str(tmp_path / "vigil.sqlite")}.items():
+        monkeypatch.setenv(name, value)
+    apis = []
+
+    class Stop(Exception):
+        pass
+
+    def check(self):
+        apis.append(self._api)
+        raise Stop
+
+    monkeypatch.setattr("vigil.alerts.Telegram.check", check)
+
+    with pytest.raises(Stop):
+        main(["--volcano", "kilauea", "--once"])
+
+    assert apis == ["https://vigil-telegram.example.workers.dev"]

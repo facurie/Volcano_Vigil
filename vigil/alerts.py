@@ -630,7 +630,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)  # its request lines would print the Telegram token
     with closing(db.connect(settings.db_path)) as conn, httpx.Client() as telegram_http, \
             httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
-        telegram = (Telegram(telegram_http, settings.telegram_token, settings.telegram_chat)
+        telegram = (Telegram(telegram_http, settings.telegram_token, settings.telegram_chat, settings.telegram_api)
                     if settings.telegram_token and settings.telegram_chat else None)
         if args.post_replay:
             if telegram is None:

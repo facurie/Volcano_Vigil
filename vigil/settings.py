@@ -24,6 +24,7 @@ class Settings:
     alert_reserve_usd: float = 0.75   # of the daily cap, kept for the fountaining alerts (vigil.alerts)
     telegram_token: str | None = None  # the alert bot's token: a secret, never printed
     telegram_chat: str | None = None   # the public channel: @name or its numeric id
+    telegram_api: str = "https://api.telegram.org"  # or a relay: Hugging Face Spaces cannot reach Telegram
 
     @property
     def pipeline_budget_usd(self) -> float:
@@ -46,4 +47,5 @@ class Settings:
             alert_reserve_usd=float(os.getenv("ALERT_RESERVE_USD", "0.75")),
             telegram_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
             telegram_chat=os.getenv("TELEGRAM_CHAT_ID") or None,
+            telegram_api=(os.getenv("TELEGRAM_API_URL") or "https://api.telegram.org").rstrip("/"),
         )
