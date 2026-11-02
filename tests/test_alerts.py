@@ -764,15 +764,25 @@ def test_a_new_alert_is_posted_once_with_its_frame_and_caption(conn, tmp_path):
     assert conn.execute("SELECT sent_at FROM alerts").fetchone()[0] == "2026-11-02T13:09:00Z"
 
 
-def test_a_failed_post_is_tried_again_and_given_up_after_five_attempts(conn, tmp_path):
+def test_a_failed_post_waits_longer_before_each_retry_and_is_given_up_after_five_attempts(conn, tmp_path):
     stored(conn, tmp_path)
     telegram = FakeTelegram(fail=True)
 
-    errors = [send_pending(conn, telegram, tmp_path, NOW) for _ in range(MAX_SEND_ATTEMPTS + 2)]
+    def attempts():
+        return conn.execute("SELECT send_attempts FROM alerts").fetchone()[0]
 
-    assert [len(e) for e in errors] == [1] * MAX_SEND_ATTEMPTS + [0, 0]
-    row = conn.execute("SELECT sent_at, send_attempts, send_error FROM alerts").fetchone()
+    # attempts at 0, 1, 3, 7 and 15 minutes: each waits 2^(attempts so far - 1) minutes after the last
+    for number, minute in enumerate((0, 1, 3, 7, 15), 1):
+        if number > 1:
+            too_early = NOW + timedelta(minutes=minute, seconds=-30)
+            assert send_pending(conn, telegram, tmp_path, too_early) == [] and attempts() == number - 1
+        assert len(send_pending(conn, telegram, tmp_path, NOW + timedelta(minutes=minute))) == 1
+        assert attempts() == number
+
+    assert send_pending(conn, telegram, tmp_path, NOW + timedelta(minutes=60)) == []
+    row = conn.execute("SELECT sent_at, send_attempts, send_error, last_attempt_at FROM alerts").fetchone()
     assert (row[0], row[1]) == (None, MAX_SEND_ATTEMPTS) and "500" in row[2]
+    assert row[3] == "2026-11-02T13:24:00Z"
 
 
 def test_an_alert_older_than_two_hours_is_never_posted(conn, tmp_path):

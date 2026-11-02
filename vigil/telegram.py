@@ -40,6 +40,8 @@ class Telegram:
             body = response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise TelegramError(self._redact(f"{method}: {type(exc).__name__}: {exc}")) from None
+        if not isinstance(body, dict):
+            raise TelegramError(f"{method}: the reply is not a JSON object")
         if not body.get("ok"):
             raise TelegramError(self._redact(f"{method}: {body.get('error_code')} {body.get('description')}"))
         return body["result"]

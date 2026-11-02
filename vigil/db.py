@@ -224,7 +224,8 @@ CREATE TABLE IF NOT EXISTS alerts (          -- one change of a volcano's founta
     body          TEXT    NOT NULL,  -- the whole alert as JSON (vigil.alerts.Alert)
     sent_at       TEXT,              -- UTC, when Telegram took it; NULL if not posted
     send_attempts INTEGER NOT NULL DEFAULT 0,
-    send_error    TEXT               -- the last Telegram failure
+    send_error    TEXT,              -- the last Telegram failure
+    last_attempt_at TEXT             -- UTC, when Telegram was last tried (the next try waits longer after each failure)
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_clock ON alerts (volcano, clock);
 
@@ -234,7 +235,7 @@ CREATE TABLE IF NOT EXISTS alert_ticks (     -- one step of a replay's fountaini
 );
 """
 
-SCHEMA_VERSION = 2  # PRAGMA user_version of a database _migrate has brought up to date
+SCHEMA_VERSION = 3  # PRAGMA user_version of a database _migrate has brought up to date
 BILINGUAL = ("headline", "body", "text", "caption", "disclaimer")  # texts stored as x_en and x_es until Phase 9
 BILINGUAL_JSON = (("bulletins", "body"), ("alerts", "body"), ("agent_runs", "final_text"), ("agent_steps", "text"))
 
@@ -285,6 +286,12 @@ def _english_gate_answers(conn: sqlite3.Connection) -> None:
                          (json.dumps(answer, ensure_ascii=False), frame_id))
 
 
+def _alert_retry_clock(conn: sqlite3.Connection) -> None:
+    """Version 3: alerts remember when Telegram was last tried, so retries can back off."""
+    if "last_attempt_at" not in {row[1] for row in conn.execute("PRAGMA table_info(alerts)")}:
+        conn.execute("ALTER TABLE alerts ADD COLUMN last_attempt_at TEXT")
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Bring a database written by older code up to SCHEMA_VERSION, in one write transaction, so processes that open
     it at the same time migrate it once."""
@@ -297,6 +304,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
             _english_only_texts(conn)
         if version < 2:
             _english_gate_answers(conn)
+        if version < 3:
+            _alert_retry_clock(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.execute("COMMIT")
     except BaseException:

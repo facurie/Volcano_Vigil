@@ -554,24 +554,30 @@ class AlertWatcher:
 
 SEND_WITHIN = timedelta(hours=2)  # an alert older than this is never posted (after a long outage, say)
 MAX_SEND_ATTEMPTS = 5
+# After a failed post the next try waits 2^(attempts so far - 1) minutes: 1, 2, 4, 8, so the fifth is ~15 min after
+# the first, which rides out a short outage of Telegram or its relay.
 REPLAY_NOTE = "REPLAY of episode {key} ({date}): not a live alert."
 
 
 def send_pending(conn: sqlite3.Connection, telegram: Telegram, data_dir: Path, now: datetime) -> list[str]:
     """Post the alerts raised in the last SEND_WITHIN that are not posted yet, oldest first; returns the failures. A
-    failed post is tried again on later steps, MAX_SEND_ATTEMPTS times in all."""
+    failed post is tried again on later steps, MAX_SEND_ATTEMPTS times in all, waiting longer after each failure."""
     errors = []
     rows = conn.execute(
-        "SELECT id, body FROM alerts WHERE sent_at IS NULL AND send_attempts < ? AND clock >= ? ORDER BY clock, id",
+        "SELECT id, body, send_attempts, last_attempt_at FROM alerts "
+        "WHERE sent_at IS NULL AND send_attempts < ? AND clock >= ? ORDER BY clock, id",
         (MAX_SEND_ATTEMPTS, to_iso(now - SEND_WITHIN))).fetchall()
     for row in rows:
+        if row["last_attempt_at"] and now < parse_utc(row["last_attempt_at"]) + timedelta(
+                minutes=2 ** (row["send_attempts"] - 1)):
+            continue
         try:
             alert = Alert.model_validate_json(row["body"])
             telegram.send_photo((data_dir / alert.overlay).read_bytes(), caption(alert))
         except (TelegramError, OSError, ValueError) as exc:  # a caption over the limit or a bad stored body, too
             with conn:
-                conn.execute("UPDATE alerts SET send_attempts = send_attempts + 1, send_error = ? WHERE id = ?",
-                             (str(exc)[:300], row["id"]))
+                conn.execute("UPDATE alerts SET send_attempts = send_attempts + 1, send_error = ?, "
+                             "last_attempt_at = ? WHERE id = ?", (str(exc)[:300], to_iso(now), row["id"]))
             errors.append(f"alert {row['id']} not posted: {exc}"[:300])
             continue
         with conn:

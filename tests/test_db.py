@@ -146,7 +146,7 @@ def test_a_version_1_database_loses_the_spanish_description_of_its_gate_answers(
     rows = conn.execute("SELECT spark_answer FROM frame_quality ORDER BY frame_id").fetchall()
     assert json.loads(rows[0][0]) == {"usable": True, "description_en": "A steam plume."}
     assert rows[1][0] is None
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
 
 
 def test_a_failing_migration_rolls_back_and_leaves_the_version_unchanged(conn, monkeypatch):
@@ -165,3 +165,15 @@ def test_a_failing_migration_rolls_back_and_leaves_the_version_unchanged(conn, m
     assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
     assert "description_es" in conn.execute("SELECT spark_answer FROM frame_quality").fetchone()[0]
     assert not conn.in_transaction
+
+
+def test_a_version_2_database_gains_the_alerts_retry_clock(conn):
+    assert "last_attempt_at" in {row[1] for row in conn.execute("PRAGMA table_info(alerts)")}
+    with conn:
+        conn.execute("ALTER TABLE alerts DROP COLUMN last_attempt_at")
+        conn.execute("PRAGMA user_version = 2")
+    db._migrate(conn)
+
+    assert "last_attempt_at" in {row[1] for row in conn.execute("PRAGMA table_info(alerts)")}
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+    db._migrate(conn)  # nothing left to do

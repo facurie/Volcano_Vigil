@@ -56,6 +56,17 @@ def test_an_api_error_says_what_failed_without_the_token():
     assert TOKEN not in str(raised.value) and raised.value.__cause__ is None
 
 
+@pytest.mark.parametrize("reply", [[1, 2], None, "ok", 3])
+def test_a_reply_that_is_not_a_json_object_is_a_telegram_error_without_the_token(reply):
+    def handler(request):
+        return httpx.Response(200, json=reply)
+
+    with pytest.raises(TelegramError) as raised:
+        bot(handler).send_message("hello")
+
+    assert "sendMessage" in str(raised.value) and TOKEN not in str(raised.value)
+
+
 def test_a_network_error_never_carries_the_token():
     def handler(request):
         raise httpx.ConnectError(f"cannot reach {request.url}")
