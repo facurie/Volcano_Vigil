@@ -1,102 +1,117 @@
 # Volcano Vigil
 
-**An agent that watches public volcano webcams and turns every frame into measurements and plain-language bulletins.**
+**An agent that watches public volcano webcams and turns their frames into measurements, alerts and plain-language bulletins.**
 
-Volcano observatories publish webcam images every few minutes, but nobody can look at every frame all day. Volcano Vigil does: it segments plumes and lava fountains with **SAM 3.1**, measures them with camera geometry (height in meters with uncertainty, drift direction), checks the drift against forecast winds, tracks each plume over time, and lets a **Muse Spark** agent decide what to look at and write a bilingual (ES/EN) bulletin that cites its evidence: frames, masks and numbers.
+Volcano observatories publish webcam frames every few minutes, but nobody can look at every frame all day. Volcano Vigil does, for Kīlauea (Hawaiʻi). It segments plumes and lava fountains with **SAM 3.1**, measures them with camera geometry (heights in metres with an uncertainty, the side the plume drifts to), checks the drift against forecast winds, follows each object through time, raises an alert within minutes when lava fountaining starts or stops, and lets a **Muse Spark** agent decide what to inspect and write a bulletin in which every height and area is checked against what was measured.
 
-**Live:** https://facurie-volcano-vigil.hf.space (the dashboard; the episode 55 replay is under "Replay").
-
-It is built and validated on **Kīlauea** (Hawaiʻi), whose USGS webcams are public domain and whose official reports give reference values to check the agent against. Cameras, vents and their geometry live in configuration (`config/sources.yaml`, `config/calibration.yaml`), so another volcano with openly licensed webcams can be added there.
+- **Live dashboard:** https://facurie-volcano-vigil.hf.space (live mode, and the episode 55 replay under "Replay")
+- **Alerts on Telegram:** [Volcano Vigil · Kīlauea](https://t.me/volcano_vigil_kilauea)
+- **Episode 55 replay data:** [facurie/volcano-vigil-ep55](https://huggingface.co/datasets/facurie/volcano-vigil-ep55) on Hugging Face
 
 > [!IMPORTANT]
-> **Volcano Vigil does not replace official volcano alerts.** It is an experimental monitoring aid. Always follow the official agency: the [USGS Hawaiian Volcano Observatory](https://www.usgs.gov/observatories/hvo) for Kīlauea. Every bulletin links to the official source.
+> **Volcano Vigil does not replace official volcano alerts.** It is an experimental reading of public webcams. Always follow the official agency: the [USGS Hawaiian Volcano Observatory](https://www.usgs.gov/volcanoes/kilauea) for Kīlauea. Every bulletin, alert and page carries this notice and the link.
 
-## What makes it more than an image analyzer
+## Results on episode 55
 
-1. **Physical measurement.** Plume height above the vent in meters, with uncertainty, from camera geometry (camera and vent coordinates plus a calibrated reference point). Drift direction compared with the forecast wind at plume height ([Open-Meteo](https://open-meteo.com)).
-2. **Tracking over time.** Per-camera time series, and SAM 3.1 in video mode over timelapses built from the frames, so the same plume keeps a stable identity.
-3. **A real agent.** Muse Spark with tool calling decides what to inspect and when to ask for more frames, detects unusable cameras (cloud, night, frozen image), cross-checks cameras against the wind, and writes the bulletin.
-4. **Validation.** A replay mode runs the same pipeline over Kīlauea's episode 55 (2026-10-17) and compares its measurements with the values USGS reported.
+Kīlauea's summit eruption goes in episodes. Episode 55 (2026-10-17, 03:19–09:03 HST) is replayed frame by frame through the same pipeline that runs live, and every result is compared with what HVO reported. The calibration was fixed before the comparison and never fitted to HVO's values. Full tables, methods and limitations: [docs/VALIDATION.md](docs/VALIDATION.md).
+
+| What | Volcano Vigil | HVO | |
+|---|---|---|---|
+| Plume top at the peak (04:50–05:10 HST), KPcam | 6,951 ± 429 m a.s.l. | 25,000 ft (7,620 m) | −9 % |
+| Plume top at 06:02 | 5,169 ± 205 m | 17,000 ft (5,182 m) | −0 % |
+| Fountain at the peak, K2cam | 241 ± 14 m | 720 ft (219 m) | +10 % |
+| Fountain at 06:02 | 181 ± 13 m | about 650 ft (198 m) | −9 % |
+| Fountain at 07:00 | 150 ± 13 m | 500 ft (152 m) | −2 % |
+| Fountain at 08:00 | 129 ± 12 m | about 300 ft (91 m); 500 ft at 07:47 in another HVO message | +41 % |
+| End of fountaining (last frame with the fountain) | 09:02 K2cam, 09:01 V1cam | 09:03 | −1 and −2 min |
+| Drift side | southwest in 75 of 75 KPcam frames | southwest | ✓ |
+| Onset alert | fountain seen 03:07, alert 03:10 | HVO's notice 03:43 | 33 min earlier |
+| End alert | last seen 09:02, alert 09:11 | HVO's notice 09:11 | same minute |
+| False alarms over 29 h of overflows before the episode | 0 | | |
+
+The replay wrote 7 bulletins, one an hour. Re-checked with the stricter rules added at the end of the hackathon, all 41 measurements they cite match the stored ones, and all 75 lengths and areas written in their text are among them. Two rows disagree, and the report says why: at 07:30 HST the plume mask's top is cloud drifting downwind, not the column; and HVO's two reports of the fountain's decline differ by 50 m.
+
+## How it uses Meta's models
+
+- **SAM 3.1, video mode:** each camera's usable frames of the hour become a timelapse, and SAM tracks text-prompted objects through it (`steam` for the plume, `lava fountain`, `glow`; phrases chosen on episode 55 frames, [prompt_tuning.md](docs/research/prompt_tuning.md)), so the same plume keeps one identity and every frame gets a mask.
+- **SAM 3.1, image mode:** the alert watcher looks at single frames of V1cam and K2cam for a `lava fountain`, and sizes the mask against the frame.
+- **Muse Spark as a quality gate:** free local checks reject fog, dark nights and frozen images; Muse Spark only judges the hazy frames they cannot decide, and reads the printed timestamp and pan-tilt-zoom values.
+- **Muse Spark as the agent:** nine strict tools (camera status, frames, assess, segment, track, measure, wind, compare cameras, history), all bounded by the agent's clock so a replay never sees the future. Its final answer is a bulletin in a strict JSON format; the code adds the official source and the disclaimer, draws the evidence, checks every cited measurement against the database, and checks every length and area written in the text against those.
+- **Muse Spark as a second opinion:** it confirms every fountaining onset by comparing the frame with the camera's frame 30 minutes earlier (an overflow dome can glow like a fountain), and reads the episode's timelapse to name its phases.
+
+Every Meta Model API call goes through one client that enforces a daily budget cap and writes a cost ledger.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph sources["Public webcams (config/sources.yaml)"]
-        usgs["USGS HVO Kīlauea cams<br/>public domain"]
-    end
-    usgs --> ingest["Ingest worker<br/>M.jpg or AshCam archive, SHA-256 de-dup"]
-    ingest --> store[("SQLite + data/frames")]
-    replay["Replay: episode 55<br/>USGS media"] --> quality
-    store --> quality["Quality gate<br/>fresh? night? cloud? frozen?"]
-    quality --> sam["SAM 3.1<br/>text-prompted segmentation<br/>and video tracking"]
-    sam --> metrics["Metrics<br/>area, height ± σ, drift bearing"]
+    cams["USGS HVO webcams<br/>public domain"] --> ingest["Ingest<br/>AshCam archive or M.jpg,<br/>SHA-256 de-dup"]
+    ingest --> store[("SQLite + frames")]
+    replay["Replay clock<br/>episode 55"] --> store
+    store --> gate["Quality gate<br/>local checks, then Muse Spark"]
+    gate --> sam["SAM 3.1 video tracking<br/>hourly timelapses"]
+    sam --> metrics["Geometry<br/>height ± σ, area, drift side"]
     wind["Open-Meteo<br/>winds aloft"] --> agent
-    metrics --> agent["Muse Spark agent<br/>tool calling"]
-    agent --> bulletins["ES/EN bulletins<br/>citing frames, masks, numbers"]
-    bulletins --> dashboard["Dashboard<br/>map, overlays, charts, camera status"]
-    store --> dashboard
-    bulletins --> validation["Validation against<br/>USGS reported values"]
+    metrics --> agent["Muse Spark agent<br/>nine tools"]
+    agent --> bulletins["Bulletins<br/>every number checked"]
+    store --> watcher["Alert watcher<br/>local checks, SAM 3.1 image,<br/>Muse Spark confirmation"]
+    watcher --> alerts["Onset and end alerts"]
+    alerts --> telegram["Telegram channel"]
+    bulletins --> dashboard["Dashboard<br/>map, masks, height drum,<br/>agent trace, replay"]
+    alerts --> dashboard
+    metrics --> dashboard
 ```
 
-Every Meta Model API call goes through a cost ledger with a configurable daily budget cap.
+**Measuring a height.** Each camera's view (azimuth, tilt, roll, focal length, lens distortion) is solved from references whose positions are known, and a mask's highest pixel is placed on the vertical plane through the vent, with Earth curvature and refraction. A 1,000-sample Monte Carlo over the camera and vent positions, the references, the mask edge and the lean of the column gives each height its σ. KPcam, 14 km away, is calibrated from nine positions of the Moon in its frames (JPL Horizons), to 1.6 px; K2cam, 1.7 km from the vent, from its lens's datasheet field of view and a cinder cone on its skyline ([calibration_ep55.md](docs/research/calibration_ep55.md)).
 
-## Status
-
-Work in progress during the hackathon. Implemented so far:
-
-- [x] Camera sources config with mandatory license and opt-in `enabled` flag
-- [x] Ingest worker: per-camera polling of the public image (conditional GET) or of the USGS AshCam archive (every frame, exact capture times, automatic fallback to the public image), image validation, SHA-256 de-duplication, SQLite + disk storage, camera health state
-- [x] AshCam archive backfill with exact capture times (`vigil-backfill`)
-- [x] SAM 3.1 phrases tuned per target on episode 55 frames ([evidence](docs/research/prompt_tuning.md))
-- [x] API cost ledger with daily budget cap
-- [x] Mask overlay renderer with a legend strip below the frame
-- [x] Quality gate: free local checks (stale, frozen, night without incandescence, fog), Muse Spark for hazy frames, printed time and PTZ readout ([calibration](docs/research/quality_calibration.md))
-- [x] SAM 3.1 video tracking over timelapses of usable frames, with per-frame masks ([episode 55 results](docs/research/tracking_ep55.md))
-- [x] Camera geometry with lens distortion, calibrated from the Moon (KPcam); heights ± σ by Monte Carlo, area and drift per detection ([calibration](docs/research/calibration_ep55.md))
-- [x] First validation against USGS episode 55 values ([VALIDATION.md](docs/VALIDATION.md))
-- [x] Wind comparison
-- [x] Muse Spark agent and bulletins
-- [x] Episode 55 replay and validation
-- [x] Dashboard, live and replay (`vigil-web`)
-- [x] Deployment as a Hugging Face Docker Space ([DEPLOY.md](docs/DEPLOY.md)), with episode 55 mirrored on [Hugging Face](https://huggingface.co/datasets/facurie/volcano-vigil-ep55)
+**Live.** A Hugging Face Docker Space runs ingest, the pipeline (quality, hourly tracking, measuring, an hourly bulletin), the alert watcher and the dashboard as separate processes, and saves its state to a private bucket every 5 minutes ([DEPLOY.md](docs/DEPLOY.md)). Hugging Face blocks Telegram from Spaces, so alerts go out through a small Cloudflare Worker relay.
 
 ## Running it
 
-Requires Python 3.11+.
+Requires Python 3.11+ and ffmpeg (for the timelapses); node runs the dashboard's JavaScript tests if installed.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-cp .env.example .env               # then set MODEL_API_KEY
-
-vigil-ingest --once                # poll every enabled camera once
-vigil-ingest                       # keep polling on each camera's interval
-vigil-backfill --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
-                                   # download archived frames (USGS AshCam keeps ~31 days)
-vigil-quality --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
-                                   # judge frames: local checks, Muse Spark for hazy ones
-vigil-track --camera kilauea-k2 --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
-                                   # SAM 3.1 video tracks over the usable frames
-vigil-measure --camera kilauea-kp --start 2026-10-17T13:00Z --end 2026-10-17T19:30Z
-                                   # heights ± σ, area and drift of the tracked objects
-python scripts/validate_ep55.py    # compare with the official USGS values: docs/VALIDATION.md
-pytest                             # run the test suite
+cp .env.example .env               # then set MODEL_API_KEY (and the Telegram values to post alerts)
+pytest                             # the test suite; it never calls the network or the Meta API
 ```
 
-Frames are stored under `data/frames/<camera>/<day>/` and indexed in `data/vigil.sqlite`. The `data/` folder is never committed.
+| Command | What it does |
+|---|---|
+| `vigil-ingest` | Poll every enabled camera (AshCam or `M.jpg`), store new frames; `--once`, `--lookback-hours 24` |
+| `vigil-backfill --camera kilauea-kp --start … --end …` | Download archived frames with exact capture times (AshCam keeps ~31 days) |
+| `vigil-quality` | Judge frames: local checks, Muse Spark for hazy ones |
+| `vigil-track` | SAM 3.1 video tracks over a window of usable frames |
+| `vigil-measure` | Heights ± σ, area and drift side of the tracked objects |
+| `vigil-wind` | Open-Meteo winds aloft over the vent |
+| `vigil-agent` / `vigil-bulletin` | One agent run, or one checked bulletin, at a time (now or a past time) |
+| `vigil-pipeline --volcano kilauea` | The live loop: quality, hourly tracking, measuring, hourly bulletins |
+| `vigil-alerts --volcano kilauea` | The live fountaining alerts, posted to Telegram |
+| `vigil-replay --episode 55` | Replay episode 55 on a simulated clock and compare with HVO |
+| `vigil-web` | The dashboard at http://127.0.0.1:8000, live and replay |
+| `vigil-mirror`, `vigil-persist`, `vigil-space` | Deployment: the episode mirror, the state bucket, the Space |
+| `python scripts/validate_ep55.py` | Regenerate [docs/VALIDATION.md](docs/VALIDATION.md) |
+
+To see the replay without spending anything: `vigil-mirror pull --episode 55 --repo facurie/volcano-vigil-ep55`, then `vigil-web`. Frames live under `data/` (git-ignored); no image is ever committed.
+
+## Cost
+
+Meta Model API spend, from the cost ledgers: **$5.09** to build and validate (prompt tuning, the quality gate, episode 55 tracking, agent probes, two full replays and the alert calibration), and **$6.22** for the live Space's first 27 hours (2026-11-01 16:08 UTC to 2026-11-02 19:00 UTC). The live Space is capped at $5 a day (`DAILY_BUDGET_USD`), of which $0.75 is kept for the alerts. Most of the live spend is the hourly agent run.
 
 ## Built during the hackathon (Oct 26 – Nov 4, 2026)
 
-Everything in this repository was written from scratch during the [Meta Global AI Developer Hackathon](https://dev.meta.ai), between October 26 and November 4, 2026; the commit history shows the progression. No code, data or assets predate the event.
+Everything in this repository was written from scratch during the [Meta Global AI Developer Hackathon](https://dev.meta.ai), between October 26 and November 4, 2026; the commit history shows the progression, and [docs/PLAN.md](docs/PLAN.md) with [docs/superpowers/plans/](docs/superpowers/plans/) records each phase's plan and what happened. No code, data or assets predate the event.
 
 ## Data sources and credits
 
-- Kīlauea webcam images and episode 55 media: **U.S. Geological Survey** (public domain).
-- Wind forecasts: [Open-Meteo](https://open-meteo.com).
+- Webcam frames, eruption reports and the vent positions: **U.S. Geological Survey**, Hawaiian Volcano Observatory (public domain).
+- Winds aloft: [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
+- Calibration references: USGS GNIS and 3DEP elevations (public domain), NASA/JPL Horizons for the Moon's positions, and Axis Communications' published field of view for the AXIS Q6318-LE.
+- Map tiles: USGS The National Map imagery; map library [Leaflet](https://leafletjs.com) (BSD-2-Clause); type [IBM Plex](https://github.com/IBM/plex) (SIL OFL).
 
-See [DATA_SOURCES.md](DATA_SOURCES.md) for every source, its license and how it is used. No images are stored in this repository.
+See [DATA_SOURCES.md](DATA_SOURCES.md) for every source, its license and how it is used.
 
 ## License
 

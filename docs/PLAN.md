@@ -4,7 +4,7 @@
 
 > **Renamed on 2026-10-30.** The project was called Vigía Andino until then, with the package `vigia` and the CLIs `vigia-*`. The phase plans written before the rename keep the old names.
 
-**Goal:** an agent that watches public volcano webcams, measures plumes and lava fountains (height in meters ± σ, drift direction against forecast wind), tracks them over time, writes cited ES/EN bulletins, and proves its accuracy by replaying Kīlauea episode 55 against official USGS values.
+**Goal:** an agent that watches public volcano webcams, measures plumes and lava fountains (height in meters ± σ, drift direction against forecast wind), tracks them over time, writes cited bulletins in English, and proves its accuracy by replaying Kīlauea episode 55 against official USGS values.
 
 **Architecture:** a polling ingest feeds SQLite and `data/`. Then a quality gate runs: cheap local checks first, Muse Spark only when they can't decide. Next, SAM 3.1 tracks objects in video mode over timelapses built from the frames, and geometric metrics are computed. A Muse Spark agent with tool calling decides what to inspect and writes the bulletins. A FastAPI dashboard shows live and replay modes. Every Meta call goes through `MetaClient` (budget check + cost ledger).
 
@@ -159,7 +159,7 @@ vigil/
   metrics.py              area, height, drift per detection; vigil-measure (exists, phase 3)
   wind.py                 Open-Meteo winds aloft; vigil-wind     (exists, phase 4)
   agent/tools.py loop.py  nine tools + tool loop; vigil-agent    (exist, phase 4)
-  agent/bulletin.py       checked bilingual bulletins; vigil-bulletin (exists, phase 5)
+  agent/bulletin.py       checked bulletins (English only since phase 9); vigil-bulletin (exists, phase 5)
   agent/render.py         bulletins as Markdown and HTML         (exists, phase 5)
   pipeline.py             quality, hourly tracking, bulletins; vigil-pipeline (exists, phase 5)
   episodes.py             episode 55 and its official values    (exists, phase 5)
@@ -277,7 +277,7 @@ config/alerts.yaml        alert cameras and their size thresholds (exists, phase
   - Leaflet map: cameras, vent, drift arrow, wind arrow. (USGS imagery tiles. Each camera's position is drawn as a circle of its σ, with its line of sight to the vent; the drift is drawn across KPcam's line of sight, and the wind is the newest bulletin's layer mean.)
   - Current frame with mask overlay. (Last tracked frame or latest frame, plus the hero readout of the plume top ± σ.)
   - Height chart over time. (A helicorder "drum" that inks only up to the clock; HVO's values appear once their window has closed, with per-camera frame strips.)
-  - Bulletin feed with an ES/EN toggle.
+  - Bulletin feed with an ES/EN toggle. (Removed in Phase 9: everything published is in English.)
   - Camera status (fresh / stale / fog / night). (Words, not alert colours: usable, night, fog, frozen, stale, unchecked, no frames.)
   - Replay player and agent trace view. (A transport with a scrubber on the 5-min grid, 2.5–10 simulated min/s, and the step summary. At the episode's end, the comparison tables against HVO.)
   - The disclaimer banner is always visible. (It is in the page's markup and sticky with the top bar.)

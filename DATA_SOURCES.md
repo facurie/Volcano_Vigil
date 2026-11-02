@@ -33,6 +33,20 @@ Every source Volcano Vigil reads, its license, and how it is used. Cameras are d
 | IGEPN (Ecuador) webcams | Copyrighted, no published license. Not used without permission. |
 | Sernageomin (Chile) webcams | Block automated access. Not used without permission. |
 
+## Geometry and calibration references
+
+Used once, to fix where each camera stands and points (`config/calibration.yaml`, [calibration_ep55.md](docs/research/calibration_ep55.md)); no data from them is redistributed beyond the numbers quoted there.
+
+| Source | What we use | License / terms | Credit |
+|---|---|---|---|
+| [Patrick & Adams 2026 data release](https://data.usgs.gov/datacatalog/metadata/USGS.691cfaedd4be021d1d89b467.xml) and HVO's summit reference maps | The north and south vent positions, and the vent elevation | Public domain | U.S. Geological Survey |
+| [USGS Elevation Point Query Service](https://epqs.nationalmap.gov/v1/json) and 3DEP | Ground elevations of the camera sites and of Puʻukoaʻe; K2cam's skyline profile | Public domain | U.S. Geological Survey |
+| [USGS GNIS](https://www.usgs.gov/us-board-on-geographic-names) | The position of Puʻukoaʻe, a cone on K2cam's skyline | Public domain | U.S. Geological Survey |
+| [NASA/JPL Horizons](https://ssd.jpl.nasa.gov/horizons/) | The Moon's apparent position seen from KPcam at nine capture times | Free to use | NASA/JPL Solar System Dynamics |
+| [Axis Communications, AXIS Q6318-LE](https://www.axis.com/products/axis-q6318-le) | The lens's widest horizontal field of view (58.5°), for K2cam | Published specification | Axis Communications |
+| [Patrick et al. 2026](https://doi.org/10.1186/s13617-026-00170-x) | HVO's camera models and sites, quoted | Open-access article (Journal of Applied Volcanology) | Patrick et al. |
+| [OpenStreetMap](https://www.openstreetmap.org) | The Mauna Loa Lookout and Uēkahuna overlook positions, to place KPcam and K2cam | ODbL | © OpenStreetMap contributors |
+
 ## Processing services (not data sources)
 
 Frames are sent to the [Meta Model API](https://dev.meta.ai) (Muse Spark 1.3 and SAM 3.1) for analysis. Only frames from sources listed under "In use" are sent.
