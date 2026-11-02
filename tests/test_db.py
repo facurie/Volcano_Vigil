@@ -123,3 +123,45 @@ def test_a_legacy_alert_body_validates_as_the_alert_model_once_migrated(conn):
     db._migrate(conn)
 
     assert Alert.model_validate_json(conn.execute("SELECT body FROM alerts").fetchone()[0]) == alert
+
+
+def put_gate_answer(conn, frame_id, answer):
+    with conn:
+        conn.execute("INSERT INTO frames (id, camera_id, captured_at, timestamp_source, fetched_at, sha256, path, "
+                     "bytes, width, height) VALUES (?, 'kilauea-v1', 'x', 'ashcam', 'x', ?, 'p', 1, 1, 1)",
+                     (frame_id, f"h{frame_id}"))
+        conn.execute("INSERT INTO frame_quality (frame_id, assessed_at, usable, decided_by, local_decision, reasons, "
+                     "brightness, contrast, edge_density, glow_fraction, spark_answer) "
+                     "VALUES (?, 'x', 1, 'spark', 'pass', '[]', 1, 1, 1, 0, ?)", (frame_id, answer))
+
+
+def test_a_version_1_database_loses_the_spanish_description_of_its_gate_answers(conn):
+    answer = {"usable": True, "description_en": "A steam plume.", "description_es": "Un penacho de vapor."}
+    put_gate_answer(conn, 1, json.dumps(answer))
+    put_gate_answer(conn, 2, None)  # a frame the gate never saw
+    with conn:
+        conn.execute("PRAGMA user_version = 1")
+    db._migrate(conn)
+
+    rows = conn.execute("SELECT spark_answer FROM frame_quality ORDER BY frame_id").fetchall()
+    assert json.loads(rows[0][0]) == {"usable": True, "description_en": "A steam plume."}
+    assert rows[1][0] is None
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 2
+
+
+def test_a_failing_migration_rolls_back_and_leaves_the_version_unchanged(conn, monkeypatch):
+    put_gate_answer(conn, 1, json.dumps({"description_en": "A", "description_es": "B"}))
+    with conn:
+        conn.execute("PRAGMA user_version = 1")
+
+    def fail(conn):
+        conn.execute("UPDATE frame_quality SET spark_answer = '{}'")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(db, "_english_gate_answers", fail)
+    with pytest.raises(RuntimeError):
+        db._migrate(conn)
+
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert "description_es" in conn.execute("SELECT spark_answer FROM frame_quality").fetchone()[0]
+    assert not conn.in_transaction

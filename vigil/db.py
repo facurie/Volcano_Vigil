@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS alert_ticks (     -- one step of a replay's fountaini
 );
 """
 
-SCHEMA_VERSION = 1  # PRAGMA user_version of a database _migrate has brought up to date
+SCHEMA_VERSION = 2  # PRAGMA user_version of a database _migrate has brought up to date
 BILINGUAL = ("headline", "body", "text", "caption", "disclaimer")  # texts stored as x_en and x_es until Phase 9
 BILINGUAL_JSON = (("bulletins", "body"), ("alerts", "body"), ("agent_runs", "final_text"), ("agent_steps", "text"))
 
@@ -270,6 +270,21 @@ def _english_only_texts(conn: sqlite3.Connection) -> None:
                              (json.dumps(english_only(record), ensure_ascii=False, separators=(",", ":")), row_id))
 
 
+def _english_gate_answers(conn: sqlite3.Connection) -> None:
+    """Version 2: the quality gate no longer asks for a Spanish description, so the one stored is dropped."""
+    rows = conn.execute("SELECT frame_id, spark_answer FROM frame_quality "
+                        "WHERE instr(spark_answer, 'description_es') > 0").fetchall()
+    for frame_id, text in rows:
+        try:
+            answer = json.loads(text)
+        except ValueError:
+            continue
+        if isinstance(answer, dict):
+            answer.pop("description_es", None)
+            conn.execute("UPDATE frame_quality SET spark_answer = ? WHERE frame_id = ?",
+                         (json.dumps(answer, ensure_ascii=False), frame_id))
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Bring a database written by older code up to SCHEMA_VERSION, in one write transaction, so processes that open
     it at the same time migrate it once."""
@@ -277,8 +292,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         return
     conn.execute("BEGIN IMMEDIATE")
     try:
-        if conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version < 1:
             _english_only_texts(conn)
+        if version < 2:
+            _english_gate_answers(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.execute("COMMIT")
     except BaseException:
