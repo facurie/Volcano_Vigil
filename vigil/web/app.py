@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from vigil import db
-from vigil.agent.bulletin import DISCLAIMER, DISCLAIMER_ES
+from vigil.agent.bulletin import DISCLAIMER
 from vigil.agent.tools import Metric
 from vigil.calibration import load_calibration
 from vigil.config import ConfigError, load_sources
@@ -73,7 +73,7 @@ def create_app(settings: Settings | None = None, *, volcano: str = "kilauea",
     info = sources.volcanoes[volcano]
     live_cameras = tuple(c.id for c in sources.enabled_cameras() if c.volcano == volcano)
     words = {"name": info.name, "agency": info.official_agency, "url": info.official_url}
-    disclaimer = {"en": DISCLAIMER.format(**words), "es": DISCLAIMER_ES.format(**words)}
+    disclaimer = DISCLAIMER.format(**words)
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     for key, value in {"volcano_name": info.name, "official_agency": info.official_agency,
                        "official_url": info.official_url,

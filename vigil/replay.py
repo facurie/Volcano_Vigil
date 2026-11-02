@@ -268,7 +268,9 @@ def alert_looks(conn: sqlite3.Connection) -> str:
     sizes = dict(conn.execute("SELECT size, COUNT(*) FROM alert_checks GROUP BY size").fetchall())
     asked = conn.execute("SELECT COUNT(*) FROM alert_checks WHERE spark IS NOT NULL").fetchone()[0]
     parts = ", ".join(f"{size} {sizes.get(size, 0)}" for size in ("none", "small", "ambiguous", "large"))
-    return f"{sum(sizes.values())} SAM looks ({parts}); Muse Spark compared {asked} frames"
+    looks = sum(sizes.values())
+    return (f"{looks} SAM {'look' if looks == 1 else 'looks'} ({parts}); "
+            f"Muse Spark compared {asked} {'frame' if asked == 1 else 'frames'}")
 
 
 def quiet_report(conn: sqlite3.Connection, window: QuietWindow) -> str:

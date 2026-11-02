@@ -42,3 +42,11 @@ def test_the_javascript_helpers_pass_their_node_tests():
     result = subprocess.run([shutil.which("node"), "--test", str(ROOT / "tests" / "js" / "lib.test.mjs")],
                             capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_the_page_has_no_language_toggle():
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert "data-lang" not in page and "Bulletin language" not in page
+    for script in (STATIC / "js").glob("*.js"):
+        text = script.read_text(encoding="utf-8")
+        assert "state.lang" not in text and "setLang" not in text, script.name

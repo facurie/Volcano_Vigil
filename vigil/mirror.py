@@ -112,8 +112,7 @@ starts, because the USGS AshCam archive keeps frames for only about 31 days.
   the bulletins.
 - `replay/ep{key}/timeline.json`, `report.md`, `spark_phases.json`: the replay's timeline and its comparison with
   the official values.
-- `replay/ep{key}/bulletins/run<N>/`: each bulletin in English and Spanish (Markdown and HTML) with its evidence
-  images.
+- `replay/ep{key}/bulletins/run<N>/`: each bulletin (Markdown and HTML) with its evidence images.
 
 ## Sources and licenses
 

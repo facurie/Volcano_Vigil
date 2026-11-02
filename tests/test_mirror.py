@@ -105,6 +105,7 @@ def test_the_dataset_card_credits_the_sources_and_carries_the_disclaimer():
     assert "U.S. Geological Survey" in card and "public domain" in card.lower()
     assert "Open-Meteo" in card and "CC BY 4.0" in card
     assert "does not replace official alerts" in card
+    assert "each bulletin (Markdown and HTML)" in card and "Spanish" not in card
     assert "https://www.usgs.gov/volcanoes/kilauea" in card
     assert "2026-10-17T13:00:00Z" in card and "2026-10-17T19:30:00Z" in card
 

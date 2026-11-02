@@ -28,7 +28,6 @@ const state = {
   camera: null,          // the selected camera id
   frameChoice: "tracked",// "tracked" | "latest"
   pinned: null,          // a frame id picked on the drum, until the clock or the camera changes
-  lang: "en",            // bulletin language
   openBulletin: null,    // the bulletin id expanded in the feed (null: the newest)
   runId: null,           // the traced run (null: the newest by the clock)
   playing: false,
@@ -64,11 +63,6 @@ const actions = {
     state.pinned = frameId;
     return load();
   },
-  setLang(lang) {
-    state.lang = lang;
-    syncHash();
-    paint();
-  },
   openBulletin(id) {
     state.openBulletin = id;
     paint();
@@ -91,7 +85,6 @@ function syncHash() {
   const parts = [["mode", state.mode]];
   if (state.mode === "replay" && state.clock) parts.push(["at", state.clock]);
   if (state.camera) parts.push(["camera", state.camera]);
-  if (state.lang !== "en") parts.push(["lang", state.lang]);
   if (state.runId !== null) parts.push(["run", state.runId]);
   const text = parts.map(([key, value]) => `${key}=${encodeURIComponent(value).replace(/%3A/g, ":")}`).join("&");
   history.replaceState(null, "", `#${text}`);
@@ -379,7 +372,6 @@ async function start() {
   const wanted = hash.get("mode");
   const mode = (wanted === "replay" && replayWorks) || (wanted === "live" && liveWorks) ? wanted
     : replayWorks ? "replay" : "live";
-  if (hash.get("lang") === "es") state.lang = "es";
   if (/^\d+$/.test(hash.get("run") ?? "")) state.runId = Number(hash.get("run"));
   enterMode(mode, hash.get("at"));
   state.camera = await chooseCamera(hash.get("camera"));

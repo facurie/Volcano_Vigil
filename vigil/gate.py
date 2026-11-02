@@ -60,7 +60,7 @@ GATE_PROMPT = (
     "Use empty strings if there is no readable timestamp. Also transcribe any camera label.\n"
     "3. Transcribe any pan/tilt/zoom readout printed on the image exactly as written, for example "
     "'P: 29, T: +0.00, Z: 29 1.0'. Use an empty string if there is none.\n"
-    "4. List the visible features, classify the activity, and describe the scene in English and Spanish."
+    "4. List the visible features, classify the activity, and describe the scene in English."
 )
 GATE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -82,7 +82,6 @@ GATE_SCHEMA: dict[str, Any] = {
             "no_visible_activity", "degassing", "steaming", "ash_emission", "lava_fountaining",
             "lava_lake_activity", "unclear"]},
         "description_en": {"type": "string"},
-        "description_es": {"type": "string"},
     },
     "additionalProperties": False,
 }

@@ -15,6 +15,13 @@ def text(*parts):
     return ROOT.joinpath(*parts).read_text(encoding="utf-8")
 
 
+def test_the_live_database_is_migrated_before_the_dashboard_starts():
+    script = text("deploy", "start.sh")
+
+    assert script.index("db.connect(") < script.index("vigil-web --host")
+    assert script.index("vigil-mirror pull") < script.index("db.connect(")
+
+
 def pyproject():
     return tomllib.loads(text("pyproject.toml"))
 

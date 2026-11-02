@@ -51,8 +51,6 @@ COLORS = {"plume": (80, 200, 255), "fountain": (255, 90, 30), "incandescence": (
 TOLERANCE = {"m": 1.0, "m2": 1.0, "deg": 0.1}  # what rounding can change in a quoted number, besides 1 %
 DISCLAIMER = ("Automated, experimental reading of public webcams by Volcano Vigil. It does not replace official "
               "alerts or warnings. For the official status of {name}, see {agency}: {url}")
-DISCLAIMER_ES = ("Lectura automática y experimental de cámaras públicas hecha por Volcano Vigil. No reemplaza las "
-                 "alertas ni los avisos oficiales. Para el estado oficial de {name}, consulte a {agency}: {url}")
 
 BULLETIN_FINISH = """\
 Finish with a bulletin for the public, in English, as the JSON your answer format describes:

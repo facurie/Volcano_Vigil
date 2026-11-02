@@ -10,10 +10,6 @@ const UNCHECKED = "Some numbers could not be checked against the stored measurem
 export function renderFeed(root, data, ctx) {
   const { state, config, scene, actions } = ctx;
   const list = root.querySelector("#bulletins");
-  for (const button of root.querySelectorAll("[data-lang]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.lang === state.lang));
-    button.onclick = () => actions.setLang(button.dataset.lang);
-  }
   if (data.error) {
     fill(list, el("li", { class: "error-note" }, `Bulletins could not be loaded (${data.error.message}).`));
     return;

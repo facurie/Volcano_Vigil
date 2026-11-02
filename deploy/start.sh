@@ -10,6 +10,8 @@ BUCKET=facurie/vigil-state
 # on an empty database that the next save would put over the bucket's good copy, forgetting the day's spend.
 vigil-persist restore --bucket "$BUCKET" || exit 1
 vigil-mirror pull --episode 55 --repo facurie/volcano-vigil-ep55 || exit 1
+# Bring the live database's schema up to date (vigil/db.py) before the dashboard, which only reads, opens it.
+python -c 'from vigil import db; from vigil.settings import Settings; db.connect(Settings.from_env().db_path).close()' || exit 1
 
 vigil-web --host 0.0.0.0 --port 7860 &
 web_pid=$!

@@ -43,6 +43,7 @@ def test_the_space_readme_declares_a_docker_space_on_the_apps_port():
     assert readme.startswith("---\ntitle: Volcano Vigil\n")
     assert "\nsdk: docker\n" in readme and f"\napp_port: {APP_PORT}\n" in readme
     assert readme.endswith("\n---\n\n# Volcano Vigil\n")
+    assert "ES/EN" not in readme and "short_description: Kīlauea webcams to measurements and bulletins\n" in readme
 
 
 def test_stage_unpacks_the_archive_and_puts_the_front_matter_on_the_readme(tmp_path):

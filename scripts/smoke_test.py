@@ -131,8 +131,7 @@ def analyze_image(client: MetaClient | None, path: Path, out: Path) -> list[str]
                   f"| {assessment['printed_ptz_text']} | {assessment['activity']} |", "",
                   f"Why: {assessment['usable_reason']}", "",
                   f"Visible: {', '.join(assessment['visible_features'])}", "",
-                  f"EN: {assessment['description_en']}", "",
-                  f"ES: {assessment['description_es']}", ""]
+                  f"Description: {assessment['description_en']}", ""]
 
     lines += ["### SAM 3.1", "", "| phrase | objects | best score | mask area | overlay |", "|---|---|---|---|---|"]
     all_layers = []

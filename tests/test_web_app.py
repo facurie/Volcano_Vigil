@@ -70,7 +70,7 @@ def test_config_names_the_volcano_its_cameras_and_the_replays_on_disk(client):
                               "available": True}
     assert [(r["episode"], r["start"], r["end"], r["step_minutes"]) for r in config["replays"]] == [
         ("55", "2026-10-17T13:00:00Z", "2026-10-17T19:30:00Z", 5)]
-    assert config["disclaimer"]["es"].startswith("Lectura automática")
+    assert config["disclaimer"].startswith("Automated, experimental reading")
     assert config["now"] == to_iso(NOW)
 
 

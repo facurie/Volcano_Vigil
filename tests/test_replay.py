@@ -21,7 +21,7 @@ from vigil.ingest.store import FrameStore
 from vigil.meta.client import MetaClient
 from vigil.phases import PHASES
 from vigil.pipeline import StepReport
-from vigil.replay import (ALERT_HEADER, OffGridError, activity_rows, alert_rows, bulletin_rows, feed, main,
+from vigil.replay import (ALERT_HEADER, OffGridError, activity_rows, alert_looks, alert_rows, bulletin_rows, feed, main,
                           quiet_report, replay_alerts, replay_dir, run_replay, ticks)
 from vigil.timeutil import parse_utc, to_iso
 
@@ -354,6 +354,22 @@ def test_alert_rows_without_alerts_say_none(conn):
     rows = alert_rows(conn, EP55)
 
     assert [row[:2] for row in rows] == [["fountaining started", "none"], ["fountaining stopped", "none"]]
+
+
+def test_alert_looks_say_frame_for_one_comparison_and_frames_for_the_others(conn):
+    def compared(n):
+        return f"Muse Spark compared {n}"
+
+    assert alert_looks(conn).endswith(compared("0 frames"))
+    for frame_id in (1, 2):
+        conn.execute("INSERT INTO frames (id, camera_id, captured_at, timestamp_source, fetched_at, sha256, path, "
+                     "bytes, width, height) VALUES (?, 'kilauea-v1', 'x', 'ashcam', 'x', ?, 'p', 1, 1, 1)",
+                     (frame_id, f"h{frame_id}"))
+        conn.execute("INSERT INTO alert_checks (frame_id, camera_id, captured_at, clock, glow, size, spark, episode) "
+                     "VALUES (?, 'kilauea-v1', 'x', 'x', 0, 'none', '{}', 0)", (frame_id,))
+        text = alert_looks(conn)
+        assert text.endswith(compared("1 frame" if frame_id == 1 else "2 frames"))
+        assert text.startswith("1 SAM look (" if frame_id == 1 else "2 SAM looks (")
 
 
 def test_cli_knows_the_quiet_windows(capsys):

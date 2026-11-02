@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 from test_meta_client import SPARK_USAGE, FakeApi, make_client, response_body
 from vigil import db
 from vigil.config import Camera, Sources, Volcano
-from vigil.gate import GATE_SCHEMA, QualityGate, main, parse_ptz, read_answer
+from vigil.gate import GATE_PROMPT, GATE_SCHEMA, QualityGate, main, parse_ptz, read_answer
 from vigil.ingest.store import FrameStore
 from vigil.quality import Thresholds
 
@@ -32,7 +32,6 @@ ANSWER = {
     "printed_camera_label": "USGS", "printed_ptz_text": "P: 29, T: +0.00, Z: 29 1.0",
     "visible_features": ["crater", "vent", "steam"], "activity": "steaming",
     "description_en": "A steam plume rises from the vent.",
-    "description_es": "Un penacho de vapor sale del respiradero.",
 }
 HAZY = Thresholds(clear_edges=1.01)  # every daytime frame with detail counts as hazy
 
@@ -315,3 +314,9 @@ def test_cli_refuses_an_empty_window(cli_env, capsys):
         main(["--camera", "kilauea-v1", "--start", "2026-10-17T23:00Z", "--end", "2026-10-17T21:00Z"])
 
     assert "before" in capsys.readouterr().err
+
+
+def test_the_gate_asks_for_an_english_description_only():
+    assert "description_en" in GATE_SCHEMA["properties"] and "description_es" not in GATE_SCHEMA["properties"]
+    assert GATE_SCHEMA["required"] == list(GATE_SCHEMA["properties"])
+    assert "in English" in GATE_PROMPT and "Spanish" not in GATE_PROMPT

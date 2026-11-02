@@ -28,7 +28,7 @@ colorTo: gray
 sdk: docker
 app_port: {APP_PORT}
 pinned: false
-short_description: Kīlauea webcams to measurements and ES/EN bulletins
+short_description: Kīlauea webcams to measurements and bulletins
 ---
 
 """
