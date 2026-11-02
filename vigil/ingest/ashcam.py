@@ -113,8 +113,9 @@ def backfill(
     """Store every archived frame of `camera` captured between `start` and `end`.
 
     Frames already stored from AshCam are skipped without downloading them, so
-    a window can be backfilled again. A failed download is reported and the
-    rest continue; a failure to list the window raises.
+    a window can be backfilled again, which also fills the gap a failed download
+    left. A failed download is reported and the rest continue; a failure to
+    list the window raises.
     """
     if not camera.ashcam_code:
         raise ValueError(f"camera {camera.id} has no ashcam_code")
@@ -144,6 +145,8 @@ class AshcamIngestor:
 
     A poll reaches back at most `lookback`: the first poll stores that window, and a longer gap
     (after downtime) needs a longer lookback (`vigil-ingest --lookback-hours`) or `vigil-backfill`.
+    A frame whose download fails is not tried again once a later frame of the same camera is stored, since a poll
+    starts after the newest frame stored; `vigil-backfill` fills such a gap.
     """
 
     def __init__(

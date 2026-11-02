@@ -1,7 +1,9 @@
 """The quality gate: local checks on every frame, Muse Spark when they cannot decide.
 
-Local checks (vigil/quality.py) cost nothing: they reject stale, frozen,
-dark-night and foggy frames, pass clear ones and leave hazy ones uncertain.
+Local checks (vigil/quality.py) cost nothing: they reject frozen, dark-night
+and foggy frames, pass clear ones and leave hazy ones uncertain. They also
+reject a stale frame when `assess` is given `now`, but no caller passes it:
+staleness is judged by the dashboard and the agent's tools, not here.
 Muse Spark looks at the uncertain frames, or on request at every frame the
 local checks let through: is the view usable, and which timestamp and
 pan/tilt/zoom readout are printed on it. A printed time more than 10 minutes
@@ -175,8 +177,8 @@ class QualityGate:
         """Assess one stored frame and store its verdict, replacing any earlier one.
 
         `spark` says which frames Muse Spark sees: none, those the local
-        checks find uncertain, or all that they do not reject. `now` (live
-        use) also rejects frames captured more than 30 minutes before it.
+        checks find uncertain, or all that they do not reject. `now` also rejects
+        frames captured more than 30 minutes before it; no caller passes it today.
         """
         frame = self._conn.execute("SELECT * FROM frames WHERE id = ?", (frame_id,)).fetchone()
         if frame is None:

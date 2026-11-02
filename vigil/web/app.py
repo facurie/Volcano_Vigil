@@ -3,7 +3,8 @@
 Every /api endpoint takes `replay`, an episode key (absent: live), and `at`, a time with its UTC offset. Live, `at`
 defaults to now and may not be after it; in a replay it defaults to the episode's end and must fall inside the
 episode. Model text reaches the browser only inside JSON, and the page inserts it as text, never as HTML. Every
-page carries the disclaimer and the link to the official agency in its own markup.
+page carries the disclaimer and the link to the official agency in its own markup. /media/ serves the bulletin and
+alert images under the data dir without the replay clock: the page only links the images visible at its clock.
 
     vigil-web --port 8000
 """

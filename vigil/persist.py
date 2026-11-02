@@ -1,8 +1,9 @@
 """Keep the live state across restarts of a Hugging Face Docker Space, whose disk is lost whenever it restarts.
 
 The state goes to a private Hugging Face bucket: the frames, the bulletins and the alerts' frames as files, and the
-database as one self-contained copy. They are saved in that order, so a saved row never points at a file the bucket
-lacks. `restore` runs at every start; `run` saves every few minutes and once more when it is stopped. A restart
+database as one self-contained copy. They are saved in that order, so a saved row does not point at a file the bucket
+lacks, provided nothing writes during the save. (The final save on stop is safe: deploy/start.sh stops the writers
+first; a periodic save can catch a frame stored just after the files were listed, and the next one fixes it.) `restore` runs at every start; `run` saves every few minutes and once more when it is stopped. A restart
 therefore costs at most the last interval of work, and the Meta API cost ledger, a table of the database, keeps the
 daily cap across restarts.
 
