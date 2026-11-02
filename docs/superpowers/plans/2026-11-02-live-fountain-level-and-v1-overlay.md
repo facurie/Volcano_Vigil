@@ -62,3 +62,27 @@ From agent run 17 (09:09Z) on, every `track_window` on kilauea-v1 (plume, glow a
 no objects. Run 16 had found `steam` on 36 of 36 frames from 05:05 to 08:05Z. The scene and PTZ did not change,
 no deploy happened in between, and K2cam kept returning tracks. Re-run SAM on one window that worked and one that
 did not, in a scratch database (about $0.02), before deciding anything.
+
+## Execution notes (2026-11-02, 23:30Z-00:30Z)
+
+- **Task 1** (implementer, reviewed APPROVED): 9802f0d, 353196d, 2d71c98, plus 078bc2b for the review's two points: only
+  "no such table" reads as no alerts (a locked database must not demote a real fountain), and the task line and check
+  message no longer say "in the last hour" of an onset, which has no hour bound. Test data changed, not assertions:
+  `DRAFT` in `tests/test_bulletin.py` is `degassing`, and `bulletin_at` in `tests/test_replay.py` sets its level with
+  `model_copy`. `alert_checks` has no volcano column, so confirmation 2 is not filtered by volcano (Kīlauea only).
+- **Last night against the gate:** the Space's database (bucket snapshot, ~23:40Z) has 93 alert looks on V1cam from
+  00:00 to 18:00Z, all with no 'lava fountain' object, 40 on K2cam with one small sighting (0.16 % of the frame), no
+  fountain track and no alert. Bulletins 21-23 would have been sent back once and, failing that, stored at
+  `incandescence`.
+- **Task 2:** 49801c9. Fills of 0.45, 0.25, 0.15 and 0 were rendered on V1cam frame 2746 (night) and K2cam frame 269
+  (Oct 17 day). 0.45 hides the glow; 0 leaves the daytime plume as a 1-pixel line; 0.15 keeps the glow and still
+  marks the daytime plume. `FILLS = {"plume": 0.15}` sits next to `COLORS`; the fountain and incandescence keep 0.45.
+  `scripts/render_tracks.py` and `scripts/smoke_test.py` still draw at 0.45 (offline tools; the demo's rendered
+  `overlay.mp4` is unchanged).
+- **Task 3:** reproduced in a scratch database with frames from the AshCam archive (local verdicts matched the
+  Space's per hour). Window 05:05-08:05Z with the tool's lead-in opened on four dusk frames (03:17-03:35Z, white
+  steam): `steam` on 36 of 36 frames. Window 06:09-09:09Z opened at 04:59Z on night frames only: no object. A video
+  from 03:15Z to 09:10Z tracked the plume on all 62 frames, the 11 after 08:05Z included. So the night masks on V1cam
+  were carried from dusk, and an all-night window finds nothing: recorded as item 23 of `docs/META_API_NOTES.md`
+  (03a8225). Spend: $0.0324 (scratch ledger). No code change: the agent may still track V1cam (`track: false` only
+  keeps it out of the hourly pipeline), at about $0.03 per hour it does.
