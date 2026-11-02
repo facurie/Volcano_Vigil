@@ -98,6 +98,39 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
   `TELEGRAM_CHAT_ID` a public Space variable: the channel's numeric id, `-1004340718752`, which is not a secret.
   Check them locally with `vigil-telegram check`, and post a test message that is not an alert with
   `vigil-telegram test`.
+- **The relay (pending):** Hugging Face blocks `api.telegram.org` from Spaces on purpose (the first start on
+  2026-11-01 logged `Telegram check failed … getMe: ConnectTimeout`), so the Space must post through a relay: a
+  Cloudflare Worker on the owner's free account, set in the public Space variable `TELEGRAM_API_URL`. **Until the
+  Worker exists and the variable is set, the Space stores the alerts and shows them on the dashboard, but every post
+  fails (`not posted` in the log).** Locally, leave `TELEGRAM_API_URL` empty to talk to Telegram itself. To set it
+  up: dash.cloudflare.com → Workers & Pages → Create → "Start with Hello World!" → name `vigil-telegram` → Deploy →
+  Edit code, paste the code below, Deploy; then turn Workers Logs off (see below), check it locally with
+  `TELEGRAM_API_URL=https://vigil-telegram.<subdomain>.workers.dev .venv/Scripts/vigil-telegram.exe check`, add the
+  Space variable and redeploy. The Worker forwards only this bot's five calls and answers 404 to anything else:
+
+  ```js
+  // Volcano Vigil: forwards only this bot's calls to the Telegram Bot API, which Hugging Face Spaces cannot reach.
+  const BOT = "/bot9289168776:";
+  const METHODS = new Set(["getMe", "getChat", "getChatMember", "sendMessage", "sendPhoto"]);
+
+  export default {
+    async fetch(request) {
+      const url = new URL(request.url);
+      const method = url.pathname.split("/").pop();
+      if (request.method !== "POST" || !url.pathname.startsWith(BOT) || !METHODS.has(method)) {
+        return new Response("Not found", { status: 404 });
+      }
+      url.protocol = "https:";
+      url.hostname = "api.telegram.org";
+      url.port = "";
+      return fetch(new Request(url, request));
+    },
+  };
+  ```
+
+  The token passes through the Worker in the URL, as it does to Telegram. The code logs nothing, but Cloudflare's
+  Workers Logs, when enabled, record each request's URL in the owner's account: keep them off (the Worker's
+  Settings → Observability).
 - **Its log lines:** read the run log as under "Operate" (the code block there), and grep it for `Telegram` (the
   check at start: `may post: yes`, `Telegram check failed`, or the warning that the token or chat id is not set),
   `ALERT` (each alert raised, as `ALERT onset #…` or `ALERT end #…`) and `not posted` (a post to Telegram that
@@ -128,3 +161,6 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
 - **AshCam** can change without notice, or may not answer from the Hub's network. Live ingest falls back to
   `M.jpg`, and the replay no longer needs AshCam.
 - **A write token** sits in the Space's secrets. Revoke it after the judging.
+- **The Telegram relay is blocked too:** the Hub could extend its block to `workers.dev`. The alerts are still
+  stored and shown on the dashboard; their posts fail with `not posted` in the log (see "Fountaining alerts and
+  Telegram"). Then move the Worker to a custom domain, or post from outside the Space.
