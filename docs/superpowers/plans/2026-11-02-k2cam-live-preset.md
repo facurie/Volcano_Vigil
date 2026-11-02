@@ -49,7 +49,7 @@
 - Modify: `tests/conftest.py`
 - Create: `tests/test_framing.py`
 
-- [ ] **Step 1: Add the textured JPEG helper to `tests/conftest.py`** (next to `make_noisy_jpeg`):
+- [x] **Step 1: Add the textured JPEG helper to `tests/conftest.py`** (next to `make_noisy_jpeg`):
 
 ```python
 def make_textured_jpeg(seed=0, size=(960, 540), shift=(0, 0), zoom=1.0, brightness=1.0) -> bytes:
@@ -72,7 +72,7 @@ def make_textured_jpeg(seed=0, size=(960, 540), shift=(0, 0), zoom=1.0, brightne
 
 Add `import numpy as np` and `from PIL import ImageFilter` to conftest's imports if missing (it already imports `Image` and `io`).
 
-- [ ] **Step 2: Write the failing tests `tests/test_framing.py`** (pure functions first; the guard comes in Task 2):
+- [x] **Step 2: Write the failing tests `tests/test_framing.py`** (pure functions first; the guard comes in Task 2):
 
 ```python
 import io
@@ -153,12 +153,12 @@ def test_an_empty_mask_has_no_foot():
     assert foot(np.zeros((5, 5), dtype=bool), 0, 0) is None
 ```
 
-- [ ] **Step 3: Run them to see them fail**
+- [x] **Step 3: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_framing.py`
 Expected: ImportError (`Framing`, `vigil.framing` do not exist).
 
-- [ ] **Step 4: Add the config models to `vigil/calibration.py`** (after `class Roll`):
+- [x] **Step 4: Add the config models to `vigil/calibration.py`** (after `class Roll`):
 
 ```python
 class FramingReference(BaseModel):
@@ -188,7 +188,7 @@ and in `class Preset`, after `roll`:
 
 Also add one sentence to the module docstring after "...each valid for a span of capture times.": "A preset kept for live use on a pan-tilt-zoom camera also lists reference frames of its framing, and only frames that still show it are measured (vigil.framing)."
 
-- [ ] **Step 5: Create `vigil/framing.py`** with the pure functions (the guard follows in Task 2):
+- [x] **Step 5: Create `vigil/framing.py`** with the pure functions (the guard follows in Task 2):
 
 ```python
 """Whether a frame still shows the framing its pan-tilt-zoom camera's preset was solved for.
@@ -269,12 +269,12 @@ def foot(mask: np.ndarray, left: int, top: int) -> np.ndarray | None:
     return np.array([left + base.mean(), top + bottom], dtype=float)
 ```
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_framing.py`
 Expected: all pass. If `test_signature_gives_the_mean_brightness` misses its range, print the value and fix the test's range only if the texture's mean (≈ 127 × 0.2) explains it.
 
-- [ ] **Step 7: Run the full suite, then commit**
+- [x] **Step 7: Run the full suite, then commit**
 
 ```bash
 .venv/Scripts/python.exe -m pytest
@@ -290,7 +290,7 @@ git commit -m "Add a framing check that tells whether a pan-tilt-zoom frame stil
 - Modify: `vigil/framing.py`
 - Modify: `tests/test_framing.py`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_framing.py`):
+- [x] **Step 1: Write the failing tests** (append to `tests/test_framing.py`):
 
 ```python
 import hashlib
@@ -437,12 +437,12 @@ def test_a_missing_frame_file_does_not_keep_the_framing(conn, store, tmp_path):
     assert not guard(conn, tmp_path).keeps(live_preset(tmp_path), frame, VENT)
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_framing.py`
 Expected: ImportError on `FramingGuard`.
 
-- [ ] **Step 3: Add the guard to `vigil/framing.py`** (imports: `hashlib`, `io`, `json`, `sqlite3`, `from pathlib import Path`, `from vigil import masks`, `from vigil.calibration import Framing, Preset`, `from vigil.timeutil import parse_utc, to_iso`):
+- [x] **Step 3: Add the guard to `vigil/framing.py`** (imports: `hashlib`, `io`, `json`, `sqlite3`, `from pathlib import Path`, `from vigil import masks`, `from vigil.calibration import Framing, Preset`, `from vigil.timeutil import parse_utc, to_iso`):
 
 ```python
 class FramingGuard:
@@ -506,12 +506,12 @@ class FramingGuard:
         return self._references[preset.name]
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_framing.py`
 Expected: all pass.
 
-- [ ] **Step 5: Run the full suite, then commit**
+- [x] **Step 5: Run the full suite, then commit**
 
 ```bash
 .venv/Scripts/python.exe -m pytest
@@ -528,7 +528,7 @@ git commit -m "Confirm a stored frame's framing against the references, and let 
 - Modify: `vigil/pipeline.py:204`, `vigil/agent/tools.py:504-510`
 - Modify: `tests/test_metrics.py`, `tests/test_pipeline.py`, `tests/test_agent_tools.py`
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 In `tests/test_metrics.py`: give `add_detection` a `jpeg=None` parameter (`store.add("kilauea-kp", jpeg or make_jpeg(...), ...)`), give `kp_calibration` a `framing=None` parameter passed to `Preset(..., framing=framing)`, import `make_textured_jpeg`, `hashlib`, `Framing`, `FramingReference`, and add:
 
@@ -577,12 +577,12 @@ In `tests/test_pipeline.py`: make `Fakes.measure` accept and record `data_dir=No
 
 In `tests/test_agent_tools.py`: add a test that `measure_track` passes `ctx.data_dir` to `measure_window` (monkeypatch `vigil.agent.tools.measure_window` with a fake that records its kwargs and returns a `MeasureReport`, reusing the setup of an existing `measure_track` test), and one that a track whose detections all lie on unconfirmed frames raises a `ToolError` saying "framing" (fake returns `MeasureReport(camera_id, unconfirmed=3)` and no measurements are stored).
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_metrics.py tests/test_pipeline.py tests/test_agent_tools.py`
 Expected: the new tests fail (`unexpected keyword argument 'data_dir'`, no `unconfirmed`).
 
-- [ ] **Step 3: Implement in `vigil/metrics.py`.**
+- [x] **Step 3: Implement in `vigil/metrics.py`.**
 
 `MeasureReport` gets `unconfirmed: int = 0  # detections on frames that may not show their preset's framing (vigil.framing)`, and `summary` appends `f", {self.unconfirmed} on frames whose framing is not confirmed"` to the first line only when `self.unconfirmed` is non-zero (so existing summaries stay word for word).
 
@@ -622,7 +622,7 @@ def _keeps_framing(guard: FramingGuard | None, preset: Preset, row: sqlite3.Row,
 
 `main` passes `data_dir=settings.data_dir`.
 
-- [ ] **Step 4: Pass the data dir from the callers.**
+- [x] **Step 4: Pass the data dir from the callers.**
 
 `vigil/pipeline.py:204`: `self._measure(ctx.conn, ctx.calibration, camera.id, start, end, data_dir=ctx.data_dir)`.
 
@@ -635,12 +635,12 @@ def _keeps_framing(guard: FramingGuard | None, preset: Preset, row: sqlite3.Row,
             f"{report.uncalibrated} detections lie on frames no calibration preset covers"]
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_metrics.py tests/test_pipeline.py tests/test_agent_tools.py`
 Expected: all pass.
 
-- [ ] **Step 6: Run the full suite, then commit**
+- [x] **Step 6: Run the full suite, then commit**
 
 ```bash
 .venv/Scripts/python.exe -m pytest
@@ -656,7 +656,7 @@ git commit -m "Measure a live pan-tilt-zoom preset only on frames that keep its 
 - Modify: `config/calibration.yaml` (K2's presets)
 - Modify: `tests/test_calibration.py`
 
-- [ ] **Step 1: Write the failing test** in `tests/test_calibration.py` (next to the test that loads the real config, `REPO` is defined there):
+- [x] **Step 1: Write the failing test** in `tests/test_calibration.py` (next to the test that loads the real config, `REPO` is defined there):
 
 ```python
 def test_k2cams_live_preset_reuses_ep55s_view_and_checks_its_framing():
@@ -677,12 +677,12 @@ def test_k2cams_live_preset_reuses_ep55s_view_and_checks_its_framing():
 
 (Add `from datetime import datetime, timezone` if the file lacks it.)
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_calibration.py -k live`
 Expected: FAIL (`preset_for` returns None for Nov 3).
 
-- [ ] **Step 3: Edit `config/calibration.yaml`.** Put the anchor `&k2_ep55` on K2's ep55 preset item (`- &k2_ep55` then `name: ep55` on the next line, indented as now; no value of ep55 changes), and append after it:
+- [x] **Step 3: Edit `config/calibration.yaml`.** Put the anchor `&k2_ep55` on K2's ep55 preset item (`- &k2_ep55` then `name: ep55` on the next line, indented as now; no value of ep55 changes), and append after it:
 
 ```yaml
       - <<: *k2_ep55   # the same references and priors: the framing has not changed since episode 55
@@ -710,12 +710,12 @@ Expected: FAIL (`preset_for` returns None for Nov 3).
 
 Check first that both files exist under `data/` and that their SHA-256 matches (`python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" data/frames/...`); if ep55's preset has its own `note`, the live one overrides it as above.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_calibration.py`
 Expected: pass. Also run `.venv/Scripts/python.exe -m pytest tests/test_agent_tools.py tests/test_web_*.py` in case a test assumed K2 uncalibrated after Oct 18 with the real config; such a test must keep its intent (use a time before Oct 17 or the synthetic calibration), never be deleted.
 
-- [ ] **Step 5: Run the full suite, then commit**
+- [x] **Step 5: Run the full suite, then commit**
 
 ```bash
 .venv/Scripts/python.exe -m pytest
@@ -727,8 +727,31 @@ git commit -m "Give K2cam a live preset from Oct 18 that reuses episode 55's vie
 
 ### Task 5: Check on real frames, document, deploy (main session)
 
-- [ ] Run the guard over the replay's 210 K2 frames of episode 55 with the `live` preset's framing (a scratchpad script using `FramingGuard` with the replay DB and `data/`), and over a sample of the Space's frames since Nov 1, and write the counts into a new section of `docs/research/calibration_ep55.md` ("K2cam live: the framing guard"), with the facts above (references, rule, synthetic moves, foot offsets, the south vent's −6 %).
-- [ ] README "Measuring a height": one sentence that live K2cam heights are measured only on frames that still show the calibrated framing. `docs/PLAN.md`: a line under Phase 9's facts that the live K2 preset was added on 2026-11-02 after the phase.
-- [ ] Raise the Space's cap (user's OK of 2026-11-02, $138 left): `Dockerfile` `DAILY_BUDGET_USD=8`; `docs/DEPLOY.md` (lines 27, 95 and "Costs") and README "Cost" say $8, of which $0.75 for the alerts.
-- [ ] Suite green; push; `vigil-space deploy`; check in the Space log that the pipeline measures K2 windows ("kilauea-k2: N detections measured") without a framing error, and that the dashboard's K2 tab shows a readout.
-- [ ] Execution notes at the end of this plan; memory.
+- [x] Run the guard over the replay's 210 K2 frames of episode 55 with the `live` preset's framing (a scratchpad script using `FramingGuard` with the replay DB and `data/`), and over a sample of the Space's frames since Nov 1, and write the counts into a new section of `docs/research/calibration_ep55.md` ("K2cam live: the framing guard"), with the facts above (references, rule, synthetic moves, foot offsets, the south vent's −6 %).
+- [x] README "Measuring a height": one sentence that live K2cam heights are measured only on frames that still show the calibrated framing. `docs/PLAN.md`: a line under Phase 9's facts that the live K2 preset was added on 2026-11-02 after the phase.
+- [x] Raise the Space's cap (user's OK of 2026-11-02, $138 left): `Dockerfile` `DAILY_BUDGET_USD=8`; `docs/DEPLOY.md` (lines 27, 95 and "Costs") and README "Cost" say $8, of which $0.75 for the alerts.
+- [x] Suite green; push; `vigil-space deploy`; check in the Space log that the pipeline measures K2 windows ("kilauea-k2: N detections measured") without a framing error, and that the dashboard's K2 tab shows a readout.
+- [x] Execution notes at the end of this plan; memory.
+
+---
+
+## Execution notes (session 13, 2026-11-02 22:00–23:30Z)
+
+- **Tasks 1–4:** one implementer and one review. Commits 46424ad, 139a895, 6f6de03 and dca4a02, plus fix 3741968. Suite 825 (794 before).
+  - Deviation: in `test_a_missing_reference_frame_is_reported_once` the second frame is shifted 1 px, because `FrameStore` de-duplicates identical bytes.
+  - Extra test: the summary is pinned word for word when `unconfirmed` is 0.
+- **Review, CHANGES_REQUIRED, fixed in 3741968:**
+  - Nothing pinned the look-back to the same camera: a mutation that dropped `camera_id = ?` passed every test. A test now uses a confirmed `kilauea-kp` frame, and it fails under that mutation.
+  - `--redo` left the old values of a frame that is no longer confirmed. They are now deleted.
+  - Blank lines in `test_calibration.py`.
+  - Not changed: the foot check reads fountain detections on the frame from any tracking run. Only runs that exist when the frame is measured can be there, and the live preset never covers a replay.
+- **Episode 55 through the committed guard** (`<scratchpad>/proto/check_guard.py`, documented in `calibration_ep55.md`):
+  - 165 of 210 frames register, 40 pass on the fountain's foot, 5 do not;
+  - 138 of the 139 frames with a fountain would be measured;
+  - the miss is a dawn frame at 16:02Z, with brightness 62.8, just over DARK, that does not register;
+  - 28 of 28 Space frames from Nov 1–2 register.
+- **Cap:** `DAILY_BUDGET_USD=8` (2f95c16), on the user's word that $138 of credit is left. Uncapped spend on Nov 2 was about $0.25/h for the pipeline and about $0.45/day for the alerts.
+- **Deployed** 3741968 at 22:52Z.
+  - At 23:10Z the pipeline tracked K2's 22:00–23:00Z window, and the agent (run 31, back after the cap rise) tracked 20:10–23:06Z.
+  - All 119 K2 plume detections were measured, so no daylight frame went unconfirmed: plume top 98–563 m above the vent, drift side 275° (west, with the trades). No fountain was detected.
+- **Telegram, same session:** the episode 55 replay alerts were re-posted in English (messages 5–6) and the bilingual 3–4 deleted.
