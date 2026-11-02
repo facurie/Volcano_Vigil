@@ -19,6 +19,7 @@ class Layer:
     color: tuple[int, int, int]
     label: str
     box: tuple[float, float, float, float] | None = None  # x0, y0, x1, y1 in pixels
+    fill: float | None = None  # share of the color mixed into the mask; None takes draw_layers' alpha
 
 
 def draw_layers(
@@ -44,7 +45,8 @@ def draw_layers(
         if layer.mask.shape != (height, width):
             raise ValueError(f"mask shape {layer.mask.shape} does not match image shape {(height, width)}")
         color = np.array(layer.color, dtype=np.float32)
-        pixels[layer.mask] = (1 - alpha) * pixels[layer.mask] + alpha * color
+        fill = alpha if layer.fill is None else layer.fill
+        pixels[layer.mask] = (1 - fill) * pixels[layer.mask] + fill * color
         pixels[_edge(layer.mask)] = color
 
     frame = Image.fromarray(pixels.round().astype(np.uint8))

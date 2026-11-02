@@ -52,6 +52,7 @@ EVIDENCE_MAX = 3
 OVERLAY_WIDTH = 1280  # evidence overlays are scaled down to this width
 FOUNTAIN_WITHIN = timedelta(hours=1)  # an alert look or a SAM track this recent confirms a fountain
 COLORS = {"plume": (80, 200, 255), "fountain": (255, 90, 30), "incandescence": (255, 210, 0)}
+FILLS = {"plume": 0.15}  # a light plume fill keeps a glow-lit night plume readable; other targets take the default
 TOLERANCE = {"m": 1.0, "m2": 1.0, "deg": 0.1}  # what rounding can change in a quoted number
 DISCLAIMER = ("Automated, experimental reading of public webcams by Volcano Vigil. It does not replace official "
               "alerts or warnings. For the official status of {name}, see {agency}: {url}")
@@ -294,7 +295,8 @@ def draw_evidence(conn: sqlite3.Connection, data_dir: Path, folder: Path, item: 
         mask = detection_mask(detection, frame["width"], frame["height"])
         if scale < 1:
             mask = np.asarray(Image.fromarray(mask).resize(size, Image.Resampling.NEAREST), dtype=bool)
-        layers.append(Layer(mask, COLORS[item.target], f"{item.target}: {detection['phrase']}"))
+        layers.append(Layer(mask, COLORS[item.target], f"{item.target}: {detection['phrase']}",
+                            fill=FILLS.get(item.target)))
     path = folder / f"frame{frame['id']}_{item.target}.jpg"
     overlay = path.relative_to(data_dir).as_posix()  # before writing: a folder outside the data dir leaves no file
     folder.mkdir(parents=True, exist_ok=True)

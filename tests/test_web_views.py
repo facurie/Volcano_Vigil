@@ -12,7 +12,7 @@ from test_metrics import kp_calibration
 from test_replay import bulletin_at, top
 from vigil.agent import render
 from vigil.alerts import store_alert
-from vigil.agent.bulletin import DISCLAIMER, Evidence
+from vigil.agent.bulletin import COLORS, DISCLAIMER, FILLS, Evidence
 from vigil.episodes import EP55, HEIGHT_HEADER
 from vigil.ingest.store import FrameStore
 from vigil.timeutil import parse_utc, to_iso
@@ -312,7 +312,8 @@ def test_a_frame_image_is_scaled_with_the_masks_of_its_visible_detections(conn, 
 
     assert plain.size == drawn.size == (320, 180)
     inside = (round(90 * 320 / 384), round(105 * 320 / 384))  # the box's middle, scaled
-    assert drawn.getpixel(inside)[2] > plain.getpixel(inside)[2] + 40  # tinted towards the plume's blue
+    fill, blue = FILLS["plume"], plain.getpixel(inside)[2]
+    assert abs(drawn.getpixel(inside)[2] - ((1 - fill) * blue + fill * COLORS["plume"][2])) <= 3  # lightly tinted
     assert Image.open(io.BytesIO(views.frame_image(scene(conn, tmp_path), shown, width=1280))).size == (384, 216)
     with pytest.raises(LookupError):
         views.frame_image(scene(conn, tmp_path), later, width=320)

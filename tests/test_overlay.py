@@ -30,6 +30,14 @@ def test_mask_pixels_are_tinted_with_the_layer_color():
     assert out.getpixel(INSIDE) == RED_ON_GRAY
 
 
+def test_a_layers_own_fill_takes_the_place_of_the_alpha():
+    light = Layer(mask=square_mask(), color=(255, 0, 0), label="plume", fill=0.25)
+
+    out = draw_layers(gray_image(), [light], alpha=0.5)
+
+    assert out.getpixel(INSIDE) == (139, 75, 75)  # gray 100 with a quarter of pure red
+
+
 def test_pixels_outside_every_mask_are_unchanged():
     out = draw_layers(gray_image(), [layer()])
 

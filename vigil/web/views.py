@@ -26,7 +26,7 @@ from PIL import Image
 
 from vigil import masks
 from vigil.agent import render
-from vigil.agent.bulletin import COLORS, DISCLAIMER, Bulletin
+from vigil.agent.bulletin import COLORS, DISCLAIMER, FILLS, Bulletin
 from vigil.agent.tools import STALE_AFTER, calibrated
 from vigil.alerts import Alert
 from vigil.calibration import Calibration
@@ -367,7 +367,7 @@ def frame_image(scene: Scene, frame_id: int, *, width: int, overlay: bool = True
         small = np.asarray(Image.fromarray(box_mask).resize((w, h), Image.NEAREST), dtype=bool)
         full = np.zeros((size[1], size[0]), dtype=bool)
         full[top:top + h, left:left + w] = small[:size[1] - top, :size[0] - left]
-        layers.append(Layer(full, COLORS[d["target"]], d["target"]))
+        layers.append(Layer(full, COLORS[d["target"]], d["target"], fill=FILLS.get(d["target"])))
     buffer = io.BytesIO()
     draw_layers(picture, layers, legend=False).save(buffer, format="JPEG", quality=JPEG_QUALITY)
     return buffer.getvalue()

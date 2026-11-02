@@ -15,8 +15,8 @@ from test_alerts import make_alert
 from test_agent_tools import (SIZE, T0, add_frame, add_measurement, add_run, add_track, context, detection_ids,
                               store)  # store is a fixture
 from test_meta_client import make_client, turn_body
-from vigil.agent.bulletin import (BULLETIN_FINISH, DISCLAIMER, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
-                                  DraftEvidence, DraftMeasurement, Quote, Written, build_bulletin, draw_evidence,
+from vigil.agent.bulletin import (BULLETIN_FINISH, COLORS, DISCLAIMER, DRAFT_FORMAT, DRAFT_SCHEMA, FILLS, ActivityLevel,
+                                  BulletinDraft, DraftEvidence, DraftMeasurement, Quote, Written, build_bulletin, draw_evidence,
                                   fountain_evidence, load_bulletin, main, quoted_numbers, run_wind, store_bulletin,
                                   supports, verify, write_bulletin)
 from vigil.agent.loop import AgentRun
@@ -328,7 +328,8 @@ def test_an_evidence_frame_is_drawn_with_its_targets_masks(conn, store, tmp_path
         rgb = drawn.convert("RGB")
     assert rgb.width == SIZE[0] and rgb.height > SIZE[1]  # the legend strip goes below the frame
     inside, outside = rgb.getpixel((90, 100)), rgb.getpixel((300, 100))
-    assert inside[2] > outside[2] + 40  # the plume's colour is blue-cyan
+    fill = FILLS["plume"]  # light, so a glow-lit plume stays readable under its mask
+    assert abs(inside[2] - ((1 - fill) * outside[2] + fill * COLORS["plume"][2])) <= 3
 
 
 def test_a_large_evidence_frame_is_drawn_1280_pixels_wide(conn, store, tmp_path):
