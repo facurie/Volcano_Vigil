@@ -98,15 +98,18 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
   `TELEGRAM_CHAT_ID` a public Space variable: the channel's numeric id, `-1004340718752`, which is not a secret.
   Check them locally with `vigil-telegram check`, and post a test message that is not an alert with
   `vigil-telegram test`.
-- **The relay (pending):** Hugging Face blocks `api.telegram.org` from Spaces on purpose (the first start on
-  2026-11-01 logged `Telegram check failed … getMe: ConnectTimeout`), so the Space must post through a relay: a
-  Cloudflare Worker on the owner's free account, set in the public Space variable `TELEGRAM_API_URL`. **Until the
-  Worker exists and the variable is set, the Space stores the alerts and shows them on the dashboard, but every post
-  fails (`not posted` in the log).** Locally, leave `TELEGRAM_API_URL` empty to talk to Telegram itself. To set it
-  up: dash.cloudflare.com → Workers & Pages → Create → "Start with Hello World!" → name `vigil-telegram` → Deploy →
-  Edit code, paste the code below, Deploy; then turn Workers Logs off (see below), check it locally with
-  `TELEGRAM_API_URL=https://vigil-telegram.<subdomain>.workers.dev .venv/Scripts/vigil-telegram.exe check`, add the
-  Space variable and redeploy. The Worker forwards only this bot's five calls and answers 404 to anything else:
+- **The relay:** Hugging Face blocks `api.telegram.org` from Spaces on purpose (the first start on 2026-11-01 logged
+  `Telegram check failed … getMe: ConnectTimeout`), so the Space posts through a Cloudflare Worker on the owner's
+  free account, `https://vigil-telegram.facundorn3.workers.dev`, set in the public Space variable
+  `TELEGRAM_API_URL`. Without it (or if the relay is down), the Space still stores the alerts and shows them on the
+  dashboard, but every post fails (`not posted` in the log). Locally, leave `TELEGRAM_API_URL` empty to talk to
+  Telegram itself, or check the relay with
+  `TELEGRAM_API_URL=https://vigil-telegram.facundorn3.workers.dev .venv/Scripts/vigil-telegram.exe check`.
+  - It was made in the dashboard: Workers & Pages → Create → "Start with Hello World!" → name `vigil-telegram` →
+    Deploy → Edit code, paste the code below, Deploy. A new `workers.dev` subdomain answered with a TLS handshake
+    failure ("unsupported protocol" in a browser) for about 20 minutes, until Cloudflare issued its certificate.
+  - It forwards only this bot's five calls and answers 404 to anything else (checked: `GET /` and another bot's
+    `getMe` get 404):
 
   ```js
   // Volcano Vigil: forwards only this bot's calls to the Telegram Bot API, which Hugging Face Spaces cannot reach.
