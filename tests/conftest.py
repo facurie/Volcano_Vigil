@@ -2,8 +2,9 @@ import io
 from datetime import datetime, timezone
 
 import httpx
+import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from vigil import db
 from vigil.config import Camera
@@ -22,6 +23,24 @@ def make_noisy_jpeg(size=(320, 240)) -> bytes:
     """A JPEG with real scan data, so truncating it actually corrupts it."""
     buf = io.BytesIO()
     Image.effect_noise(size, 80).convert("RGB").save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+def make_textured_jpeg(seed=0, size=(960, 540), shift=(0, 0), zoom=1.0, brightness=1.0) -> bytes:
+    """A JPEG of smooth random texture, the same for the same seed; `shift` (columns, rows) rolls it, `zoom`
+    enlarges it about its centre, `brightness` scales it (a dark frame below about 0.45)."""
+    rng = np.random.default_rng(seed)
+    width, height = size
+    texture = Image.fromarray((rng.random((height, width)) * 255).astype(np.uint8)).filter(
+        ImageFilter.GaussianBlur(2))
+    pixels = np.roll(np.asarray(texture, dtype=np.float32), (shift[1], shift[0]), axis=(0, 1))
+    image = Image.fromarray(np.clip(pixels * brightness, 0, 255).astype(np.uint8))
+    if zoom != 1.0:
+        cw, ch = width / zoom, height / zoom
+        left, top = (width - cw) / 2, (height - ch) / 2
+        image = image.transform(size, Image.EXTENT, (left, top, left + cw, top + ch), Image.BILINEAR)
+    buf = io.BytesIO()
+    image.convert("RGB").save(buf, format="JPEG", quality=92)
     return buf.getvalue()
 
 

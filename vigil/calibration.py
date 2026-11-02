@@ -3,9 +3,11 @@
 The file holds the vent each volcano's heights are measured from, and per
 camera its position and one preset per view: a PTZ camera gets a new preset
 whenever its framing changes, each valid for a span of capture times. A
-preset lists the references that fix where the camera points (see
-vigil.geometry): landmarks with published positions, the vent where it
-appears, celestial bodies in known directions (the Moon), pixels on the sea
+preset kept for live use on a pan-tilt-zoom camera also lists reference
+frames of its framing, and only frames that still show it are measured
+(vigil.framing). A preset lists the references that fix where the camera
+points (see vigil.geometry): landmarks with published positions, the vent
+where it appears, celestial bodies in known directions (the Moon), pixels on the sea
 horizon, and priors on the lens's field of view (from its datasheet), on
 the roll of a level pan-tilt-zoom mount and on the radial distortion.
 Official eruption values never go in here; they only check the result
@@ -108,6 +110,25 @@ class Roll(BaseModel):
     source: str = ""
 
 
+class FramingReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str     # relative to the data dir: a frame with the preset's framing (the episode mirror ships it)
+    sha256: str   # of that file, so a different frame never stands in for it
+    note: str = ""
+
+
+class Framing(BaseModel):
+    """Frames that show a pan-tilt-zoom preset's framing, for checking that later frames still do (vigil.framing)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    references: list[FramingReference] = Field(min_length=1)
+    rows_from: float = Field(gt=0, lt=1)   # compare only the rows below this fraction of the height
+    skip_columns: tuple[float, float]      # and leave out these fractions of the width (where the vent is)
+    source: str = ""
+
+
 class Preset(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -122,6 +143,7 @@ class Preset(BaseModel):
     fov: FieldOfView | None = None
     distortion: Distortion | None = None         # None: a plain pinhole lens, k1 = 0
     roll: Roll | None = None
+    framing: Framing | None = None               # set on a PTZ preset used live: frames must show its framing
     note: str = ""
 
     def covers(self, when: datetime) -> bool:
