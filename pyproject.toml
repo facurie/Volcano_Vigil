@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "volcano-vigil"
 version = "0.1.0"
-description = "An agent that watches public volcano webcams and turns frames into measurements and bilingual bulletins, using Meta's Muse Spark and SAM 3.1."
+description = "An agent that watches public volcano webcams and turns frames into measurements and bulletins, using Meta's Muse Spark and SAM 3.1."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

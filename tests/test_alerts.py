@@ -129,11 +129,11 @@ def make_alert(kind="onset", **fields):
 @pytest.mark.parametrize("kind", ["onset", "end"])
 def test_the_caption_has_the_text_the_note_and_the_official_link_within_telegrams_limit(kind):
     alert = make_alert(kind)
-    text = caption(alert, prefix="REPLAY of episode 55 (2026-10-17): not a live alert.")
+    prefix = "REPLAY of episode 55 (2026-10-17): not a live alert."
+    text = caption(alert, prefix=prefix)
 
-    for part in (alert.headline, alert.text, NOTE, f"{alert.official_agency}: {alert.official_url}"):
-        assert part in text
-    assert "REPETICIÓN" not in text and "Lectura" not in text
+    assert text == "\n".join([prefix, "", alert.headline, alert.text, NOTE, "",
+                              "USGS Hawaiian Volcano Observatory (HVO): https://www.usgs.gov/volcanoes/kilauea"])
     assert len(text) <= CAPTION_MAX
 
 
@@ -862,8 +862,8 @@ def test_a_replays_alerts_are_posted_oldest_first_each_marked_as_a_replay(tmp_pa
     assert [text.splitlines()[2] for _, text in telegram.posts] == [
         make_alert("onset").headline, make_alert("end").headline]
     note = REPLAY_NOTE.format(key="55", date="2026-10-17")
-    assert all(text.startswith(note) for _, text in telegram.posts)
-    assert all("REPETICIÓN" not in text for _, text in telegram.posts)
+    assert note == "REPLAY of episode 55 (2026-10-17): not a live alert."
+    assert [text for _, text in telegram.posts] == [caption(make_alert("onset"), note), caption(make_alert("end"), note)]
 
 
 def test_cli_refuses_an_alert_camera_that_is_not_enabled(monkeypatch, tmp_path, capsys):
