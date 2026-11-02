@@ -548,7 +548,7 @@ def get_wind(ctx: ToolContext, args: WindArgs) -> dict[str, Any]:
     _volcano(ctx, args.volcano)
     when = _when(ctx, args.time)
     try:
-        profile = ctx.winds.profile(args.volcano, when)
+        profile = ctx.winds.profile(args.volcano, when, not_after=ctx.now)
     except WindUnavailable as exc:
         raise ToolError(str(exc)) from exc
     vent = ctx.calibration.vents.get(args.volcano)

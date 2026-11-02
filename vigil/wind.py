@@ -142,14 +142,16 @@ class WindService:
         self._sources = sources
         self._now = now
 
-    def profile(self, volcano_id: str, when: datetime) -> WindProfile:
-        """The profile of the model hour nearest to `when`."""
+    def profile(self, volcano_id: str, when: datetime, *, not_after: datetime | None = None) -> WindProfile:
+        """The profile of the model hour nearest to `when`, or the hour at or before `not_after` if that is later."""
         volcano = self._sources.volcanoes.get(volcano_id)
         if volcano is None:
             raise WindUnavailable(f"unknown volcano {volcano_id!r}")
         if volcano.lat is None or volcano.lon is None:
             raise WindUnavailable(f"volcano {volcano_id} has no position in the sources file")
         hour = (when.astimezone(timezone.utc) + timedelta(minutes=30)).replace(minute=0, second=0, microsecond=0)
+        if not_after is not None and hour > not_after:
+            hour = not_after.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
         cached = self._cached(volcano_id, hour, fresh_only=True)
         if cached is not None:
             return cached

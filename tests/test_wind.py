@@ -151,6 +151,15 @@ def test_a_past_hour_comes_from_the_historical_forecast_api(conn):
     assert found.layer_mean(1080, 6951).from_deg == pytest.approx(331.1, abs=0.1)
 
 
+def test_a_profile_bounded_by_a_clock_never_reads_an_hour_after_it(conn):
+    when = datetime(2026, 10, 17, 15, 40, tzinfo=timezone.utc)
+    winds = service(conn, OpenMeteo(open_meteo_day()))
+
+    assert winds.profile("kilauea", when).valid_at.hour == 16  # the nearest hour
+    assert winds.profile("kilauea", when, not_after=when).valid_at.hour == 15
+    assert winds.profile("kilauea", when, not_after=datetime(2026, 10, 17, 16, tzinfo=timezone.utc)).valid_at.hour == 16
+
+
 def test_a_recent_hour_comes_from_the_forecast_api(conn):
     api = OpenMeteo(open_meteo_day("2026-10-28"))
 

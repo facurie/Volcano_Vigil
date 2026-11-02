@@ -510,6 +510,15 @@ def test_get_wind_compares_the_drift_side_with_the_layers_mean_wind(conn, tmp_pa
     assert len(result["levels"]) == 6
 
 
+def test_get_wind_at_20_to_the_hour_does_not_read_the_next_hour(conn, tmp_path):
+    ctx = context(conn, tmp_path, now=T0.replace(minute=40), open_meteo=open_meteo_day())
+
+    now = get_wind(ctx, WindArgs(volcano="kilauea", altitude_m=3000))
+    earlier = get_wind(ctx, WindArgs(volcano="kilauea", altitude_m=3000, time=T0.replace(minute=35)))
+
+    assert now["model_hour"] == earlier["model_hour"] == "2026-10-17T15:00:00Z"  # not 16:00, which is after the clock
+
+
 def test_get_wind_without_a_drift_has_no_check(conn, tmp_path):
     result = get_wind(context(conn, tmp_path, open_meteo=open_meteo_day()), WindArgs(volcano="kilauea", altitude_m=3000))
 
