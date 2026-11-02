@@ -88,4 +88,35 @@ cameras:
         valid_from: "2026-10-17T00:00:00Z"
         valid_until: "2026-10-18T00:00:00Z"
         image_size: [3840, 2160]
-        note: PTZ without a readout; the framing held through episode 55 (frames register within 4 px).
+        fov:
+          hfov_deg: 58.5
+          sigma_deg: 1.5
+          source: >-
+            Widest zoom of the AXIS Q6318-LE, 58.5-2.3 deg (https://www.axis.com/products/axis-q6318-le). K2cam is
+            HVO's one snapshot PTZ camera, which Patrick et al. 2026 (doi:10.1186/s13617-026-00170-x) name as an
+            Axis Q6318. The Phase 3 fit of the 3DEP skyline with Pu'ukoa'e, made without this prior, had a solution
+            at 57.8 deg (the other, 84.3 deg, is wider than the lens), so the camera was at its widest zoom. The
+            sigma covers the unmeasured barrel distortion (up to ~3 % on the focal length) and the spread between units.
+        roll:
+          deg: 0.0
+          sigma_deg: 1.0
+          source: A pan-tilt-zoom camera on a level mount.
+        distortion:
+          k1: 0.0
+          sigma: 0.05
+          source: Not measured; a zoom lens at its wide end bends little, and the fountain sits near the centre column.
+        landmarks:
+          - name: Puʻukoaʻe
+            pixel: [2992, 1629]
+            sigma_px: [3.0, 3.0]
+            lat: 19.35528
+            lon: -155.32235
+            elev_m: 979
+            sigma_m: 50
+            sigma_elev_m: 10
+            source: >-
+              GNIS summit point; ground elevation from USGS EPQS. The hump on the right-hand skyline, 8.0 km away at
+              206 deg; its pixel holds within 2 px on the 07:00, 08:00 and 09:00 HST frames.
+        note: >-
+          PTZ without a readout; the framing held through episode 55 (frames register within 4 px). The vent is a
+          check, not a reference: its bearing depends on the camera's estimated position (+/-75 m at 1,678 m).

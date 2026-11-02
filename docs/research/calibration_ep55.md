@@ -1,6 +1,6 @@
 # Camera calibration for episode 55
 
-Done on 2026-10-28 for Phase 3. It covers how each camera's view was fixed, the evidence, and what is still missing.
+Done on 2026-10-28 for Phase 3 (KPcam) and 2026-11-02 for Phase 9 (K2cam). It covers how each camera's view was fixed, the evidence, and what is still missing.
 - Code: `vigil/geometry.py` and `vigil/calibration.py`.
 - Data: `config/calibration.yaml`.
 - Tools: `scripts/moon_references.py` and `scripts/check_calibration.py`.
@@ -30,6 +30,9 @@ Official eruption values were not used here. They only check the result, in [VAL
 |---|---|
 | KPcam position (Mauna Loa Lookout, estimated) | 500 m horizontal, 15 m vertical |
 | K2cam position (Uēkahuna bluff, estimated) | 75 m, 5 m |
+| K2cam field of view (datasheet, widest zoom) | 1.5° |
+| K2cam roll (level mount), k1 | 1°, 0.05 |
+| Puʻukoaʻe (GNIS, EPQS) | 50 m, 10 m; its pixel 3 px |
 | North vent | 10 m, 5 m |
 | Refraction coefficient k (0.13) | 0.05 |
 | Each Moon centre | 2 px |
@@ -90,27 +93,43 @@ The overlay is `data/calibration/kilauea-kp_fixed_2026-10-17T1700.jpg`. It shows
 
 **Preset validity.** The framing (the tree, the skyline) is the same on every AshCam morning from Sep 28 to Oct 27, so the preset covers frames from Sep 25 on.
 
-## K2cam: not calibrated in this phase
+## K2cam: calibrated from its lens datasheet and Puʻukoaʻe
 
-K2cam's framing held through episode 55 (frames register within 4 px). It also held from Oct 15 to 19: 19 of 20 hourly frames register within 5 px. Every reference tried leaves its focal length and tilt undetermined.
+Done on 2026-11-02 for Phase 9. K2cam's framing held through episode 55 (frames register within 4 px), and from Oct 15 to 19 (19 of 20 hourly frames within 5 px). It is a pan-tilt-zoom camera with no readout on its frames, so the view must come from what the frames show.
 
-**GNIS cones.**
-- Puʻukoaʻe, at about (2992, 1629), and three humps at (3297, 1623), (3393, 1617) and (3478, 1617) stand on the right-hand skyline.
-- They all lie on one row, 8–23 km away, so they barely constrain tilt, roll and focal length.
-  - Every assignment of the humps to the Kamakaiʻa, Red Cones, Yellow Cone and Puʻukou GNIS points fits within 4–7 px, with focal lengths from 2,300 to 5,600 px.
-  - With a level-mount roll prior (0 ± 1°), the two best assignments still give f 2,498 or 2,783 px.
-- The peak fountain heights they imply are 279, 254 and 209 m for the three best: a 25 % spread.
+**What Phase 3 found.** The references in the frame leave the focal length open.
+- Puʻukoaʻe, at (2992, 1629), and three humps at (3297, 1623), (3393, 1617) and (3478, 1617) stand on the right-hand skyline. They all lie on one row, 8–23 km away, so they barely constrain tilt, roll and focal length. Every assignment of the humps to the Kamakaiʻa, Red Cones, Yellow Cone and Puʻukou GNIS points fits within 4–7 px, with focal lengths from 2,300 to 5,600 px.
+- The USGS 3DEP skyline (one `exportImage` request, about 27 m per pixel) fitted with Puʻukoaʻe has two solutions: focal 2,122 px (field of view 84.3°) with tilt 12.8°, or 3,479 px (57.8°) with tilt 7.1°. The profile is too flat to choose. The DEM predates 2018 inside the caldera, so the crater rim near the vent cannot serve.
+- No clear sea horizon shows on the 19 frames with the episode framing, and the night frames are black.
 
-**USGS 3DEP skyline.**
-- The skyline profile comes from one `exportImage` request (about 27 m per pixel, within 3 m of EPQS). It runs from −1.67° to −2.02° between azimuth 150° and 225°.
-- Fitted with Puʻukoaʻe, it has two solutions: f 2,122 px with tilt 12.8°, or f 3,479 px with tilt 7.1°. The profile is too flat to choose.
-- The DEM predates 2018 inside the caldera, so the crater rim near the vent cannot serve.
+**The lens decides.** Patrick et al. 2026 (doi:10.1186/s13617-026-00170-x) list HVO's snapshot webcams: "Two of these are wide angle 4K cameras (Axis P1378), one is PTZ (Axis Q6318)". K2cam is the only pan-tilt-zoom camera among them, so it is that Axis Q6318; the paper does not name K2cam, so this is an inference. Axis gives the AXIS Q6318-LE a horizontal field of view of 58.5° at its widest zoom and 2.3° at its narrowest, on 3840×2160 ([product page](https://www.axis.com/products/axis-q6318-le)). Zooming only narrows the view, so:
+- the 84.3° solution is impossible;
+- the 57.8° solution is 1.2 % from the widest zoom, so the camera was at its widest zoom (or next to it) during the episode.
 
-**Sea horizon.** It would separate the two solutions, lying 32 or 53 px above the land skyline (row ≈ 1634). It never appears as a sharp line on the 19 frames with the episode framing. A faint tonal boundary near row 1612, 21 px above the land, matches neither.
+**References and priors** (`config/calibration.yaml`, preset `ep55`):
+- field of view 58.5 ± 1.5°. The sigma covers the spread between units and the barrel distortion, which is not measured: a k1 of −0.1 would move the focal length that matches 58.5° by about 3 %;
+- roll 0 ± 1°: a level pan-tilt-zoom mount;
+- radial distortion k1 0 ± 0.05;
+- Puʻukoaʻe: pixel (2992, 1629) ± 3 px, GNIS 19.35528 N, 155.32235 W ± 50 m, EPQS ground elevation 979 ± 10 m. It is 8.0 km away at 206°. Its pixel holds within 2 px on the 07:00, 08:00 and 09:00 HST frames.
 
-**Stars.** K2cam's night frames from Oct 18 and 19 are black.
+The vent is not a reference. Its bearing from the camera depends on K2cam's estimated position (±75 m at 1,678 m is ±2.6°). With the fountain's axis as a reference, the solver bends the focal length to 3,070 ± 242 px to absorb that.
 
-So the `ep55` preset carries no references, and the fountain rows of the validation read "no measurement". PLAN Phase 9 lists the fix: a vertical reference for K2cam, or V1cam through the Moon plus a resection on the vent.
+**Result** (`scripts/check_calibration.py --camera kilauea-k2 --at 2026-10-17T18:00Z`):
+- Azimuth 188.82° ± 0.81.
+- Tilt +7.07° ± 0.43 (the optical axis points above level, so the frame holds the plume).
+- Roll 0.0° ± 1.0.
+- Focal length 3,428 ± 103 px; field of view 58.9° ± 1.7 across the middle row.
+- All 1,000 Monte Carlo samples converge. Two references and three priors fix five unknowns exactly, so the misfit is 0 px and says nothing; the checks below do.
+
+**Two checks, independent of every official value:**
+1. **The vent.** It lands at (1670, 1853).
+   - Vertically, that is 3 px below the foot of the fountain, at row 1850 (the median lowest row of SAM's 136 fountain boxes). At 1,678 m, 3 px is 1.5 m.
+   - Horizontally, it is 166 px left of the fountain's axis, at column 1836 (the median box centre): 2.8° of bearing, about one sigma of K2cam's estimated position. The camera probably stands some 80 m east of where it was placed.
+2. **The sea horizon.** Predicted from the camera's elevation alone (dip 1.06° from 1,245 m), it runs along rows 1571–1581 from column 2600 to the right edge. That is just under the base of the trade cumulus over the sea and above the land skyline (row ≈ 1630), as on KPcam.
+
+The overlay is `data/calibration/kilauea-k2_ep55_2026-10-17T1800.jpg`, with the vent, the sea horizon, Puʻukoaʻe and a scale every 50 m above the vent.
+
+**What the sigmas carry.** A fountain height from K2cam is about D · Δrow / f, with D = 1,678 m. Its sigma comes from the focal length (3 %), the distance (K2cam's position, 4.5 %), the tilt fixed by Puʻukoaʻe (0.43°, about 13 m at the vent, mostly from the roll prior), the mask edge (±3 px, 1.5 m) and the lean (5°).
 
 ## V1cam: not calibrated
 
@@ -129,5 +148,8 @@ So the `ep55` preset carries no references, and the fountain rows of the validat
 
 - **KPcam's position is an estimate.** Its ±500 m becomes ±3.6 % on distance, the largest term in the plume sigmas after the lean.
 - **Plume tops are the highest point of the whole `steam` mask.** Downwind of the vent that can be cloud from earlier, higher injection. At 07:30 HST the mask's top is 2.5–3 km downwind of the vent (see [VALIDATION.md](../VALIDATION.md)).
+- **K2cam's lens is an inference.** Its model comes from HVO's list of cameras, not from a statement about K2cam; its zoom is taken as the widest, which the 3DEP skyline supports; its distortion is not measured. A view zoomed in by 10 % would make every K2cam height 10 % too high.
+- **K2cam's position is an estimate.** Its ±75 m becomes ±4.5 % on distance. The vent's bearing hints that the camera stands about 80 m east of the estimate, which barely changes the distance.
+- **Fountain tops are the highest point of the `lava fountain` mask.** At night the mask can include spray and the glow on the plume above the jet.
 - **The lean is assumed, not measured.** It is 5° for fountains and 10° for plumes.
 - **The distortion model is limited.** It has one radial term, no tangential term, and a principal point fixed at the image centre.
