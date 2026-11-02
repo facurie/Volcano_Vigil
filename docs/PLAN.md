@@ -19,7 +19,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (794 passing at the end of Phase 9, session 13; they include the dashboard's JS helper tests, run with node).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (823 passing after the live K2cam preset, session 13; they include the dashboard's JS helper tests, run with node).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs. Everything published is in English: UI, bulletins, alerts, Telegram (decided 2026-11-02; the Spanish goes in Phase 9).
@@ -360,6 +360,7 @@ Plan and execution notes: [2026-11-02-phase-9-validation-english-readme.md](supe
 - [x] Final `docs/VALIDATION.md`: errors, σ, limitations. (Also the alerts and the overflow false-alarm count.)
 - [x] Final README: updated diagram, live URL, how to run, the "Built during the hackathon" section, disclaimer, credits, cost report.
 - [x] Code review pass (`superpowers:requesting-code-review`) and fixes. (Three area reviews plus a review of the English-only work; 16 fix commits, among them the bulletin text check, the replay table's time windows, the area on the vent plane and Telegram retry backoff.)
+- [x] **After the phase (2026-11-02, the user's call): K2cam measured live** for episode 56 (forecast Nov 2–9). A `live` preset reuses ep55's view from Oct 18 on. `vigil/framing.py` measures only frames that still show that framing: a phase correlation against a day and a night reference frame, or, on fountain-lit nights, the fountain's foot on the vent within 2 h of a registered frame. Plan: [2026-11-02-k2cam-live-preset.md](superpowers/plans/2026-11-02-k2cam-live-preset.md). The Space's cap went up to $8 a day the same day ($138 of credit left).
 
 ## Phase 10: Wed Nov 4. Video and submission (afternoon, not last minute)
 

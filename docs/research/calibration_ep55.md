@@ -131,6 +131,35 @@ The overlay is `data/calibration/kilauea-k2_ep55_2026-10-17T1800.jpg`, with the 
 
 **What the sigmas carry.** A fountain height from K2cam is about D · Δrow / f, with D = 1,678 m. Its sigma comes from the focal length (3 %), the distance (K2cam's position, 4.5 %), the tilt fixed by Puʻukoaʻe (0.43°, about 13 m at the vent, mostly from the roll prior), the mask edge (±3 px, 1.5 m) and the lean (5°).
 
+## K2cam live: the framing guard
+
+Added on 2026-11-02, after Phase 9, so the Space measures episode 56's fountain ([plan](../superpowers/plans/2026-11-02-k2cam-live-preset.md)). The preset `live` reuses ep55's references and priors from Oct 18 on; the values that the validation used are unchanged. A pan-tilt-zoom camera can be moved at any time, so `vigil/framing.py` measures a live frame only while it still shows ep55's framing. K2cam's frame of Nov 2 20:58Z registers within 4 px of Oct 17's.
+
+**The check.** Each frame is compared with two reference frames that the episode 55 mirror ships:
+- day: Oct 17 19:28Z;
+- night: Oct 17 12:30Z, lit by the overlook's path lamps.
+
+The comparison:
+- it uses the gradient magnitude of the overlook in the foreground (rows below 80 % of the height), at 960 px wide;
+- the columns around the vent (40–62 % of the width) are left out, since the fountain, its glow and the plume live there;
+- a phase correlation must peak within ±2 px at 960 (8 px of the 4K frame, about 4 m at the fountain) with a peak of at least 0.05.
+
+**Calibration on real frames:**
+- 100 of 101 K2cam frames from Oct 16 to Nov 2 register. These are every 30 minutes on Oct 16, 17, 26 and 27, plus 28 Space frames, day and night. The miss is a fog frame.
+- Synthetic moves of real day and night frames never register: shifts of 12 px down and 24 px diagonally, zooms of 1.02, 1.05 and 0.97, and a 400 px pan. A 12 px sideways shift sometimes does; that is under 6 m.
+
+**The fountain's light.** On the brightest fountaining night no reference matches, because the fountain lights the whole scene. In episode 55 that happens on most frames from 14:18 to 15:58Z (04:18–05:58 HST), the peak. A dark frame (mean brightness under 60 of 255) is then still measured when both hold:
+- a lava fountain's foot on it lies within 200 px of the vent's projection, at (1670, 1853);
+- a frame registered within the previous 2 h.
+
+The foot is the middle of the mask's lowest rows. On episode 55's 139 frames with a fountain it lies a median (+33, −4) px from the projection, and 167 px at most. A zoom of 1.25× or a turn of 3.3° moves it farther than 200 px.
+
+**Episode 55 through the guard** (`FramingGuard` with the `live` preset over the replay's 210 K2cam frames):
+- 165 frames register;
+- 40 dark frames pass on the fountain's foot;
+- 5 frames are not measured: four at 14:18–14:24Z, which have no fountain detection, and one at dawn, 16:02Z, with brightness 62.8 that does not register.
+- In all, 138 of the 139 frames with a fountain would be measured.
+
 ## V1cam: not calibrated
 
 - Its position is known only to ±150 m, at 407 m from the vent: ±37 % on distance.
@@ -150,6 +179,8 @@ The overlay is `data/calibration/kilauea-k2_ep55_2026-10-17T1800.jpg`, with the 
 - **Plume tops are the highest point of the whole `steam` mask.** Downwind of the vent that can be cloud from earlier, higher injection. At 07:30 HST the mask's top is 2.5–3 km downwind of the vent (see [VALIDATION.md](../VALIDATION.md)).
 - **K2cam's lens is an inference.** Its model comes from HVO's list of cameras, not from a statement about K2cam; its zoom is taken as the widest, which the 3DEP skyline supports; its distortion is not measured. A view zoomed in by 10 % would make every K2cam height 10 % too high.
 - **K2cam's position is an estimate.** Its ±75 m becomes ±4.5 % on distance. The vent's bearing hints that the camera stands about 80 m east of the estimate, which barely changes the distance.
+- **K2cam's live heights assume the north vent.** The south vent lies 94 m beyond it, almost along K2cam's line of sight (1,678 → 1,772 m). A fountain from the south vent would read about 6 % low, inside its sigma; that vent was buried by tephra in episode 55.
+- **The framing guard leaves a gap on fountain-lit nights.** It cannot see a small move then. A move after the last registered frame passes for up to 2 h if it keeps the fountain's foot within 200 px of the vent's projection. That covers zooms under about 1.25× and turns under about 3°.
 - **Fountain tops are the highest point of the `lava fountain` mask.** At night the mask can include spray and the glow on the plume above the jet.
 - **The lean is assumed, not measured.** It is 5° for fountains and 10° for plumes.
 - **The distortion model is limited.** It has one radial term, no tangential term, and a principal point fixed at the image centre.
