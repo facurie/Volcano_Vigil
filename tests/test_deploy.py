@@ -40,7 +40,7 @@ def test_the_image_runs_as_an_unprivileged_user_and_copies_no_secrets_or_data():
 def test_the_image_carries_the_daily_budget_and_the_dirs_every_service_shares():
     dockerfile = text("Dockerfile")
 
-    assert "DAILY_BUDGET_USD=5" in dockerfile
+    assert "DAILY_BUDGET_USD=8" in dockerfile
     assert "ALERT_RESERVE_USD=0.75" in dockerfile
     assert "DATA_DIR=/app/data" in dockerfile and "DB_PATH=/app/data/vigil.sqlite" in dockerfile
     assert "mkdir data && chown vigil:vigil data" in dockerfile

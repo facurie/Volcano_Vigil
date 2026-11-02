@@ -98,7 +98,7 @@ To see the replay without spending anything: `vigil-mirror pull --episode 55 --r
 
 ## Cost
 
-Meta Model API spend, from the cost ledgers: **$5.09** to build and validate (prompt tuning, the quality gate, episode 55 tracking, agent probes, two full replays and the alert calibration), and **$6.22** for the live Space's first 27 hours (2026-11-01 16:08 UTC to 2026-11-02 19:00 UTC). The live Space is capped at $5 a day (`DAILY_BUDGET_USD`), of which $0.75 is kept for the alerts. Most of the live spend is the hourly agent run.
+Meta Model API spend, from the cost ledgers: **$5.09** to build and validate (prompt tuning, the quality gate, episode 55 tracking, agent probes, two full replays and the alert calibration), and **$6.22** for the live Space's first 27 hours (2026-11-01 16:08 UTC to 2026-11-02 19:00 UTC). The live Space is capped at $8 a day (`DAILY_BUDGET_USD`), of which $0.75 is kept for the alerts; it spends about $6.5. Most of the live spend is the hourly agent run.
 
 ## Built during the hackathon (Oct 26 – Nov 4, 2026)
 

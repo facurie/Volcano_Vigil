@@ -24,7 +24,7 @@ Volcano Vigil runs as one Hugging Face Docker Space, `facurie/volcano-vigil`, on
 | 7 | `vigil-alerts --volcano kilauea` | Every minute: looks for lava fountaining and posts each new alert to Telegram; restarted if it exits (see "Fountaining alerts and Telegram") |
 | 8 | `vigil-persist run --interval 300` | Saves the state every 5 min and once more when the Space stops |
 
-All of them run one image as uid 1000 with `DAILY_BUDGET_USD=5`, on the data dir `/app/data`. SQLite in WAL mode
+All of them run one image as uid 1000 with `DAILY_BUDGET_USD=8`, on the data dir `/app/data`. SQLite in WAL mode
 lets them write and read at once. Secrets (`MODEL_API_KEY`, `HF_TOKEN`) are Space secrets, which reach the
 processes as environment variables; they are never in git or in the image.
 
@@ -92,7 +92,7 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
   `data/alerts/`, which `vigil-persist` saves) and posts it to the public Telegram channel
   [Volcano Vigil · Kīlauea](https://t.me/volcano_vigil_kilauea), through the bot `@volcano_vigil_bot`.
 - **Its spend:** the Meta API calls it makes carry the tag `alerts:<date>` (one per UTC day) and may cost at most
-  $0.75 a day (`ALERT_RESERVE_USD`, set in the image). They count inside the $5 cap: the pipeline stops at $4.25, so
+  $0.75 a day (`ALERT_RESERVE_USD`, set in the image). They count inside the $8 cap: the pipeline stops at $7.25, so
   the alerts always have their share.
 - **The secrets:** `TELEGRAM_BOT_TOKEN` is a Space secret (the value BotFather gave; never in git or the image) and
   `TELEGRAM_CHAT_ID` a public Space variable: the channel's numeric id, `-1004340718752`, which is not a secret.
@@ -149,9 +149,10 @@ and restarts the Space; the state comes back from the bucket (at most the last 5
 ## Costs
 
 - Space and bucket: $0 beyond the PRO subscription ($9/month; PRO includes 1 TB of private storage).
-- Meta Model API: the pipeline costs about $3.5–4 a day (about $0.16 an hour, most of it the hourly agent run), capped
-  at $5 a UTC day; the cap was raised from $3 on 2026-11-01 with the owner's OK. Hitting the cap stops SAM, Muse Spark
-  and bulletins until 00:00 UTC (14:00 HST); ingest and the dashboard go on.
+- Meta Model API: the pipeline costs about $6 a day (about $0.25 an hour on 2026-11-02, most of it the hourly agent
+  run) and the alerts about $0.45, capped at $8 a UTC day. The cap was raised from $3 to $5 on 2026-11-01 and to $8 on
+  2026-11-02 with the owner's OK, after $5 stopped the bulletins from 07:12 to 14:00 HST. Hitting the cap stops SAM,
+  Muse Spark and bulletins until 00:00 UTC (14:00 HST); ingest and the dashboard go on.
 - If the daily visit is ever missed or the 2 vCPU fall behind: `CPU Upgrade` costs $0.03/hour (about $0.72/day) and
   never sleeps. Switch to it only with the owner's OK.
 
