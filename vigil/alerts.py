@@ -40,15 +40,14 @@ from typing import Any, Literal
 import httpx
 import numpy as np
 import openai
-import yaml
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict
 
 from vigil import db, masks
 from vigil.agent.bulletin import COLORS, DISCLAIMER, OVERLAY_WIDTH
 from vigil.agent.loop import context_from_settings
 from vigil.agent.tools import ToolContext
-from vigil.config import Camera, ConfigError, Volcano, load_sources
+from vigil.config import AlertConfig, Camera, CameraRule, Volcano, load_alert_config, load_sources
 from vigil.episodes import EPISODES
 from vigil.imaging import load_for_upload
 from vigil.meta.client import MetaClient
@@ -69,33 +68,6 @@ CAPTION_MAX = 1024  # Telegram's limit on a photo's caption
 MIN_SCORE = 0.5  # SAM's floor: overflow and fountain sightings both scored 0.50-0.91, so the size decides
 Size = Literal["none", "small", "ambiguous", "large"]
 Kind = Literal["onset", "end"]
-
-
-class CameraRule(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    fountain_area: float = Field(gt=0, le=1)   # share of the frame from which a sighting is episode-size
-    ambiguous_area: float = Field(gt=0, le=1)  # from here up to fountain_area, Muse Spark decides
-
-    @model_validator(mode="after")
-    def _ordered(self) -> CameraRule:
-        if self.ambiguous_area >= self.fountain_area:
-            raise ValueError("ambiguous_area must be below fountain_area")
-        return self
-
-
-class AlertConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    cameras: dict[str, CameraRule]
-
-
-def load_alert_config(path: str | Path) -> AlertConfig:
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    try:
-        return AlertConfig.model_validate(raw)
-    except ValidationError as exc:
-        raise ConfigError(str(exc)) from exc
 
 
 @dataclass(frozen=True)
