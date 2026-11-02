@@ -124,3 +124,39 @@ Muse Spark confirms **every** onset before it goes public, not only borderline s
 - The thresholds are shares of the frame, so they belong to a framing; that is why Muse Spark confirms every onset.
 - K2 alone would alert about 67 min late at night (it sees the fountain from 04:10, steady from 04:22).
 - A camera that is blind and one turned away can end an episode early (see Task 7 of the plan).
+
+## 8. Replays (2026-11-01)
+
+Both replays ran the committed watcher (`vigil/alerts.py`) and `config/alerts.yaml` on a one-minute simulated clock (`vigil-replay`), after the thresholds were set and without changing them afterwards. Each replay has its own database and ledger under `data/replay/` (git-ignored).
+
+### Overflows: no alert
+
+`vigil-replay --quiet overflows`, from 2026-10-16T08:00Z to 2026-10-17T13:00Z (22:00 HST Oct 15 to 03:00 HST Oct 17).
+
+| | |
+|---|---|
+| Alerts raised | **0** |
+| SAM looks | 259: none 235, small 23, ambiguous 1, large 0 (V1 165, K2 94) |
+| Muse Spark comparisons | 1 |
+| Meta API cost | $0.65 (SAM $0.6475, Muse Spark $0.0056) |
+
+- K2 saw no fountain on any of its 94 looks.
+- V1's sightings covered 0.005-0.023 of the frame, except one: at **02:19:02 HST Oct 17 the mask covered 0.054**, an overflow dome larger than any in the planning probes (≤ 0.033, sampled every 4 min). It fell in the ambiguous band, so Muse Spark compared it with the frame 30 min earlier and answered `overflow_or_dome` ("the same low central vent overflow/dome cascade as the first frame, similar height and scale"), and the watcher held it back.
+- So the margin between the largest overflow and the V1 threshold (0.06) is ×1.1, not the ×1.8 the probes suggested. The thresholds alone would still have stayed silent on this night, but only just; Muse Spark's confirmation of every onset is what keeps a slightly larger dome from raising an alert.
+
+### Episode 55: onset and end inside the acceptance windows
+
+`vigil-replay --episode 55` (the pipeline ticks were already done; only the alerts pass spent).
+
+| Event | Seen (HST) | Camera | Official | Seen vs official | Alert (HST) | Alert vs official | HVO notice | Alert vs notice |
+|---|---|---|---|---|---|---|---|---|
+| fountaining started | 03:07 | V1cam | 03:19 | -12 min | 03:10 | -9 min | 03:43 | -33 min |
+| fountaining stopped | 09:02 | K2cam | 09:03 | -1 min | 09:11 | +8 min | 09:11 | +0 min |
+
+- **Acceptance:** onset seen at 03:07 (window 03:03-03:43) and raised at 03:10 (no later than 03:43); end last seen at 09:02 (window 09:01-09:03) and raised at 09:11 (window 09:03-09:15). No other alert.
+- **Onset:** V1 looked at 02:51 and 02:59 (no fountain), then 03:07:02 (0.137 of the frame, episode size) and, as a follow-up, 03:09:02 (0.146). Muse Spark compared 03:09 with 02:39 and answered `sustained_fountain`, larger than before ("first frame shows only low overflow and a small arching cascade…"). The alert was raised at the 03:10 step.
+- **End:** V1 missed the fountain at 09:03:02 and 09:05:03, but K2 still showed it at 09:02:01 (0.0007 of the frame), so K2 held the end back until it missed it at 09:08:01 and 09:10:02. The alert names K2cam and V1cam, and its last sighting is K2's at 09:02.
+- **Looks:** 134 (none 26, small 26, ambiguous 31, large 51; V1 68, K2 66); 1 Muse Spark comparison. **Cost: $0.34** (SAM $0.335, Muse Spark $0.0046).
+- **The frames:** the onset alert's frame (V1, 03:09:01 HST, 9.4×) shows the fountain tinted, filling the middle of the view, with the flows below; the end alert's frame (K2, 09:10:01 HST) shows the plume over the cone and no fountain.
+
+Both replays together cost $0.99, against the $1.10 estimated.
