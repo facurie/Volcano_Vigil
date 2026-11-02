@@ -226,6 +226,19 @@ def test_assess_range_reports_a_failed_muse_spark_call_and_goes_on(conn, store, 
     assert stored(conn, ids[0]) is None
 
 
+def test_assess_range_reports_a_frame_whose_file_is_missing_and_goes_on(conn, store, tmp_path):
+    ids = [add(store, sharp(seed), DAY + timedelta(minutes=2 * seed)) for seed in range(3)]
+    path = conn.execute("SELECT path FROM frames WHERE id = ?", (ids[1],)).fetchone()["path"]
+    (tmp_path / path).unlink()  # a restore that lacks the file of a stored row
+
+    report = gate(conn, tmp_path, spark_api()).assess_range("kilauea-v1", DAY, DAY + timedelta(minutes=10),
+                                                            spark="never")
+
+    assert [v.frame_id for v in report.verdicts] == [ids[0], ids[2]]  # the frame after the gap is judged, too
+    assert len(report.errors) == 1 and report.errors[0].startswith(f"frame {ids[1]}: FileNotFoundError")
+    assert stored(conn, ids[1]) is None
+
+
 def test_report_summary_counts_decisions(conn, store, tmp_path):
     add(store, sharp(), DAY)
     add(store, flat(150), DAY + timedelta(minutes=2))

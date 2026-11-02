@@ -208,7 +208,8 @@ class QualityGate:
         """Assess the camera's frames captured between start and end (inclusive), oldest first.
 
         Frames that already have a verdict are skipped unless `redo`. A failed
-        Muse Spark call leaves its frame without a verdict, and the rest go on.
+        Muse Spark call, or a frame whose file is missing or unreadable, leaves
+        that frame without a verdict, and the rest go on.
         """
         report = GateReport()
         frames = self._conn.execute(
@@ -224,8 +225,8 @@ class QualityGate:
                 continue
             try:
                 report.verdicts.append(self.assess(frame["id"], spark=spark))
-            except (openai.APIError, json.JSONDecodeError) as exc:
-                log.warning("frame %s: Muse Spark failed: %s", frame["id"], exc)
+            except (openai.APIError, json.JSONDecodeError, OSError) as exc:
+                log.warning("frame %s: assessment failed: %s", frame["id"], exc)
                 report.errors.append(f"frame {frame['id']}: {type(exc).__name__}: {exc}"[:300])
         return report
 
@@ -239,7 +240,10 @@ class QualityGate:
         cached = self._last.get(frame["camera_id"])
         if cached is not None and cached[0] == previous["id"]:
             return cached[1]
-        return fingerprint(_open_rgb(self._data_dir / previous["path"]))
+        try:
+            return fingerprint(_open_rgb(self._data_dir / previous["path"]))
+        except OSError:  # its file is gone: there is nothing to compare with
+            return None
 
     def _ask_spark(self, verdict: FrameVerdict, path: str, captured_at: datetime) -> FrameVerdict:
         if self._client is None:
