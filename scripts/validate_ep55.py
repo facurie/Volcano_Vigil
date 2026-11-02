@@ -148,8 +148,9 @@ the eruption table says 09:06). The cameras capture every 2 minutes.
 
 HVO: the plume drifted to the southwest (VONA 2026/67 "MOV: SW"; winds below 20,000 ft from the
 northeast). One camera sees only the drift's component across its line of sight, so each frame gives
-the bearing of that side: KPcam looks southeast (134°), so its right-hand side points to 224°, almost
-exactly southwest. K2cam looks south (185°); its right-hand side points to 275°.
+the bearing of that side: from KPcam the vent lies to the southeast (134°), so the right-hand side of
+that line of sight points to 224°, almost exactly southwest. From K2cam the vent lies to the south (185°);
+the right-hand side points to 275°.
 
 {table(DRIFT_HEADER, drifts)}
 
