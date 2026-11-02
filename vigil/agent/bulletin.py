@@ -49,7 +49,7 @@ Unit = Literal["m", "m2", "deg"]
 EVIDENCE_MAX = 3
 OVERLAY_WIDTH = 1280  # evidence overlays are scaled down to this width
 COLORS = {"plume": (80, 200, 255), "fountain": (255, 90, 30), "incandescence": (255, 210, 0)}
-TOLERANCE = {"m": 1.0, "m2": 1.0, "deg": 0.1}  # what rounding can change in a quoted number, besides 1 %
+TOLERANCE = {"m": 1.0, "m2": 1.0, "deg": 0.1}  # what rounding can change in a quoted number
 DISCLAIMER = ("Automated, experimental reading of public webcams by Volcano Vigil. It does not replace official "
               "alerts or warnings. For the official status of {name}, see {agency}: {url}")
 
@@ -168,7 +168,10 @@ DRAFT_FORMAT = {"type": "json_schema", "name": "bulletin", "schema": DRAFT_SCHEM
 
 
 def _close(quoted: float, stored: float, unit: str) -> bool:
-    return abs(quoted - stored) <= max(TOLERANCE[unit], 0.01 * abs(stored))
+    gap = abs(quoted - stored)
+    if unit == "deg":
+        gap = min(gap % 360, 360 - gap % 360)  # bearings wrap: 359.95 is 0.05 from 0
+    return gap <= TOLERANCE[unit]
 
 
 class Quote(NamedTuple):

@@ -129,19 +129,22 @@ def stored_measurement(conn, store, metric, value, sigma, unit, minutes=-5):
 
 
 @pytest.mark.parametrize("metric, unit, stored, quoted_value, stored_sigma, quoted_sigma, verified", [
-    ("top_altitude", "m", 6900, 6951, 429, 429, True),      # 0.7 %: inside 1 %
-    ("top_altitude", "m", 6800, 6951, 429, 429, False),     # 2.2 %: outside
-    ("top_altitude", "m", 6951, 6951, 429, 440, False),     # the value is right, the sigma is 2.6 % off
-    ("drift_bearing", "deg", 5.05, 5.0, 2.0, 2.0, True),    # 0.05 deg: inside the 0.1 deg term
-    ("drift_bearing", "deg", 5.2, 5.0, 2.0, 2.0, False),    # 0.2 deg: outside it
-    ("drift_bearing", "deg", 5.0, 5.0, 2.0, 2.3, False),    # the sigma alone is off
-    ("area", "m2", 100000, 100800, 5000, 5000, True),       # 0.8 %
-    ("area", "m2", 100000, 102000, 5000, 5000, False),      # 2 %
-    ("drift_bearing", "deg", 3.04, 3.0, 2.0, 2.0, True),    # small values: only the rounding term covers them
+    ("top_altitude", "m", 6951, 6951.6, 429, 429, True),       # the tools round: under 1 m off is rounding
+    ("top_altitude", "m", 300, 303, 20, 20, False),            # 1 % of 300 m is no longer allowed
+    ("top_altitude", "m", 300, 300.6, 20, 20, True),
+    ("top_altitude", "m", 6951, 6951, 429, 431, False),        # the value is right, the sigma is 2 m off
+    ("drift_bearing", "deg", 5.05, 5.0, 2.0, 2.0, True),       # 0.05 deg: inside the 0.1 deg term
+    ("drift_bearing", "deg", 5.2, 5.0, 2.0, 2.0, False),       # 0.2 deg: outside it
+    ("drift_bearing", "deg", 5.0, 5.0, 2.0, 2.3, False),       # the sigma alone is off
+    ("drift_bearing", "deg", 359.95, 0.0, 2.0, 2.0, True),     # bearings wrap around the circle
+    ("drift_bearing", "deg", 0.04, 359.99, 2.0, 2.0, True),
+    ("drift_bearing", "deg", 359.8, 0.0, 2.0, 2.0, False),
+    ("area", "m2", 100000, 100000.8, 5000, 5000, True),
+    ("area", "m2", 100000, 100800, 5000, 5000, False),         # 0.8 % is no longer allowed
     ("top_height", "m", 20.6, 20, 5, 5, True),
     ("area", "m2", 30.7, 30, 5, 5, True),
 ])
-def test_a_quoted_number_is_verified_within_rounding_and_one_percent(
+def test_a_quoted_number_is_verified_within_the_rounding_of_the_tools(
         conn, store, metric, unit, stored, quoted_value, stored_sigma, quoted_sigma, verified):
     frame_id = stored_measurement(conn, store, metric, stored, stored_sigma, unit)
 
