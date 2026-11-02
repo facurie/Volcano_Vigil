@@ -212,6 +212,9 @@ def measure_window(conn: sqlite3.Connection, calibration: Calibration, camera_id
                 kept[row["frame_id"]] = _keeps_framing(guard, preset, row, geometry, report)
             if not kept[row["frame_id"]]:
                 report.unconfirmed += 1
+                if redo:  # --redo never leaves values the guard no longer allows
+                    with conn:
+                        conn.execute("DELETE FROM measurements WHERE detection_id = ?", (row["id"],))
                 continue
         values = measure_mask(geometry, masks.decode(json.loads(row["mask_rle"])), row["box_left"],
                               row["box_top"], row["target"], np.random.default_rng([seed, row["id"]]))

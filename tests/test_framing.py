@@ -102,9 +102,9 @@ def store(conn, tmp_path):
     return FrameStore(conn, tmp_path)
 
 
-def add_frame(conn, store, minutes, **texture):
+def add_frame(conn, store, minutes, camera=CAMERA, **texture):
     captured_at = T0 + timedelta(minutes=minutes)
-    frame_id = store.add(CAMERA, make_textured_jpeg(**texture), captured_at=captured_at, timestamp_source="ashcam",
+    frame_id = store.add(camera, make_textured_jpeg(**texture), captured_at=captured_at, timestamp_source="ashcam",
                          fetched_at=captured_at)
     return conn.execute("SELECT * FROM frames WHERE id = ?", (frame_id,)).fetchone()
 
@@ -181,6 +181,14 @@ def test_a_fountain_foot_off_the_vent_does_not_keep_the_framing(conn, store, tmp
     add_frame(conn, store, -30, seed=1)
     frame = add_frame(conn, store, 0, seed=7, brightness=0.15)
     add_fountain(conn, frame, VENT + (FOOT_PX + 20, 0))
+
+    assert not guard(conn, tmp_path).keeps(live_preset(tmp_path), frame, VENT)
+
+
+def test_a_confirmed_frame_of_another_camera_does_not_vouch(conn, store, tmp_path):
+    add_frame(conn, store, -30, camera="kilauea-kp", seed=1)  # would be confirmed by the reference
+    frame = add_frame(conn, store, 0, seed=7, brightness=0.15)
+    add_fountain(conn, frame, VENT)
 
     assert not guard(conn, tmp_path).keeps(live_preset(tmp_path), frame, VENT)
 

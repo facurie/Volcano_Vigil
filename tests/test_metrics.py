@@ -249,8 +249,8 @@ def test_the_same_seed_gives_the_same_sigmas(conn, store):
     assert stored(conn, detection)["top_height"]["sigma"] == first
 
 
-def kp_framing(tmp_path):
-    data = make_textured_jpeg(seed=1, size=SIZE)
+def kp_framing(tmp_path, seed=1):
+    data = make_textured_jpeg(seed=seed, size=SIZE)
     (tmp_path / "refs").mkdir(exist_ok=True)
     (tmp_path / "refs/kp.jpg").write_bytes(data)
     return Framing(references=[FramingReference(path="refs/kp.jpg", sha256=hashlib.sha256(data).hexdigest())],
@@ -266,6 +266,18 @@ def test_a_preset_with_framing_measures_only_frames_that_keep_it(conn, store, tm
     assert (report.measured, report.unconfirmed, report.errors) == (1, 1, [])
     assert stored(conn, kept) and not stored(conn, moved)
     assert "1 on frames whose framing is not confirmed" in report.summary()
+
+
+def test_redo_drops_the_values_of_a_frame_whose_framing_is_no_longer_confirmed(conn, store, tmp_path):
+    detection = add_detection(conn, store, 0, jpeg=make_textured_jpeg(seed=1, size=SIZE))
+    assert window(conn, kp_calibration(framing=kp_framing(tmp_path)), data_dir=tmp_path).measured == 1
+    assert stored(conn, detection)
+
+    other = kp_framing(tmp_path, seed=2)  # a reference this frame does not match
+    report = window(conn, kp_calibration(framing=other), data_dir=tmp_path, redo=True)
+
+    assert (report.measured, report.unconfirmed, report.errors) == (0, 1, [])
+    assert not stored(conn, detection)
 
 
 def test_a_preset_with_framing_measures_nothing_without_the_data_dir(conn, store, tmp_path):
