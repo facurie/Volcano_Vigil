@@ -201,7 +201,8 @@ class Pipeline:
                               "detections": run.detections} for run in result.runs]})
                 if result.runs and calibrated(ctx.calibration, camera.id, start):
                     try:
-                        measured = self._measure(ctx.conn, ctx.calibration, camera.id, start, end)
+                        measured = self._measure(ctx.conn, ctx.calibration, camera.id, start, end,
+                                                 data_dir=ctx.data_dir)
                     except ValueError as exc:
                         report.errors.append(f"{camera.id} {to_iso(start)}: {exc}")
                     else:

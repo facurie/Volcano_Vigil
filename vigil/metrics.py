@@ -31,11 +31,13 @@ from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
 from vigil import db, masks
-from vigil.calibration import Calibration, Geometry, load_calibration, sample_geometry
+from vigil.calibration import Calibration, Geometry, Preset, load_calibration, sample_geometry
+from vigil.framing import FramingGuard
 from vigil.geometry import on_vent_plane
 from vigil.settings import Settings
 from vigil.timeutil import parse_utc, to_iso, utcnow
@@ -130,26 +132,50 @@ class MeasureReport:
     values: int = 0        # measurements stored
     skipped: int = 0       # detections measured before
     uncalibrated: int = 0  # detections on frames no preset covers
+    unconfirmed: int = 0   # detections on frames that may not show their preset's framing (vigil.framing)
     errors: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         line = (f"{self.camera_id}: {self.measured} detections measured ({self.values} values), "
                 f"{self.skipped} measured before, {self.uncalibrated} on frames without a calibration")
+        if self.unconfirmed:
+            line += f", {self.unconfirmed} on frames whose framing is not confirmed"
         return "\n".join([line] + [f"  failed: {error}" for error in self.errors])
+
+
+def _keeps_framing(guard: FramingGuard | None, preset: Preset, row: sqlite3.Row, geometry: Geometry,
+                   report: MeasureReport) -> bool:
+    """Whether the detection's frame shows the preset's framing; a reason it cannot be told goes to the report
+    once per preset."""
+    if guard is None:
+        problem = f"preset {preset.name}: its framing cannot be checked without the frames' data dir"
+    else:
+        vent_pixel = geometry.view.project(geometry.vent[:, None, :])[0, 0]
+        frame = {"id": row["frame_id"], "path": row["path"], "captured_at": row["captured_at"]}
+        try:
+            return guard.keeps(preset, frame, vent_pixel)
+        except ValueError as exc:
+            problem = str(exc)
+    if problem not in report.errors:
+        report.errors.append(problem)
+    return False
 
 
 def measure_window(conn: sqlite3.Connection, calibration: Calibration, camera_id: str, start: datetime,
                    end: datetime, *, samples: int = SAMPLES, seed: int = 0, redo: bool = False,
-                   now: Callable[[], datetime] = utcnow) -> MeasureReport:
+                   now: Callable[[], datetime] = utcnow, data_dir: str | Path | None = None) -> MeasureReport:
     """Measure the detections of the camera's tracks on frames captured in [start, end].
 
     Detections measured before are skipped unless `redo`. A preset whose
     references cannot fix the view is reported once and its detections left
-    unmeasured.
+    unmeasured. A preset with `framing` (a pan-tilt-zoom camera's live preset)
+    measures only frames that still show its framing (vigil.framing), which
+    needs the frames' `data_dir`; the other detections are counted as
+    unconfirmed.
     """
     report = MeasureReport(camera_id)
     rows = conn.execute(
-        """SELECT d.*, f.captured_at, f.width, f.height, r.target,
+        """SELECT d.*, f.captured_at, f.path, f.width, f.height, r.target,
                   EXISTS (SELECT 1 FROM measurements m WHERE m.detection_id = d.id) AS measured
            FROM detections d JOIN frames f ON f.id = d.frame_id
            JOIN tracks t ON t.id = d.track_id JOIN tracking_runs r ON r.id = t.run_id
@@ -158,6 +184,8 @@ def measure_window(conn: sqlite3.Connection, calibration: Calibration, camera_id
         (camera_id, to_iso(start), to_iso(end)),
     ).fetchall()
     geometries: dict[str, Geometry | None] = {}
+    guard = FramingGuard(conn, data_dir, camera_id) if data_dir is not None else None
+    kept: dict[int, bool] = {}
     for row in rows:
         preset = calibration.preset_for(camera_id, parse_utc(row["captured_at"]))
         if preset is None:
@@ -179,6 +207,12 @@ def measure_window(conn: sqlite3.Connection, calibration: Calibration, camera_id
         geometry = geometries[preset.name]
         if geometry is None:
             continue
+        if preset.framing is not None:
+            if row["frame_id"] not in kept:
+                kept[row["frame_id"]] = _keeps_framing(guard, preset, row, geometry, report)
+            if not kept[row["frame_id"]]:
+                report.unconfirmed += 1
+                continue
         values = measure_mask(geometry, masks.decode(json.loads(row["mask_rle"])), row["box_left"],
                               row["box_top"], row["target"], np.random.default_rng([seed, row["id"]]))
         computed_at = to_iso(now())
@@ -216,7 +250,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"camera {args.camera!r} is not calibrated in {settings.calibration_path}")
     with closing(db.connect(settings.db_path)) as conn:
         report = measure_window(conn, calibration, args.camera, args.start, args.end, samples=args.samples,
-                                redo=args.redo)
+                                redo=args.redo, data_dir=settings.data_dir)
     print(report.summary())
 
 

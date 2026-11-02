@@ -25,6 +25,7 @@ from vigil.agent.tools import (TOOLS, Args, CompareArgs, FrameArgs, HistoryArgs,
                                list_cameras_status, measure_track, segment_frame, strict_schema, track_window_tool)
 from vigil.config import Camera, Sources, Volcano
 from vigil.ingest.store import FrameStore
+from vigil.metrics import MeasureReport
 from vigil.meta.ledger import BudgetExceeded
 from vigil.prompts import Prompts
 from vigil.timeutil import to_iso
@@ -491,6 +492,34 @@ def test_a_track_seen_only_after_the_clock_cannot_be_measured(conn, store, tmp_p
 
     with pytest.raises(ToolError, match="no detections by 2026-10-17T15:00:00Z"):
         measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))
+
+
+def test_measure_track_gives_the_measuring_the_data_dir_to_check_framing_in(conn, store, tmp_path, monkeypatch):
+    frames = [add_frame(conn, store, "kilauea-kp", -5)]
+    track = add_track(conn, add_run(conn, "kilauea-kp", "plume", frames), frames)
+    calls = []
+
+    def fake(*args, **kwargs):
+        calls.append(kwargs)
+        return MeasureReport("kilauea-kp")
+
+    monkeypatch.setattr("vigil.agent.tools.measure_window", fake)
+
+    with pytest.raises(ToolError):  # the fake stores nothing
+        measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))
+
+    assert [call["data_dir"] for call in calls] == [tmp_path]
+
+
+def test_a_track_on_frames_without_the_calibrated_framing_says_so(conn, store, tmp_path, monkeypatch):
+    frames = [add_frame(conn, store, "kilauea-kp", m) for m in (-10, -5)]
+    track = add_track(conn, add_run(conn, "kilauea-kp", "fountain", frames), frames)
+    monkeypatch.setattr("vigil.agent.tools.measure_window", lambda *a, **k: MeasureReport("kilauea-kp", unconfirmed=2))
+
+    with pytest.raises(ToolError, match="framing") as raised:
+        measure_track(context(conn, tmp_path), TrackIdArgs(track_id=track))
+
+    assert "2 detections" in str(raised.value) and "no calibration preset" not in str(raised.value)
 
 
 # --- get_wind and compare_cameras

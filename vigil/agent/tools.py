@@ -501,13 +501,17 @@ def measure_track(ctx: ToolContext, args: TrackIdArgs) -> dict[str, Any]:
     if camera_id not in ctx.calibration.cameras:
         raise ToolError(f"{camera_id} is not calibrated, so its tracks cannot be measured; its detections still "
                         "show what it sees")
-    report = measure_window(ctx.conn, ctx.calibration, camera_id, parse_utc(span["first"]), parse_utc(span["last"]))
+    report = measure_window(ctx.conn, ctx.calibration, camera_id, parse_utc(span["first"]), parse_utc(span["last"]),
+                            data_dir=ctx.data_dir)
     rows = ctx.conn.execute(
         """SELECT m.metric, m.value, m.sigma, m.unit, m.captured_at, m.frame_id FROM measurements m
            JOIN detections d ON d.id = m.detection_id WHERE d.track_id = ? AND m.captured_at <= ?
            ORDER BY m.captured_at""", (track["id"], now)).fetchall()
     if not rows:
-        problems = report.errors or [f"{report.uncalibrated} detections lie on frames no calibration preset covers"]
+        problems = report.errors or [
+            f"{report.unconfirmed} detections lie on frames that may not show the calibrated framing (the camera "
+            "may have moved)" if report.unconfirmed else
+            f"{report.uncalibrated} detections lie on frames no calibration preset covers"]
         raise ToolError(f"track {track['id']} could not be measured: {'; '.join(problems)}")
     series: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for row in rows:

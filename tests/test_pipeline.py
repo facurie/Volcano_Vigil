@@ -36,6 +36,7 @@ class Fakes:
         self.raises = {}          # camera id -> exception its tracking raises
         self.stores_runs = True   # False: tracking returns without storing a run
         self.measure_error = None
+        self.measure_data_dirs = []  # the data dir each measuring call was given
 
     def track(self, client, conn, data_dir, camera, prompts, start, end, targets=tracking.TARGETS, lead_in=0):
         if self.budget_spent:
@@ -53,8 +54,9 @@ class Fakes:
             RunSummary(add_run(conn, camera.id, target, frame_ids), target, target, 1, len(frame_ids), start, end)
             for target in targets])
 
-    def measure(self, conn, calibration, camera_id, start, end):
+    def measure(self, conn, calibration, camera_id, start, end, data_dir=None):
         self.measured.append((camera_id, start, end))
+        self.measure_data_dirs.append(data_dir)
         if self.measure_error:
             raise self.measure_error
         return MeasureReport(camera_id, measured=2)
@@ -157,6 +159,14 @@ def test_only_calibrated_cameras_are_measured(conn, store, tmp_path, fakes):
 
     assert fakes.measured == [("kilauea-kp", START, START + H - timedelta(seconds=1))]  # only KPcam is calibrated
     assert report.measured == 2
+
+
+def test_measuring_is_given_the_data_dir_to_check_the_framing_in(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+
+    pipeline(conn, tmp_path, fakes).step(START + H + 5 * M)
+
+    assert fakes.measure_data_dirs == [tmp_path]
 
 
 def test_a_camera_whose_preset_cannot_fix_a_view_is_not_measured(conn, store, tmp_path, fakes):

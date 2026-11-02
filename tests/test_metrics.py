@@ -1,12 +1,14 @@
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
 
-from conftest import make_jpeg
+from conftest import make_jpeg, make_textured_jpeg
 from vigil import db, masks
-from vigil.calibration import Calibration, CameraCalibration, Geometry, HorizonPixel, Preset, Site, VentPixel
+from vigil.calibration import (Calibration, CameraCalibration, Framing, FramingReference, Geometry, HorizonPixel, Preset,
+                               Site, VentPixel)
 from vigil.geometry import View, direction, horizon_dip, local_en, on_vent_plane, sight
 from vigil.ingest.store import FrameStore
 from vigil.metrics import main, measure_mask, measure_window
@@ -136,13 +138,13 @@ SIZE = (384, 216)
 TRUE = View(np.array([146.6]), np.array([3.8]), np.array([0.7]), np.array([305.0]), 192, 108)
 
 
-def kp_calibration(valid_from="2026-10-17T00:00:00Z", image_size=SIZE, references=True):
+def kp_calibration(valid_from="2026-10-17T00:00:00Z", image_size=SIZE, references=True, framing=None):
     east, north = local_en(VENT.lat, VENT.lon, KP.lat, KP.lon)
     vent_px = TRUE.project(sight(east, north, VENT.elev_m - KP.elev_m)[None, None])[0, 0]
     horizon = [TRUE.project(direction(a, -horizon_dip(KP.elev_m))[None, None])[0, 0] for a in (125, 145, 165)]
     preset = Preset(name="fixed", valid_from=valid_from, image_size=image_size,
                     vent_pixel=VentPixel(pixel=tuple(vent_px)) if references else None,
-                    horizon=[HorizonPixel(pixel=tuple(p)) for p in horizon] if references else [])
+                    horizon=[HorizonPixel(pixel=tuple(p)) for p in horizon] if references else [], framing=framing)
     camera = CameraCalibration(volcano="kilauea", position=KP, presets=[preset])
     return Calibration(vents={"kilauea": VENT}, cameras={"kilauea-kp": camera})
 
@@ -152,10 +154,10 @@ def store(conn, tmp_path):
     return FrameStore(conn, tmp_path)
 
 
-def add_detection(conn, store, minutes, target="fountain", box=(60, 140, 70, 150), size=SIZE):
+def add_detection(conn, store, minutes, target="fountain", box=(60, 140, 70, 150), size=SIZE, jpeg=None):
     captured_at = T0 + timedelta(minutes=minutes)
-    frame_id = store.add("kilauea-kp", make_jpeg(color=(10 + minutes, 80, 40), size=size), captured_at=captured_at,
-                         timestamp_source="ashcam", fetched_at=captured_at)
+    frame_id = store.add("kilauea-kp", jpeg or make_jpeg(color=(10 + minutes, 80, 40), size=size),
+                         captured_at=captured_at, timestamp_source="ashcam", fetched_at=captured_at)
     left, top, right, bottom = box
     mask = block(bottom - top, right - left)
     with conn:
@@ -245,6 +247,53 @@ def test_the_same_seed_gives_the_same_sigmas(conn, store):
     window(conn, kp_calibration(), redo=True)
 
     assert stored(conn, detection)["top_height"]["sigma"] == first
+
+
+def kp_framing(tmp_path):
+    data = make_textured_jpeg(seed=1, size=SIZE)
+    (tmp_path / "refs").mkdir(exist_ok=True)
+    (tmp_path / "refs/kp.jpg").write_bytes(data)
+    return Framing(references=[FramingReference(path="refs/kp.jpg", sha256=hashlib.sha256(data).hexdigest())],
+                   rows_from=0.5, skip_columns=(0.45, 0.55))
+
+
+def test_a_preset_with_framing_measures_only_frames_that_keep_it(conn, store, tmp_path):
+    kept = add_detection(conn, store, 0, jpeg=make_textured_jpeg(seed=1, size=SIZE))
+    moved = add_detection(conn, store, 5, jpeg=make_textured_jpeg(seed=1, size=SIZE, shift=(0, 12)))
+
+    report = window(conn, kp_calibration(framing=kp_framing(tmp_path)), data_dir=tmp_path)
+
+    assert (report.measured, report.unconfirmed, report.errors) == (1, 1, [])
+    assert stored(conn, kept) and not stored(conn, moved)
+    assert "1 on frames whose framing is not confirmed" in report.summary()
+
+
+def test_a_preset_with_framing_measures_nothing_without_the_data_dir(conn, store, tmp_path):
+    add_detection(conn, store, 0, jpeg=make_textured_jpeg(seed=1, size=SIZE))
+
+    report = window(conn, kp_calibration(framing=kp_framing(tmp_path)))
+
+    assert (report.measured, report.unconfirmed) == (0, 1)
+    assert report.errors == ["preset fixed: its framing cannot be checked without the frames' data dir"]
+
+
+def test_a_missing_reference_frame_is_reported_once(conn, store, tmp_path):
+    framing = kp_framing(tmp_path)
+    (tmp_path / "refs/kp.jpg").unlink()
+    add_detection(conn, store, 0, jpeg=make_textured_jpeg(seed=1, size=SIZE))
+    add_detection(conn, store, 5, jpeg=make_textured_jpeg(seed=1, size=SIZE, shift=(0, 1)))
+
+    report = window(conn, kp_calibration(framing=framing), data_dir=tmp_path)
+
+    assert (report.measured, report.unconfirmed) == (0, 2)
+    assert len(report.errors) == 1 and "refs/kp.jpg" in report.errors[0]
+
+
+def test_the_summary_without_unconfirmed_detections_is_unchanged(conn, store):
+    add_detection(conn, store, 0)
+
+    assert window(conn, kp_calibration()).summary() == (
+        "kilauea-kp: 1 detections measured (3 values), 0 measured before, 0 on frames without a calibration")
 
 
 CALIBRATION_YAML = """
