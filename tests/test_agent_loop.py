@@ -318,3 +318,91 @@ def test_context_from_settings_reads_the_config_files(cli_env, conn):
 
     assert (ctx.now, ctx.client, ctx.data_dir) == (T0, None, settings.data_dir)
     assert list(ctx.sources.volcanoes) == ["kilauea"]
+
+
+# --- a check of the final answer
+
+PROBLEM = "The answer says n is 2, but the tool returned 1. Answer again."
+
+
+def checking(problem=PROBLEM):
+    """A check that finds `problem` in an answer saying 2, and records what it was given."""
+    seen = []
+
+    def check(text):
+        seen.append(text)
+        return problem if "2" in text else None
+
+    return check, seen
+
+
+def test_an_answer_the_check_refuses_goes_back_once_with_the_problem(conn, tmp_path):
+    api = Script(turn_body([("echo", '{"n": 1}')], rid="resp_1"), turn_body([], text="n was 2.", rid="resp_2"),
+                 turn_body([], text="n was 1.", rid="resp_3"))
+    check, seen = checking()
+
+    result = run(conn, tmp_path, api, check=check)
+
+    assert (result.status, result.turns, result.final_text) == ("done", 3, "n was 1.")
+    assert seen == ["n was 2."]
+    assert api.requests[2]["input"][-1] == {"role": "user", "content": PROBLEM}
+    assert any(item.get("role") == "assistant" for item in api.requests[2]["input"])  # the refused answer comes first
+    assert [(s["turn"], s["kind"]) for s in steps(conn, result.run_id)] == [
+        (1, "model"), (1, "tool"), (2, "model"), (2, "check"), (3, "model")]
+    assert [s["text"] for s in steps(conn, result.run_id) if s["kind"] == "check"] == [PROBLEM]
+
+
+def test_the_check_refuses_only_the_first_answer_and_the_second_one_stands(conn, tmp_path):
+    api = Script(turn_body([], text="n was 2.", rid="resp_1"), turn_body([], text="n was still 2.", rid="resp_2"))
+    check, seen = checking()
+
+    result = run(conn, tmp_path, api, check=check)
+
+    assert (result.status, result.turns, result.final_text) == ("done", 2, "n was still 2.")
+    assert seen == ["n was 2."]
+    assert len(api.requests) == 2
+
+
+def test_an_answer_the_check_accepts_ends_the_run_with_no_check_step(conn, tmp_path):
+    api = Script(turn_body([], text="n was 1."))
+    check, seen = checking()
+
+    result = run(conn, tmp_path, api, check=check)
+
+    assert (result.status, result.turns, seen) == ("done", 1, ["n was 1."])
+    assert [s["kind"] for s in steps(conn, result.run_id)] == ["model"]
+
+
+def test_an_answer_on_the_last_turn_is_not_checked(conn, tmp_path):
+    api = Script(turn_body([("echo", '{"n": 1}')], rid="resp_1"), turn_body([], text="n was 2.", rid="resp_2"))
+    check, seen = checking()
+
+    result = run(conn, tmp_path, api, check=check, max_turns=2)
+
+    assert (result.status, result.final_text, seen) == ("done", "n was 2.", [])
+    assert "check" not in [s["kind"] for s in steps(conn, result.run_id)]
+
+
+def test_a_retry_that_is_the_last_turn_still_ends_the_run_when_it_calls_a_tool(conn, tmp_path):
+    api = Script(turn_body([], text="n was 2.", rid="resp_1"), turn_body([("echo", '{"n": 1}')], text="Hmm.", rid="resp_2"))
+    check, _ = checking()
+
+    result = run(conn, tmp_path, api, check=check, max_turns=2)
+
+    assert (result.status, result.turns, result.final_text) == ("max_turns", 2, "Hmm.")
+    assert api.requests[1]["input"][-2:] == [{"role": "user", "content": PROBLEM}, {"role": "user", "content": WRAP_UP}]
+
+
+def test_an_answer_that_did_not_complete_is_not_checked(conn, tmp_path):
+    check, seen = checking()
+
+    result = run(conn, tmp_path, Script(turn_body([], text="n was 2.", status="incomplete")), check=check)
+
+    assert result.status == "error" and seen == []
+
+
+def test_trace_prints_a_check_step(conn, tmp_path):
+    api = Script(turn_body([], text="n was 2.", rid="resp_1"), turn_body([], text="n was 1.", rid="resp_2"))
+    result = run(conn, tmp_path, api, check=checking()[0])
+
+    assert f"  1 check: {PROBLEM}" in trace(conn, result.run_id)

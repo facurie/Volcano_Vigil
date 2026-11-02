@@ -157,10 +157,10 @@ CREATE TABLE IF NOT EXISTS agent_steps (     -- one model turn or tool call of a
     run_id      INTEGER NOT NULL REFERENCES agent_runs (id),
     seq         INTEGER NOT NULL,  -- order within the run
     turn        INTEGER NOT NULL,  -- the model turn that made it
-    kind        TEXT    NOT NULL,  -- model | tool
+    kind        TEXT    NOT NULL,  -- model | tool | check
     created_at  TEXT    NOT NULL,  -- UTC
     response_id TEXT,              -- model: the Responses API id
-    text        TEXT,              -- model: its visible text, commentary or the final answer
+    text        TEXT,              -- model: its visible text, commentary or the final answer; check: the problem found
     reasoning   TEXT,              -- model: reasoning summaries, when sent
     tool_name   TEXT,              -- tool: the function called
     call_id     TEXT,

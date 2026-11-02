@@ -14,8 +14,9 @@ push the run's Meta spend (its own turns plus the SAM and Muse Spark calls its
 tools make) past `budget_usd` or the day past the daily cap (budget), or when
 the API fails (error). A tool call that would exceed the budget does not end
 the run: the model gets it as a tool error, and the run ends at the next
-turn's check. Every turn and tool call is a row of `agent_steps`
-under one `agent_runs` row: the trace the dashboard shows.
+turn's check. A caller's `check` may send the first complete answer back once with a problem to fix, if a turn
+is left. Every turn, tool call and check is a row of `agent_steps` under one `agent_runs` row: the trace the
+dashboard shows.
 
     vigil-agent --volcano kilauea --at 2026-10-17T05:00-10:00
 """
@@ -105,12 +106,15 @@ def instructions(volcano: Volcano, volcano_id: str, now: datetime, finish: str =
 def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, *, max_turns: int = MAX_TURNS,
               budget_usd: float = BUDGET_USD, effort: str = "medium", tools: Sequence[Tool] | None = None,
               finish: str = REPORT, text_format: dict[str, Any] | None = None,
+              check: Callable[[str], str | None] | None = None,
               wall_clock: Callable[[], datetime] = utcnow, sleep: Callable[[float], None] = time.sleep) -> AgentRun:
     """Run the agent on one task at the context's clock and store its trace.
 
     `finish` is the instructions' closing request; with `text_format` (a Responses text.format) every turn asks
     for the final answer in that format. A turn the server fails (HTTP 5xx, e.g. Meta's 503 "persistence service
-    error") is sent again after each pause of TURN_RETRY_PAUSES before the run ends in error.
+    error") is sent again after each pause of TURN_RETRY_PAUSES before the run ends in error. `check` gets the
+    text of the first complete answer without tool calls; if it returns a problem and a turn is left, the problem
+    is sent back as a user message (a `check` step) and the run goes on. A later answer is not checked.
     """
     conn = ctx.conn
     text = instructions(ctx.sources.volcanoes[volcano_id], volcano_id, ctx.now, finish)
@@ -122,7 +126,7 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
     toolbox = Toolbox(dataclasses.replace(ctx, client=job), tools)
     definitions = toolbox.definitions()
     conversation: list[dict[str, Any]] = [{"role": "user", "content": task}]
-    seq, turns = 0, 0
+    seq, turns, checked = 0, 0, False
     status, final, error = "max_turns", "", None
 
     def step(kind: str, **columns: Any) -> None:
@@ -160,6 +164,15 @@ def run_agent(client: MetaClient, ctx: ToolContext, volcano_id: str, task: str, 
             step("model", response_id=reply.response_id, text=reply.text, reasoning=reply.reasoning,
                  cost_usd=reply.cost_usd, latency_ms=_ms(started))
             if not reply.calls:
+                problem = None
+                if check is not None and not checked and reply.status == "completed" and turn < max_turns:
+                    problem = check(reply.text)
+                if problem is not None:
+                    checked = True
+                    step("check", text=problem)
+                    conversation.extend(reply.items)
+                    conversation.append({"role": "user", "content": problem})
+                    continue
                 final = reply.text
                 if reply.status == "incomplete":
                     status, error = "error", "the answer was cut off at max_output_tokens"
@@ -204,6 +217,8 @@ def trace(conn, run_id: int) -> str:
         if row["kind"] == "model":
             if row["text"]:
                 lines.append(f"  {row['turn']} model: {_short(row['text'])}")
+        elif row["kind"] == "check":
+            lines.append(f"  {row['turn']} check: {_short(row['text'])}")
         else:
             outcome = "ok" if row["ok"] else "error"
             lines.append(f"  {row['turn']} tool {row['tool_name']} {row['arguments']} -> {outcome} "

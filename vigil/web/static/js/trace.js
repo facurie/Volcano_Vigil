@@ -53,7 +53,9 @@ export function renderTrace(root, data, ctx) {
     } catch { /* ordinary text */ }
   }
   fill(steps, rows.map((step) => {
-    const content = step.kind === "tool" ? toolStep(step) : modelStep(step, draft?.step === step ? draft.parsed : null);
+    const content = step.kind === "tool" ? toolStep(step)
+      : step.kind === "check" ? checkStep(step)
+      : modelStep(step, draft?.step === step ? draft.parsed : null);
     return content && el("li", { class: "step" }, el("span", { class: "step-turn" }, `T${step.turn}`), content);
   }));
 }
@@ -64,6 +66,11 @@ function modelStep(step, parsed) {
     step.text ? el("p", { class: "step-say" }, parsed ? "Final answer: the bulletin draft" : step.text) : null,
     parsed ? el("details", {}, el("summary", {}, "Draft JSON"), el("pre", {}, JSON.stringify(parsed, null, 2))) : null,
     step.reasoning ? el("details", {}, el("summary", {}, "Reasoning summary"), el("p", {}, step.reasoning)) : null);
+}
+
+// a note by the code, not the model: what it found wrong in the answer and sent back
+function checkStep(step) {
+  return el("div", { class: "step-call" }, el("span", { class: "fn" }, "check"), `: ${step.text}`);
 }
 
 function toolStep(step) {
