@@ -191,31 +191,39 @@ def _spark_phases(base: ToolContext, episode: Episode, out_dir: Path) -> dict[st
 
 
 def bulletin_rows(conn: sqlite3.Connection, episode: Episode) -> list[list[str]]:
-    """Each official height against the first bulletin written once its window opened: the value of that target
-    and metric it quoted nearest the window's middle."""
+    """Each official height against the first bulletin written once its window opened that quoted a measurement of
+    that target and metric captured inside the window: the one nearest the window's middle. A bulletin that
+    quotes only measurements from other times says so."""
     rows = []
     for check in episode.checks:
         official = f"{check.official} ({check.official_m:,.0f} m)"
-        row = conn.execute("SELECT body FROM bulletins WHERE volcano = ? AND clock >= ? ORDER BY clock, id LIMIT 1",
-                           (episode.volcano, check.start)).fetchone()
-        if row is None:
+        start, end = parse_utc(check.start), parse_utc(check.end)
+        middle = start + (end - start) / 2
+        bodies = conn.execute("SELECT body FROM bulletins WHERE volcano = ? AND clock >= ? ORDER BY clock, id",
+                              (episode.volcano, check.start)).fetchall()
+        if not bodies:
             rows.append([check.quantity, official, "none", "", "", ""])
             continue
-        bulletin = Bulletin.model_validate_json(row["body"])
-        written = f"#{bulletin.id} at {local_time(bulletin.clock, episode.local)}"
-        quoted = [m for m in bulletin.measurements if (m.target, m.metric) == (check.target, check.metric)]
-        if not quoted:
-            rows.append([check.quantity, official, written, "not quoted", "", ""])
+        bulletins = [Bulletin.model_validate_json(row["body"]) for row in bodies]
+        for bulletin in bulletins:
+            quoted = [m for m in bulletin.measurements if (m.target, m.metric) == (check.target, check.metric)
+                      and m.captured_at and start <= parse_utc(m.captured_at) <= end]
+            if quoted:
+                break
+        else:
+            first = bulletins[0]
+            rows.append([check.quantity, official, f"#{first.id} at {local_time(first.clock, episode.local)}",
+                         "not quoted in the window", "", ""])
             continue
-        middle = parse_utc(check.start) + (parse_utc(check.end) - parse_utc(check.start)) / 2
-        m = min(quoted, key=lambda q: abs(parse_utc(q.captured_at) - middle) if q.captured_at else timedelta.max)
+        written = f"#{bulletin.id} at {local_time(bulletin.clock, episode.local)}"
+        m = min(quoted, key=lambda q: abs(parse_utc(q.captured_at) - middle))
         error = m.value - check.official_m
         if check.upper_bound:
             error_text = "within the bound" if m.value <= check.official_m else f"{error:+,.0f} m above it"
         else:
             error_text = f"{error:+,.0f} m ({100 * error / check.official_m:+.0f} %)"
-        at = f" at {local_time(m.captured_at, episode.local)}" if m.captured_at else ""
-        rows.append([check.quantity, official, written, f"{m.value:,.0f} ± {m.sigma:,.0f} m{at}", error_text,
+        rows.append([check.quantity, official, written,
+                     f"{m.value:,.0f} ± {m.sigma:,.0f} m at {local_time(m.captured_at, episode.local)}", error_text,
                      "yes" if m.verified else "no"])
     return rows
 

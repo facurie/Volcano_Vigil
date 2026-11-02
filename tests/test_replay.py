@@ -141,9 +141,21 @@ def test_each_official_height_meets_the_first_bulletin_once_its_window_opens(con
 
     assert rows[4] == ["plume top (peak)", "25,000 ft a.s.l., 04:50-05:10 (7,620 m)", "#2 at 05:00",
                        "6,951 ± 429 m at 04:55", "-669 m (-9 %)", "yes"]
-    assert rows[0][2:4] == ["#2 at 05:00", "not quoted"]  # no bulletin quotes a fountain height
-    assert rows[5][2:4] == ["#3 at 06:00", "not quoted"]
+    assert rows[0][2:4] == ["#2 at 05:00", "not quoted in the window"]  # no bulletin quotes a fountain height
+    assert rows[5][2:4] == ["#3 at 06:00", "not quoted in the window"]
     assert rows[6][2:] == ["none", "", "", ""]  # no bulletin after 07:25
+
+
+def test_a_height_is_compared_only_with_a_measurement_captured_inside_its_window(conn, tmp_path):
+    # the "under 13,000 ft by 07:30" check: our frames from 17:25:00 to 17:35:59 UTC
+    bulletin_at(conn, tmp_path, "2026-10-17T17:30:00Z", measurements=[top(3900, 300, "2026-10-17T17:20:05Z")])
+    bulletin_at(conn, tmp_path, "2026-10-17T18:00:00Z", measurements=[top(3800, 300, "2026-10-17T17:55:05Z")])
+    assert bulletin_rows(conn, EP55)[6][2:] == ["#1 at 07:30", "not quoted in the window", "", ""]
+
+    bulletin_at(conn, tmp_path, "2026-10-17T18:30:00Z", measurements=[top(3950, 300, "2026-10-17T17:35:05Z"),
+                                                                     top(3700, 300, "2026-10-17T17:55:05Z")])
+
+    assert bulletin_rows(conn, EP55)[6][2:] == ["#3 at 08:30", "3,950 ± 300 m at 07:35", "within the bound", "yes"]
 
 
 def test_activity_rows_say_when_fountaining_was_first_and_no_longer_reported(conn, tmp_path):
