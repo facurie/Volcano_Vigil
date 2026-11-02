@@ -592,4 +592,26 @@ git commit -m "Add a script that re-renders stored bulletins, used to republish 
 
 ## Execution notes
 
-(Filled in during execution.)
+Session 13, 2026-11-02, 15:00–20:00 UTC. All tasks done except Task 11's last step, which is the user's call. Suite: 717 → 794 tests. Meta API spend: $0.
+
+**Task 1 (K2cam).** As planned: azimuth 188.82 ± 0.81°, tilt +7.07 ± 0.43°, focal 3,428 ± 103 px. Checks, from the SAM fountain boxes of episode 55: the vent lands 3 px below the fountain's foot (row 1850, the boxes' median lowest row) and 166 px (2.8°) left of its axis (column 1836), one sigma of the camera's ±75 m position. Puʻukoaʻe's pixel holds within 2 px on the 07:00, 08:00 and 09:00 HST frames. Deviation from the freeze rule's letter, recorded honestly: the check overlay (Step 3) draws a 50 m scale over the vent, and at 08:00 HST the fountain stands against it, so a height was visible before the commit. Nothing in the preset was changed after that; it is exactly what Step 2 wrote. The plan's worry that two agent-tool tests assume K2cam uncalibrated was wrong: those tests use a synthetic calibration.
+
+**Task 2 (validation).** 5 of 7 rows agree. Fountain: peak 241 ± 14 m against 219 m (+10 %), 06:02 181 ± 13 against 198 (−9 %), 07:00 150 ± 13 against 152 (−2 %), 08:00 129 ± 12 against 91 (+41 %, z 3.0). HVO's own reports of the decline disagree (500 ft at 07:47 in a message, 300 ft by 08:00 in the daily update), which the report says; the comparison rows were not changed. Our series stays at 100–140 m until about 08:50 and drops to 53 m at 09:00. vigil-measure and the script ran from a detached worktree at 69ce90c (`PYTHONPATH` does not beat the editable install; running from the worktree's folder does), so the implementer's edits in progress never touched the databases.
+
+**Tasks 3–5 (English only)**, one implementer, commits 4a3314c, 7b8fcff, fba8679. Review (Task 6): CHANGES_REQUIRED for one important finding: the stored gate answers (`frame_quality.spark_answer`) kept `description_es`, which ships in the public mirror. Fixed by migration step 2 (da3e04d); `SCHEMA_VERSION` is 3 because Telegram's backoff added `alerts.last_attempt_at` as step 3. The reviewer migrated a copy of the real databases from 6 processes at once without trouble.
+
+**Task 7 (stored outputs).** Backups of every local database are in `data/backup/pre-phase9/` (and the Space's, taken just before the deploy). The four local databases are at version 3 with no Spanish left (also scanned for Spanish words). The episode 55 bulletins were re-rendered, K2cam measured in the replay database (385 detections), and `vigil-replay --episode 55` regenerated `timeline.json` and `report.md` with no Meta API call (still 243 calls, $1.3739). The mirror went from 542 to 536 files, with no `.en.md`/`.es.md` left. Re-checked with the stricter rules below, the 7 replay bulletins cite 41 measurements, all verified, and write 75 lengths and areas, all supported.
+
+**Task 8 (README).** Rewritten; also `DATA_SOURCES.md` gained the calibration references (USGS vent release, EPQS/3DEP, GNIS, JPL Horizons, Axis, Patrick et al., OpenStreetMap).
+
+**Task 9 (review).** Three area reviews (`reviewer`, read-only) plus the Task 6 review. Fixed (16 commits):
+- measurement: area measured on the vent plane band by band (it was 30–60 % low for K2cam plumes 2–5 km up; top heights bit-identical, pinned by a test), the agent's wind never reads a model hour after its clock, a drift at exactly 90° is "not consistent" everywhere, and the report's drift text names the line of sight to the vent, not the optical axis;
+- bulletins: the headline's and body's lengths and areas are now checked against the verified measurements (hyphenated "1.6-km-high" included; a round number's trailing zeros count as rounding), the cited-number tolerance is the tools' rounding only, bearings compare on the circle, and the badge says "every height and area";
+- replay: an official value is compared only with a quoted measurement captured inside its window (the 07:30 row used to take the 08:00 bulletin's 07:55 number);
+- live robustness: Telegram retries back off 1, 2, 4, 8 minutes, a non-object reply is a TelegramError, an agent run left `running` for 30 min counts as failed, a missing frame file no longer aborts the pipeline step;
+- docstrings that promised more than the code (gate staleness, persist, AshCam retries, `/media/`, the loop's budget), "bilingual" in the page and package descriptions, two vacuous test assertions.
+- Not fixed, with reasons: `on_vent_plane`'s `across` with a lean (no caller uses it); a `ValueError` from a pixel 80° off the vent (impossible with these fields of view); AshCam does not retry a failed frame once a later one is stored (documented; a persistent checksum failure would loop); `/media/` ignores the replay clock (documented; the UI never links a future image); a late agent run standing in for the next hour, SAM streams that fail after starting logged at $0 (billing unverified), a duplicate Telegram post after a timeout that Telegram accepted, a frame marked seen when the alerts' budget runs out, a corrupt `spark_phases.json`: all rare, noted.
+
+**Extra.** The viewer's readout showed "No plume measured" on K2cam, whose plume runs off the frame, although its fountain is measured; it now shows the fountain top above the vent (0ddc8de), e.g. 224 ± 14 m at 04:58 and 149 ± 13 m at 06:58 HST.
+
+**Task 10 (deploy).** b3ed1aa deployed after the mirror push.

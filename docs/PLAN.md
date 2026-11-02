@@ -19,7 +19,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (717 passing at the end of Phase 8, session 12; they include the dashboard's JS helper tests, run with node).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (794 passing at the end of Phase 9, session 13; they include the dashboard's JS helper tests, run with node).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs. Everything published is in English: UI, bulletins, alerts, Telegram (decided 2026-11-02; the Spanish goes in Phase 9).
@@ -95,7 +95,7 @@
   - **KPcam is calibrated from nine Moon positions** (AshCam frames of Oct 16, 19 and 20, JPL Horizons, `scripts/moon_references.py`):
     - RMS misfit 1.6 px, focal 3,509 ± 13 px, k1 −0.280 ± 0.006, field of view 62.9°. A pinhole would misfit by 24 px.
     - Independent checks: the vent lands 30 px from the fountain, and the predicted sea horizon lies on the trade-cumulus base.
-  - **K2cam is not calibrated.** Its GNIS cones and the 3DEP skyline leave the focal length between 2,100 and 3,500 px. No clear sea horizon shows on Oct 15–19, and the night frames are black.
+  - **K2cam is calibrated (Phase 9) from its lens datasheet and Puʻukoaʻe.** It is HVO's one snapshot PTZ, an Axis Q6318 (widest field of view 58.5°); the 3DEP skyline's other solution (84.3°) is wider than the lens. Focal 3,428 ± 103 px, tilt +7.07 ± 0.43°. Checks: the vent lands 3 px below the fountain's foot and 2.8° left of its axis (one sigma of the camera's ±75 m); the predicted sea horizon lies under the trade-cumulus base.
   - V1cam's position is known only to ±150 m.
 - **Validation** ([VALIDATION.md](VALIDATION.md)):
   - KPcam plume top at the peak: 6,951 ± 429 m against 7,620 m (−9 %, within 2σ).
@@ -103,7 +103,7 @@
   - At 07:30: 4,416 ± 137 m against "under 3,962 m". The mask's top is cloud 2.5–3 km downwind.
   - End of fountaining: K2 −1.0 min and V1 −1.9 min against 09:03.
   - Drift: all 75 KPcam frames on the 224° side, consistent with HVO's SW.
-  - Fountain heights are not measured yet.
+  - K2cam fountain (Phase 9): peak 241 ± 14 m against 720 ft (+10 %); 06:02 181 ± 13 m against 650 ft (−9 %); 07:00 150 ± 13 m against 500 ft (−2 %); 08:00 129 ± 12 m against "about 300 ft" (+41 %, z 3.0), where HVO's own 07:47 message said 500 ft.
 - **Wind** (`vigil/wind.py`, [VALIDATION.md](VALIDATION.md)):
   - Open-Meteo levels 850–300 hPa. Hours older than 2 days come from the Historical Forecast API, the rest from the Forecast API. One UTC day is fetched at a time and cached in `wind_profiles`.
   - The drift side is compared with the mean wind between the vent and the plume top. It agrees in 74 of 75 KPcam frames (median 39°); the wind at the top alone agrees in only 58.
@@ -345,17 +345,21 @@ Plan and execution notes: [2026-11-01-phase-8-alerts.md](superpowers/plans/2026-
 
 ## Phase 9: Tue Nov 3. Validation report, README, polish
 
-- [ ] **Calibrate a fountain camera** so the validation's fountain rows get measured. Options:
+Plan and execution notes: [2026-11-02-phase-9-validation-english-readme.md](superpowers/plans/2026-11-02-phase-9-validation-english-readme.md).
+
+- [x] **Calibrate a fountain camera** so the validation's fountain rows get measured. Options:
   - K2cam needs a vertical reference: a clear sea horizon on a frame with the episode 55 framing, or a post-2018 DEM of the crater rim.
   - V1cam: the Moon for its view, plus a resection on the vent for its ±150 m position.
-- [ ] **English only** (the user's decision of 2026-11-02, instead of naming the Spanish vocabulary in the prompt: in the replay Muse Spark wrote "pluma" and "ventín", [replay_ep55.md](research/replay_ep55.md)). Kīlauea's audience reads English, and Muse Spark then writes half the text.
+
+  Done differently: K2cam from its lens's datasheet field of view (Axis Q6318, 58.5° at its widest), a level-mount roll prior and Puʻukoaʻe ([calibration_ep55.md](research/calibration_ep55.md)); 3 of 4 fountain rows agree.
+- [x] **English only** (the user's decision of 2026-11-02, instead of naming the Spanish vocabulary in the prompt: in the replay Muse Spark wrote "pluma" and "ventín", [replay_ep55.md](research/replay_ep55.md)). Kīlauea's audience reads English, and Muse Spark then writes half the text.
   - Bulletins: the prompt, the strict schema, the number checks and the rendering in English only.
   - Alerts and Telegram: the English text and caption only.
   - Dashboard: no EN/ES toggle.
-  - The plan decides what happens to the Spanish already stored (the episode 55 replay, the live database).
-- [ ] Final `docs/VALIDATION.md`: errors, σ, limitations.
-- [ ] Final README: updated diagram, live URL, how to run, the "Built during the hackathon" section, disclaimer, credits, cost report.
-- [ ] Code review pass (`superpowers:requesting-code-review`) and fixes.
+  - The plan decides what happens to the Spanish already stored (the episode 55 replay, the live database). Decided: dropped, by a one-time migration in `vigil/db.py` (`PRAGMA user_version`); the episode 55 bulletins were re-rendered and the mirror re-pushed.
+- [x] Final `docs/VALIDATION.md`: errors, σ, limitations. (Also the alerts and the overflow false-alarm count.)
+- [x] Final README: updated diagram, live URL, how to run, the "Built during the hackathon" section, disclaimer, credits, cost report.
+- [x] Code review pass (`superpowers:requesting-code-review`) and fixes. (Three area reviews plus a review of the English-only work; 16 fix commits, among them the bulletin text check, the replay table's time windows, the area on the vent plane and Telegram retry backoff.)
 
 ## Phase 10: Wed Nov 4. Video and submission (afternoon, not last minute)
 
@@ -373,7 +377,7 @@ None left: the Telegram notifications became part of Phase 8.
 
 ## Budget
 
-Spent so far: $5.09 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger; Phase 6 made no Meta API call; Phase 7 $0 for the mirror, the bucket and the Space, plus $0.16 for the live pipeline's first hour on 2026-11-01; Phase 8 $1.74: calibration probes $0.75, the overflows replay $0.65 and the episode 55 alerts replay $0.34, each in its own database's ledger). From Phase 8 on, the live alerts may spend $0.75 a day inside the Space's $5 cap, and the pipeline stops at $4.25. From Phase 7 on, the live Space spends every day under its own cap; its ledger is the bucket's copy of the database ([DEPLOY.md](DEPLOY.md)). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $5.09 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger; Phase 6 made no Meta API call; Phase 7 $0 for the mirror, the bucket and the Space, plus $0.16 for the live pipeline's first hour on 2026-11-01; Phase 8 $1.74: calibration probes $0.75, the overflows replay $0.65 and the episode 55 alerts replay $0.34, each in its own database's ledger; Phase 9 made no Meta API call). The live Space spent $6.22 from 2026-11-01 16:08Z to 2026-11-02 19:00Z: $1.96 on Nov 1 and $4.25 on Nov 2, when the pipeline reached its $4.25 share at 17:12Z (07:12 HST) and wrote no bulletin until the next UTC day; the agent is most of it ($2.92 on Nov 2). From Phase 8 on, the live alerts may spend $0.75 a day inside the Space's $5 cap, and the pipeline stops at $4.25. From Phase 7 on, the live Space spends every day under its own cap; its ledger is the bucket's copy of the database ([DEPLOY.md](DEPLOY.md)). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 
