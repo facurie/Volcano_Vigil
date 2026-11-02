@@ -120,7 +120,8 @@ def test_speed_keeps_the_simulated_clock_at_most_that_many_times_faster_than_the
 
 
 def bulletin_at(conn, tmp_path, clock, level="fountaining", measurements=()):
-    draft = BulletinDraft.model_validate({**DRAFT, "activity_level": level, "measurements": [], "evidence": []})
+    draft = BulletinDraft.model_validate({**DRAFT, "body": "A tall plume.", "activity_level": level,
+                                          "measurements": [], "evidence": []})
     bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 1, draft, tmp_path / "bulletins")
     return store_bulletin(conn, bulletin.model_copy(update={"clock": clock, "measurements": list(measurements)}))
 

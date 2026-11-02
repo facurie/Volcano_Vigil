@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sqlite3
 import sys
 from collections.abc import Callable
@@ -22,7 +23,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import Any, Literal, NamedTuple, get_args
 
 import httpx
 import numpy as np
@@ -136,10 +137,11 @@ class Bulletin(_Strict):
     official_url: str
     disclaimer: str
     notes: list[str] = []  # what the code left out or could not support
+    text_checked: bool = True  # every length and area in the headline and body matches a verified measurement
 
     @property
     def verified(self) -> bool:
-        return all(m.verified for m in self.measurements)
+        return self.text_checked and all(m.verified for m in self.measurements)
 
 
 def _object(properties: dict[str, Any]) -> dict[str, Any]:
@@ -167,6 +169,56 @@ DRAFT_FORMAT = {"type": "json_schema", "name": "bulletin", "schema": DRAFT_SCHEM
 
 def _close(quoted: float, stored: float, unit: str) -> bool:
     return abs(quoted - stored) <= max(TOLERANCE[unit], 0.01 * abs(stored))
+
+
+class Quote(NamedTuple):
+    """A length or an area written in a text, in metres or square metres."""
+
+    value: float
+    half_step: float  # half a unit of its last written digit
+    dimension: Literal["length", "area"]
+    written: str
+
+
+_NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+_UNIT = (r"square\s+(?P<sq>kilomet(?:re|er)s?|met(?:re|er)s?)|(?P<area>km²|km2|m²|m2)|"
+         r"(?P<length>kilomet(?:re|er)s?|met(?:re|er)s?|km|m)")
+_QUOTE = re.compile(rf"(?<![\w.,])(?P<value>{_NUMBER})(?:\s*(?:±|\+/-)\s*(?P<sigma>{_NUMBER}))?\s*(?P<unit>{_UNIT})"
+                    r"(?![\w/])(?!\s+per\b)", re.IGNORECASE)
+
+
+def _quote(number: str, unit: str, kilo: bool, dimension: str) -> Quote:
+    decimals = len(number.split(".")[1]) if "." in number else 0
+    factor = (1000 if kilo else 1) ** (2 if dimension == "area" else 1)
+    return Quote(round(float(number.replace(",", "")) * factor, 6), round(0.5 * 10 ** -decimals * factor, 6),
+                 dimension, f"{number} {unit}")  # type: ignore[arg-type]
+
+
+def quoted_numbers(text: str) -> list[Quote]:
+    """Every length and area written in the text with a unit: m, km, metres, kilometres (also meters,
+    kilometers) and m², km², m2, km2, square metres, square kilometres. Both numbers of "6,951 ± 429 m" count.
+    Speeds (m/s, km/h, per hour), feet and numbers with no unit do not."""
+    found = []
+    for match in _QUOTE.finditer(text):
+        unit = " ".join(match["unit"].split())
+        if match["sq"]:
+            dimension, kilo = "area", match["sq"].lower().startswith("k")
+        elif match["area"]:
+            dimension, kilo = "area", match["area"].lower().startswith("k")
+        else:
+            dimension, kilo = "length", match["length"].lower().startswith("k")
+        for number in (match["value"], match["sigma"]):
+            if number:
+                found.append(_quote(number, unit, kilo, dimension))
+    return found
+
+
+def supports(quote: Quote, checked: list[tuple[str, float]]) -> bool:
+    """Whether a checked (unit, number) pair, a value or sigma in m or m2, is the quote's number to the precision
+    it is written to, plus the stored rounding."""
+    unit = "m" if quote.dimension == "length" else "m2"
+    return any(u == unit and abs(quote.value - number) <= quote.half_step + TOLERANCE[unit]
+               for u, number in checked)
 
 
 def verify(conn: sqlite3.Connection, measurement: DraftMeasurement, clock: datetime) -> CitedMeasurement:
@@ -254,13 +306,18 @@ def build_bulletin(ctx: ToolContext, volcano_id: str, run_id: int, draft: Bullet
     unverified = sum(not m.verified for m in measurements)
     if unverified:
         notes.append(f"{unverified} of {len(measurements)} quoted number(s) match no stored measurement")
+    checked = [(m.unit, number) for m in measurements if m.verified for number in (m.value, m.sigma)]
+    unsupported = [q for q in quoted_numbers(f"{draft.headline}\n{draft.body}") if not supports(q, checked)]
+    notes += [f"the text quotes {written}, which no checked measurement supports"
+              for written in dict.fromkeys(q.written for q in unsupported)]
     names = {"name": volcano.name, "agency": volcano.official_agency, "url": volcano.official_url}
     return Bulletin(
         run_id=run_id, volcano=volcano_id, volcano_name=volcano.name, utc_offset_hours=volcano.utc_offset_hours,
         clock=to_iso(ctx.now), created_at=to_iso(wall_clock()),
         **draft.model_dump(exclude={"measurements", "evidence"}), measurements=measurements, evidence=evidence,
         wind=run_wind(ctx.conn, run_id), official_agency=volcano.official_agency, official_url=volcano.official_url,
-        disclaimer=DISCLAIMER.format(**names), notes=notes)
+        disclaimer=DISCLAIMER.format(**names), notes=notes,
+        text_checked=not unsupported)
 
 
 def store_bulletin(conn: sqlite3.Connection, bulletin: Bulletin) -> Bulletin:

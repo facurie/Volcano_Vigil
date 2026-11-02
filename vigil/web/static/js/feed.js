@@ -4,8 +4,8 @@
 import { el, fill } from "./dom.js";
 import * as lib from "./lib.js";
 
-const CHECKED = "✓ Every number checked against the stored measurements";
-const UNCHECKED = "Some numbers could not be checked against the stored measurements";
+const CHECKED = "✓ Every height and area checked against the stored measurements";
+const UNCHECKED = "Some heights or areas could not be checked against the stored measurements";
 
 export function renderFeed(root, data, ctx) {
   const { state, config, scene, actions } = ctx;

@@ -13,8 +13,8 @@ from test_agent_tools import (SIZE, T0, add_frame, add_measurement, add_run, add
                               store)  # store is a fixture
 from test_meta_client import make_client, turn_body
 from vigil.agent.bulletin import (BULLETIN_FINISH, DISCLAIMER, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
-                                  DraftEvidence, DraftMeasurement, build_bulletin, draw_evidence, load_bulletin, main,
-                                  run_wind, store_bulletin, verify, write_bulletin)
+                                  DraftEvidence, DraftMeasurement, Quote, build_bulletin, draw_evidence, load_bulletin,
+                                  main, quoted_numbers, run_wind, store_bulletin, supports, verify, write_bulletin)
 from vigil.meta.client import MetaClient
 from vigil.timeutil import to_iso
 
@@ -150,6 +150,104 @@ def test_a_quoted_number_is_verified_within_rounding_and_one_percent(
     assert cited.verified is verified
 
 
+@pytest.mark.parametrize("text, expected", [
+    ("at 6,951 ± 429 m above sea level", [(6951, 0.5, "length", "6,951 m"), (429, 0.5, "length", "429 m")]),
+    ("an area of about 20.6 km²", [(20_600_000, 50_000, "area", "20.6 km²")]),
+    ("rose 241 m", [(241, 0.5, "length", "241 m")]),
+    ("a 1.2 km column", [(1200, 50, "length", "1.2 km")]),
+    ("6.951 ± 0.429 km", [(6951, 0.5, "length", "6.951 km"), (429, 0.5, "length", "0.429 km")]),
+    ("an area of 1,200 m2 and 3 square kilometres", [(1200, 0.5, "area", "1,200 m2"),
+                                                      (3_000_000, 500_000, "area", "3 square kilometres")]),
+    ("1.5 km2 and 80 m²", [(1_500_000, 50_000, "area", "1.5 km2"), (80, 0.5, "area", "80 m²")]),
+    ("300 metres and 2 kilometers and 5 meters", [(300, 0.5, "length", "300 metres"),
+                                                   (2000, 500, "length", "2 kilometers"),
+                                                   (5, 0.5, "length", "5 meters")]),
+    ("(6,951 m).", [(6951, 0.5, "length", "6,951 m")]),
+    ("winds of 3.3 m/s", []),
+    ("at 04:55 local time", []),
+    ("a bearing of 224° and 12 minutes", []),
+    ("a plume near 720 ft", []),
+    ("about 6,951 above the sea", []),
+    ("12 km/h or 12 kilometres per hour or 4 meters per second", []),
+    ("5 mph, 5 mm", []),
+])
+def test_the_lengths_and_areas_written_in_a_text_are_found(text, expected):
+    found = quoted_numbers(text)
+
+    assert [(q.value, q.half_step, q.dimension, q.written) for q in found] == expected
+
+
+@pytest.mark.parametrize("quote, stored, supported", [
+    (Quote(6951, 0.5, "length", "6,951 m"), [("m", 6951.4)], True),
+    (Quote(6951, 0.5, "length", "6,951 m"), [("m", 6953.0)], False),
+    (Quote(6951, 0.5, "length", "6,951 m"), [("m", 6952.0)], True),     # 1 m of stored rounding on top of 0.5
+    (Quote(6000, 0.5, "length", "6,000 m"), [("m", 6951.0), ("m", 429.0)], False),
+    (Quote(7000, 500, "length", "7 km"), [("m", 6951.0)], True),        # 7 km covers 6.5 to 7.5 km
+    (Quote(1200, 50, "length", "1.2 km"), [("m", 1300.0)], False),
+    (Quote(429, 0.5, "length", "429 m"), [("m", 6951.0), ("m", 429.4)], True),
+    (Quote(20_600_000, 50_000, "area", "20.6 km²"), [("m2", 20_640_000.0)], True),
+    (Quote(20_600_000, 50_000, "area", "20.6 km²"), [("m", 20_600_000.0)], False),   # a length never supports an area
+    (Quote(241, 0.5, "length", "241 m"), [("m2", 241.0), ("deg", 241.0)], False),
+    (Quote(241, 0.5, "length", "241 m"), [], False),
+])
+def test_a_quoted_length_or_area_is_supported_by_a_checked_value_of_its_dimension_within_its_precision(
+        quote, stored, supported):
+    assert supports(quote, [(unit, value) for unit, value in stored]) is supported
+
+
+def test_a_body_number_nothing_checked_supports_makes_the_bulletin_unverified_with_a_note(conn, store, tmp_path):
+    frame_id = plume_frame(conn, store)
+    draft = BulletinDraft.model_validate({
+        **DRAFT, "body": "The plume top reached 6,951 ± 429 m at 04:55, with 6,000 m at the vent.",
+        "measurements": [quoted(frame_id).model_dump()], "evidence": []})
+
+    bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
+
+    assert bulletin.measurements[0].verified and not bulletin.text_checked and not bulletin.verified
+    assert bulletin.notes == ["the text quotes 6,000 m, which no checked measurement supports"]
+
+
+def test_a_body_whose_numbers_are_all_supported_stays_verified(conn, store, tmp_path):
+    frame_id = plume_frame(conn, store)
+    draft = BulletinDraft.model_validate({**DRAFT, "headline": "A 6,951 m plume", "measurements": [
+        quoted(frame_id).model_dump()], "evidence": []})
+
+    bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
+
+    assert bulletin.text_checked and bulletin.verified and bulletin.notes == []
+
+
+def test_a_body_number_with_no_cited_measurement_is_unverified(conn, tmp_path):
+    draft = BulletinDraft.model_validate({**DRAFT, "measurements": [], "evidence": []})
+
+    bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
+
+    assert not bulletin.verified
+    assert bulletin.notes == ["the text quotes 6,951 m, which no checked measurement supports",
+                              "the text quotes 429 m, which no checked measurement supports"]
+
+
+def test_an_unverified_citation_does_not_support_the_body(conn, store, tmp_path):
+    frame_id = plume_frame(conn, store)
+    draft = BulletinDraft.model_validate({**DRAFT, "measurements": [quoted(frame_id, value=9000).model_dump()],
+                                          "evidence": []})
+
+    bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
+
+    assert not bulletin.text_checked
+    assert bulletin.notes[0] == "1 of 1 quoted number(s) match no stored measurement"
+    assert len(bulletin.notes) == 3  # that note, then 6,951 m and 429 m: an unverified citation supports neither
+
+
+def test_a_bulletin_stored_before_the_text_was_checked_loads_as_checked(conn, tmp_path):
+    draft = BulletinDraft.model_validate({**DRAFT, "body": "Quiet.", "measurements": [], "evidence": []})
+    stored = store_bulletin(conn, build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins"))
+    old = json.loads(conn.execute("SELECT body FROM bulletins").fetchone()["body"])
+    del old["text_checked"]
+
+    assert type(stored).model_validate(old).text_checked
+
+
 def test_a_measurement_and_an_evidence_frame_captured_exactly_at_the_clock_are_used(conn, store, tmp_path):
     frame_id = plume_frame(conn, store, minutes=0)
 
@@ -233,7 +331,7 @@ def test_build_bulletin_checks_the_draft_and_adds_the_official_source_and_discla
 
 def test_evidence_after_the_clock_or_beyond_three_frames_is_left_out(conn, store, tmp_path):
     early, late = plume_frame(conn, store), add_frame(conn, store, "kilauea-kp", 5)
-    draft = BulletinDraft.model_validate({**DRAFT, "measurements": [],
+    draft = BulletinDraft.model_validate({**DRAFT, "body": "Quiet.", "measurements": [],
                                           "evidence": [shown(i).model_dump() for i in (late, early, early, early)]})
 
     bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
@@ -246,7 +344,7 @@ def test_evidence_after_the_clock_or_beyond_three_frames_is_left_out(conn, store
 def test_evidence_whose_image_cannot_be_read_is_left_out_with_its_own_note(conn, store, tmp_path):
     gone, kept = plume_frame(conn, store, minutes=-6), plume_frame(conn, store, minutes=-5)
     (tmp_path / conn.execute("SELECT path FROM frames WHERE id = ?", (gone,)).fetchone()["path"]).unlink()
-    draft = BulletinDraft.model_validate({**DRAFT, "measurements": [],
+    draft = BulletinDraft.model_validate({**DRAFT, "body": "Quiet.", "measurements": [],
                                           "evidence": [shown(gone).model_dump(), shown(kept).model_dump()]})
 
     bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
