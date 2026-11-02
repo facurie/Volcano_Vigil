@@ -186,7 +186,7 @@ class Quote(NamedTuple):
 _NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 _UNIT = (r"square\s+(?P<sq>kilomet(?:re|er)s?|met(?:re|er)s?)|(?P<area>km²|km2|m²|m2)|"
          r"(?P<length>kilomet(?:re|er)s?|met(?:re|er)s?|km|m)")
-_QUOTE = re.compile(rf"(?<![\w.,])(?P<value>{_NUMBER})(?:\s*(?:±|\+/-)\s*(?P<sigma>{_NUMBER}))?\s*(?P<unit>{_UNIT})"
+_QUOTE = re.compile(rf"(?<![\w.,])(?P<value>{_NUMBER})(?:\s*(?:±|\+/-)\s*(?P<sigma>{_NUMBER}))?(?:\s*|-)(?P<unit>{_UNIT})"
                     r"(?![\w/])(?!\s+per\b)", re.IGNORECASE)
 
 
@@ -203,7 +203,8 @@ def _quote(number: str, unit: str, kilo: bool, dimension: str) -> Quote:
 
 def quoted_numbers(text: str) -> list[Quote]:
     """Every length and area written in the text with a unit: m, km, metres, kilometres (also meters,
-    kilometers) and m², km², m2, km2, square metres, square kilometres. Both numbers of "6,951 ± 429 m" count.
+    kilometers) and m², km², m2, km2, square metres, square kilometres, hyphenated too ("a 1.6-km-high plume").
+    Both numbers of "6,951 ± 429 m" count.
     Speeds (m/s, km/h, per hour), feet and numbers with no unit do not."""
     found = []
     for match in _QUOTE.finditer(text):

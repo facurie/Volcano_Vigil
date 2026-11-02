@@ -170,7 +170,10 @@ def test_a_quoted_number_is_verified_within_the_rounding_of_the_tools(
     ("6,950 m", [(6950, 5, "length", "6,950 m")]),
     ("7.0 km and 0.50 km", [(7000, 50, "length", "7.0 km"), (500, 5, "length", "0.50 km")]),  # a written decimal counts
     ("0 m", [(0, 0.5, "length", "0 m")]),
+    ("a 1.6-km-high plume", [(1600, 50, "length", "1.6 km")]),  # Muse Spark's headlines hyphenate the unit
+    ("a ~2,370-m plume and a 220-meter fountain", [(2370, 5, "length", "2,370 m"), (220, 5, "length", "220 meter")]),
     ("winds of 3.3 m/s", []),
+    ("a 3.3-m/s wind and a 2-3 day lull", []),
     ("at 04:55 local time", []),
     ("a bearing of 224° and 12 minutes", []),
     ("a plume near 720 ft", []),
