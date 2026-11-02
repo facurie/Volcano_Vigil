@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from typing import get_args
 
 import httpx
@@ -9,18 +10,23 @@ from pydantic import ValidationError
 
 from conftest import NOW
 from test_agent_loop import FAKE_TOOLS, SOURCES_YAML, Script
+from test_alerts import make_alert
 from test_agent_tools import (SIZE, T0, add_frame, add_measurement, add_run, add_track, context, detection_ids,
                               store)  # store is a fixture
 from test_meta_client import make_client, turn_body
 from vigil.agent.bulletin import (BULLETIN_FINISH, DISCLAIMER, DRAFT_FORMAT, DRAFT_SCHEMA, ActivityLevel, BulletinDraft,
-                                  DraftEvidence, DraftMeasurement, Quote, build_bulletin, draw_evidence, load_bulletin,
-                                  main, quoted_numbers, run_wind, store_bulletin, supports, verify, write_bulletin)
+                                  DraftEvidence, DraftMeasurement, Quote, Written, build_bulletin, draw_evidence,
+                                  fountain_evidence, load_bulletin, main, quoted_numbers, run_wind, store_bulletin,
+                                  supports, verify, write_bulletin)
+from vigil.agent.loop import AgentRun
+from vigil.alerts import store_alert
+from vigil.config import CameraRule
 from vigil.meta.client import MetaClient
 from vigil.timeutil import to_iso
 
 
 DRAFT = {  # the shape of Muse Spark's answer in the Phase 5 planning probe
-    "activity_level": "fountaining",
+    "activity_level": "degassing",
     "headline": "Lava fountain and a tall plume at Kīlauea",
     "body": "KPcam measured the plume top at 6,951 ± 429 m above sea level at 04:55.",
     "measurements": [{"camera_id": "kilauea-kp", "target": "plume", "metric": "top_altitude", "value": 6951,
@@ -63,7 +69,7 @@ def test_the_draft_format_has_the_draft_models_fields():
 def test_a_draft_parses_from_muse_sparks_json():
     draft = BulletinDraft.model_validate_json(json.dumps(DRAFT))
 
-    assert draft.activity_level == "fountaining"
+    assert draft.activity_level == "degassing"
     assert (draft.measurements[0].frame_ids, draft.measurements[0].value) == ([29], 6951)
     assert draft.evidence[0].caption == "The plume at its peak."
 
@@ -400,7 +406,7 @@ def test_a_stored_bulletin_loads_back_with_its_id(conn, tmp_path):
     assert stored.id == 1 and load_bulletin(conn, 1) == stored
     row = conn.execute("SELECT * FROM bulletins").fetchone()
     assert (row["run_id"], row["activity_level"], row["verified"], row["clock"]) == (
-        3, "fountaining", 0, "2026-10-17T15:00:00Z")
+        3, "degassing", 0, "2026-10-17T15:00:00Z")
     assert conn.execute("SELECT headline FROM bulletins").fetchone()[0] == DRAFT["headline"]
     with pytest.raises(KeyError):
         load_bulletin(conn, 2)
@@ -409,9 +415,9 @@ def test_a_stored_bulletin_loads_back_with_its_id(conn, tmp_path):
 QUIET = {**DRAFT, "activity_level": "no_view", "measurements": [], "evidence": []}
 
 
-def write(conn, tmp_path, api):
+def write(conn, tmp_path, api, **options):
     return write_bulletin(make_client(api, conn), context(conn, tmp_path), "kilauea", tmp_path / "bulletins",
-                          tools=FAKE_TOOLS, wall_clock=lambda: NOW, sleep=lambda seconds: None)
+                          tools=FAKE_TOOLS, wall_clock=lambda: NOW, sleep=lambda seconds: None, **options)
 
 
 def test_the_agent_writes_the_bulletin_in_its_format_and_it_is_stored_and_published(conn, store, tmp_path):
@@ -523,3 +529,310 @@ def test_cli_exits_with_an_error_when_no_bulletin_comes_back(cli_env, monkeypatc
 
     assert exit_info.value.code == 1
     assert "no bulletin: the final answer is not a bulletin" in capsys.readouterr().out
+
+
+# --- the fountaining level needs a fountain that something stored confirms
+
+M = timedelta(minutes=1)
+RULES = {"kilauea-v1": CameraRule(fountain_area=0.06, ambiguous_area=0.03),
+         "kilauea-k2": CameraRule(fountain_area=0.01, ambiguous_area=0.005)}
+BIG, SMALL = (60, 60, 120, 150), (60, 60, 90, 90)  # 5,400 px (6.5 % of a 384 x 216 frame) and 900 px (1.1 %)
+FOUNTAIN = {**DRAFT, "activity_level": "fountaining", "body": "A lava fountain plays at the vent.",
+            "measurements": [], "evidence": []}
+NOTHING = "nothing stored confirms a lava fountain in the last hour"
+
+
+def put_alert(conn, kind, minutes, **fields):
+    """An alert raised `minutes` from the clock."""
+    return store_alert(conn, make_alert(kind, clock=to_iso(T0 + minutes * M), **fields))
+
+
+def put_look(conn, store, camera_id, minutes, *, clock=None, episode=1):
+    """An alert look at a frame captured `minutes` from the clock, made at `clock` minutes (default: then)."""
+    frame_id = add_frame(conn, store, camera_id, minutes)
+    made = T0 + (minutes if clock is None else clock) * M
+    with conn:
+        conn.execute("INSERT INTO alert_checks (frame_id, camera_id, captured_at, clock, glow, size, episode) "
+                     "VALUES (?, ?, ?, ?, 0.1, 'large', ?)",
+                     (frame_id, camera_id, to_iso(T0 + minutes * M), to_iso(made), episode))
+    return frame_id
+
+
+def put_fountain_track(conn, store, camera_id, minutes, box=BIG, target="fountain"):
+    """A SAM track of `target` on a frame captured `minutes` from the clock, with a full-box mask."""
+    frame_id = add_frame(conn, store, camera_id, minutes)
+    add_track(conn, add_run(conn, camera_id, target, [frame_id], phrase="lava fountain"), [frame_id], box=box)
+    return frame_id
+
+
+def evidence_at(conn, now=T0, rules=RULES):
+    return fountain_evidence(conn, "kilauea", rules, now)
+
+
+def task_of(api):
+    return api.requests[0]["input"][0]["content"]
+
+
+def test_with_nothing_stored_no_fountain_is_confirmed(conn):
+    assert evidence_at(conn) is None
+
+
+def test_an_onset_as_the_latest_alert_confirms_a_fountain_however_old(conn):
+    put_alert(conn, "onset", -300)
+
+    assert "the alert watcher reported fountaining at 2026-10-17T10:00:00Z" in evidence_at(conn)
+
+
+@pytest.mark.parametrize("alerts", [
+    pytest.param([("onset", -300), ("end", -10)], id="ended"),
+    pytest.param([("onset", 1)], id="onset-after-the-clock"),
+    pytest.param([("end", -300)], id="only-an-end"),
+])
+def test_an_ended_or_later_onset_confirms_no_fountain(conn, alerts):
+    for kind, minutes in alerts:
+        put_alert(conn, kind, minutes)
+
+    assert evidence_at(conn) is None
+
+
+def test_an_onset_raised_exactly_at_the_clock_counts_and_another_volcanos_does_not(conn):
+    put_alert(conn, "onset", 0, volcano="mauna-loa")
+    assert evidence_at(conn) is None
+
+    put_alert(conn, "onset", 0)
+    assert evidence_at(conn) is not None
+
+
+def test_an_end_raised_after_the_clock_does_not_turn_an_onset_off_yet(conn):
+    put_alert(conn, "onset", -300)
+    put_alert(conn, "end", 5)
+
+    assert evidence_at(conn) is not None
+    assert evidence_at(conn, now=T0 + 5 * M) is None
+
+
+@pytest.mark.parametrize("captured, clock, episode, confirmed", [
+    pytest.param(-10, -9, 1, True, id="recent-episode-size-look"),
+    pytest.param(0, 0, 1, True, id="at-the-clock"),
+    pytest.param(-59, -58, 1, True, id="just-inside-the-hour"),
+    pytest.param(-60, -59, 1, False, id="exactly-an-hour-old"),
+    pytest.param(-90, -89, 1, False, id="older-than-an-hour"),
+    pytest.param(-10, -9, 0, False, id="not-episode-size"),
+    pytest.param(-10, 5, 1, False, id="made-after-the-clock"),
+    pytest.param(5, 5, 1, False, id="captured-after-the-clock"),
+])
+def test_an_episode_size_alert_look_in_the_last_hour_confirms_a_fountain(conn, store, captured, clock, episode,
+                                                                         confirmed):
+    put_look(conn, store, "kilauea-v1", captured, clock=clock, episode=episode)
+
+    found = evidence_at(conn)
+
+    assert (found is not None) is confirmed
+    if confirmed:
+        assert "kilauea-v1" in found and to_iso(T0 + captured * M) in found
+
+
+@pytest.mark.parametrize("camera, minutes, box, target, confirmed", [
+    pytest.param("kilauea-v1", -10, BIG, "fountain", True, id="large-tracked-fountain"),
+    pytest.param("kilauea-v1", -10, SMALL, "fountain", False, id="too-small-for-the-camera"),
+    pytest.param("kilauea-k2", -10, SMALL, "fountain", True, id="small-is-enough-for-k2"),
+    pytest.param("kilauea-kp", -10, BIG, "fountain", False, id="camera-with-no-rule"),
+    pytest.param("kilauea-v1", -10, BIG, "plume", False, id="not-a-fountain-track"),
+    pytest.param("kilauea-v1", -59, BIG, "fountain", True, id="just-inside-the-hour"),
+    pytest.param("kilauea-v1", -60, BIG, "fountain", False, id="exactly-an-hour-old"),
+    pytest.param("kilauea-v1", 5, BIG, "fountain", False, id="frame-after-the-clock"),
+])
+def test_a_large_tracked_fountain_in_the_last_hour_confirms_a_fountain(conn, store, camera, minutes, box, target,
+                                                                       confirmed):
+    put_fountain_track(conn, store, camera, minutes, box, target)
+
+    found = evidence_at(conn)
+
+    assert (found is not None) is confirmed
+    if confirmed:
+        assert camera in found and to_iso(T0 + minutes * M) in found and "% of the frame" in found
+
+
+def test_a_tracking_run_that_ended_after_the_clock_confirms_nothing(conn, store):
+    put_fountain_track(conn, store, "kilauea-v1", -10)
+    with conn:
+        conn.execute("UPDATE tracking_runs SET window_end = ?", (to_iso(T0 + M),))
+
+    assert evidence_at(conn) is None
+    assert evidence_at(conn, now=T0 + M) is not None
+
+
+def test_without_rules_only_the_alerts_confirm_a_fountain(conn, store):
+    put_fountain_track(conn, store, "kilauea-v1", -10)
+    assert evidence_at(conn, rules={}) is None
+
+    put_look(conn, store, "kilauea-k2", -5)
+    assert "kilauea-k2" in evidence_at(conn, rules={})
+
+
+def test_the_alert_comes_first_in_the_evidence(conn, store):
+    put_fountain_track(conn, store, "kilauea-v1", -10)
+    put_look(conn, store, "kilauea-k2", -5)
+    put_alert(conn, "onset", -3)
+
+    assert "the alert watcher reported fountaining" in evidence_at(conn)
+
+
+def test_a_database_without_the_alerts_tables_counts_as_no_alerts(conn, store):
+    put_fountain_track(conn, store, "kilauea-v1", -10)
+    with conn:
+        conn.execute("DROP TABLE alerts")
+        conn.execute("DROP TABLE alert_checks")
+
+    assert "kilauea-v1" in evidence_at(conn)
+    assert evidence_at(conn, rules={}) is None
+
+
+def test_the_task_tells_the_agent_that_nothing_confirms_a_fountain(conn, tmp_path):
+    api = Script(turn_body([], text=json.dumps(QUIET)))
+
+    write(conn, tmp_path, api)
+
+    assert NOTHING in task_of(api) and "incandescence" in task_of(api)
+
+
+def test_the_task_tells_the_agent_what_confirms_the_fountain(conn, tmp_path):
+    put_alert(conn, "onset", -3)
+    api = Script(turn_body([], text=json.dumps(QUIET)))
+
+    write(conn, tmp_path, api)
+
+    assert "the alert watcher reported fountaining at 2026-10-17T14:57:00Z" in task_of(api)
+    assert NOTHING not in task_of(api)
+
+
+def test_the_task_puts_the_fountain_check_before_the_previous_bulletin(conn, tmp_path):
+    bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 1, BulletinDraft.model_validate(QUIET),
+                              tmp_path / "bulletins")
+    store_bulletin(conn, bulletin.model_copy(update={"clock": "2026-10-17T14:00:00Z"}))
+    api = Script(turn_body([], text=json.dumps(QUIET)))
+
+    write(conn, tmp_path, api)
+
+    assert task_of(api).index(NOTHING) < task_of(api).index("Your previous bulletin")
+
+
+def test_the_finish_asks_for_fountaining_only_when_the_task_says_a_fountain_is_confirmed():
+    assert "only when the task says" in BULLETIN_FINISH and "confirmed" in BULLETIN_FINISH
+
+
+def test_a_draft_that_says_fountaining_with_nothing_to_confirm_it_goes_back_once(conn, tmp_path):
+    api = Script(turn_body([], text=json.dumps(FOUNTAIN), rid="resp_1"),
+                 turn_body([], text=json.dumps({**FOUNTAIN, "activity_level": "incandescence"}), rid="resp_2"))
+
+    written = write(conn, tmp_path, api)
+
+    assert written.run.status == "done" and written.run.turns == 2
+    assert (written.bulletin.activity_level, written.bulletin.level_checked) == ("incandescence", True)
+    sent_back = api.requests[1]["input"][-1]
+    assert sent_back["role"] == "user" and "fountaining" in sent_back["content"] and NOTHING in sent_back["content"]
+    check = conn.execute("SELECT text FROM agent_steps WHERE kind = 'check'").fetchone()
+    assert check["text"] == sent_back["content"]
+
+
+def test_a_second_fountaining_draft_is_stored_as_incandescence_with_a_note(conn, tmp_path):
+    api = Script(turn_body([], text=json.dumps(FOUNTAIN), rid="resp_1"),
+                 turn_body([], text=json.dumps(FOUNTAIN), rid="resp_2"))
+
+    written = write(conn, tmp_path, api)
+
+    bulletin = written.bulletin
+    assert len(api.requests) == 2  # one retry only
+    assert (bulletin.activity_level, bulletin.level_checked, bulletin.verified) == ("incandescence", False, False)
+    assert bulletin.notes == ["Muse Spark called this fountaining, but nothing stored by 2026-10-17T15:00:00Z "
+                              "confirms a lava fountain: the level shows glowing lava"]
+    assert load_bulletin(conn, bulletin.id) == bulletin
+    row = conn.execute("SELECT activity_level, verified FROM bulletins").fetchone()
+    assert (row["activity_level"], row["verified"]) == ("incandescence", 0)
+
+
+def test_a_fountaining_draft_on_the_last_turn_is_not_sent_back_but_is_demoted(conn, tmp_path):
+    api = Script(turn_body([], text=json.dumps(FOUNTAIN)))
+
+    written = write(conn, tmp_path, api, max_turns=1)
+
+    assert len(api.requests) == 1
+    assert (written.bulletin.activity_level, written.bulletin.level_checked) == ("incandescence", False)
+
+
+@pytest.mark.parametrize("level", ["no_view", "quiet", "degassing", "incandescence"])
+def test_a_draft_below_fountaining_is_not_sent_back(conn, tmp_path, level):
+    api = Script(turn_body([], text=json.dumps({**FOUNTAIN, "activity_level": level})))
+
+    written = write(conn, tmp_path, api)
+
+    assert len(api.requests) == 1
+    bulletin = written.bulletin
+    assert (bulletin.activity_level, bulletin.level_checked, bulletin.notes) == (level, True, [])
+
+
+def test_a_fountaining_draft_with_a_confirming_alert_stands(conn, tmp_path):
+    put_alert(conn, "onset", -3)
+    api = Script(turn_body([], text=json.dumps(FOUNTAIN)))
+
+    written = write(conn, tmp_path, api)
+
+    assert len(api.requests) == 1
+    assert (written.bulletin.activity_level, written.bulletin.level_checked, written.bulletin.notes) == (
+        "fountaining", True, [])
+
+
+def test_a_large_tracked_fountain_confirms_only_with_the_alert_rules(conn, store, tmp_path):
+    put_fountain_track(conn, store, "kilauea-v1", -10)
+
+    with_rules = write(conn, tmp_path, Script(turn_body([], text=json.dumps(FOUNTAIN))), alert_rules=RULES)
+    without = write(conn, tmp_path, Script(turn_body([], text=json.dumps(FOUNTAIN)),
+                                           turn_body([], text=json.dumps(FOUNTAIN))))
+
+    assert with_rules.bulletin.activity_level == "fountaining"
+    assert without.bulletin.activity_level == "incandescence"
+
+
+def test_build_bulletin_leaves_a_confirmed_fountaining_alone_and_demotes_the_rest(conn, tmp_path):
+    draft = BulletinDraft.model_validate(FOUNTAIN)
+    ctx = context(conn, tmp_path)
+
+    demoted = build_bulletin(ctx, "kilauea", 3, draft, tmp_path / "bulletins", alert_rules=RULES)
+    put_alert(conn, "onset", 1)  # raised after the clock: not yet
+    still = build_bulletin(ctx, "kilauea", 3, draft, tmp_path / "bulletins", alert_rules=RULES)
+    put_alert(conn, "onset", -2)
+    kept = build_bulletin(ctx, "kilauea", 3, draft, tmp_path / "bulletins", alert_rules=RULES)
+
+    assert [b.activity_level for b in (demoted, still, kept)] == ["incandescence", "incandescence", "fountaining"]
+    assert [b.level_checked for b in (demoted, still, kept)] == [False, False, True]
+    assert kept.verified and kept.notes == [] and not demoted.verified
+    assert demoted.headline == FOUNTAIN["headline"] and demoted.body == FOUNTAIN["body"]
+
+
+def test_a_bulletin_stored_before_the_level_was_checked_loads_as_checked(conn, tmp_path):
+    draft = BulletinDraft.model_validate({**DRAFT, "body": "Quiet.", "measurements": [], "evidence": []})
+    stored = store_bulletin(conn, build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins"))
+    old = json.loads(conn.execute("SELECT body FROM bulletins").fetchone()["body"])
+    del old["level_checked"]
+
+    assert type(stored).model_validate(old).level_checked
+
+
+def test_cli_gives_the_bulletin_the_alert_cameras_rules(cli_env, monkeypatch):
+    (cli_env / "alerts.yaml").write_text("cameras:\n  kilauea-k2: {fountain_area: 0.5, ambiguous_area: 0.1}\n",
+                                         encoding="utf-8")
+    monkeypatch.setenv("ALERTS_PATH", str(cli_env / "alerts.yaml"))
+    fake_meta(monkeypatch, Script())
+    given = {}
+
+    def fake_write(client, ctx, volcano_id, out_dir, **options):
+        given.update(options)
+        return Written(AgentRun(1, "error", 0, 0.0, "", "stopped"), None, "stopped")
+
+    monkeypatch.setattr("vigil.agent.bulletin.write_bulletin", fake_write)
+    monkeypatch.setattr("vigil.agent.bulletin.trace", lambda conn, run_id: "")
+
+    with pytest.raises(SystemExit):
+        main(["--volcano", "kilauea", "--at", "2026-10-17T05:00-10:00"])
+
+    assert given["alert_rules"] == {"kilauea-k2": CameraRule(fountain_area=0.5, ambiguous_area=0.1)}

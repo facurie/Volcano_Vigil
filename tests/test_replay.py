@@ -16,6 +16,7 @@ from test_meta_client import FakeApi, make_client
 from vigil.alerts import AlertWatcher, store_alert
 from vigil import db, replay
 from vigil.agent.bulletin import BulletinDraft, CitedMeasurement, build_bulletin, store_bulletin
+from vigil.config import CameraRule
 from vigil.episodes import EP55, QUIET_WINDOWS
 from vigil.ingest.store import FrameStore
 from vigil.meta.client import MetaClient
@@ -120,10 +121,10 @@ def test_speed_keeps_the_simulated_clock_at_most_that_many_times_faster_than_the
 
 
 def bulletin_at(conn, tmp_path, clock, level="fountaining", measurements=()):
-    draft = BulletinDraft.model_validate({**DRAFT, "body": "A tall plume.", "activity_level": level,
-                                          "measurements": [], "evidence": []})
+    draft = BulletinDraft.model_validate({**DRAFT, "body": "A tall plume.", "measurements": [], "evidence": []})
     bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 1, draft, tmp_path / "bulletins")
-    return store_bulletin(conn, bulletin.model_copy(update={"clock": clock, "measurements": list(measurements)}))
+    return store_bulletin(conn, bulletin.model_copy(update={"clock": clock, "activity_level": level,
+                                                            "measurements": list(measurements)}))
 
 
 def top(value, sigma, captured_at):
@@ -498,3 +499,41 @@ def test_cli_replays_a_quiet_window_and_writes_its_report(cli_env, monkeypatch, 
     report = (cli_env / "replay" / "overflows" / "report.md").read_text(encoding="utf-8")
     assert "**Alerts raised: 0** (expected none)." in report
     assert report in capsys.readouterr().out
+
+
+def test_run_replay_gives_the_pipeline_the_alert_rules(source, conn, tmp_path, monkeypatch):
+    configs = []
+
+    class Capture(FakePipeline):
+        def __init__(self, base, config):
+            super().__init__(base.conn)
+            configs.append(config)
+
+    monkeypatch.setattr(replay, "Pipeline", Capture)
+    rules = {"kilauea-v1": CameraRule(fountain_area=0.06, ambiguous_area=0.03)}
+
+    run_replay(source, context(conn, tmp_path), episode(T0, T0 + 10 * M), tmp_path / "replay", step=10 * M,
+               spark_video=False, alert_rules=rules)
+
+    assert configs[0].alert_rules == rules
+
+
+def test_cli_gives_the_replay_the_alert_cameras_rules(cli_env, monkeypatch):
+    (cli_env.parent / "alerts.yaml").write_text("cameras:\n  kilauea-k2: {fountain_area: 0.5, ambiguous_area: 0.1}\n",
+                                                encoding="utf-8")
+    monkeypatch.setenv("ALERTS_PATH", str(cli_env.parent / "alerts.yaml"))
+    with db.connect(cli_env / "vigil.sqlite") as stored:
+        FrameStore(stored, cli_env).add("kilauea-kp", frame_jpeg(1), captured_at=EP55.start + 30 * M,
+                                        timestamp_source="ashcam", fetched_at=EP55.start + 30 * M)
+    given = {}
+
+    def fake_replay(source, base, episode, out_dir, **options):
+        given.update(options)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "report.md").write_text("report", encoding="utf-8")
+
+    monkeypatch.setattr(replay, "run_replay", fake_replay)
+
+    main(["--episode", "55", "--no-video"])
+
+    assert given["alert_rules"] == {"kilauea-k2": CameraRule(fountain_area=0.5, ambiguous_area=0.1)}

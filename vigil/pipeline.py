@@ -28,7 +28,7 @@ import logging
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -42,7 +42,7 @@ from vigil import db, tracking
 from vigil.agent.bulletin import write_bulletin
 from vigil.agent.loop import BUDGET_USD, context_from_settings
 from vigil.agent.tools import ToolContext, calibrated
-from vigil.config import Camera, load_sources
+from vigil.config import Camera, CameraRule, load_alert_config, load_sources
 from vigil.gate import QualityGate, SparkMode
 from vigil.meta.client import MetaClient
 from vigil.meta.ledger import BudgetExceeded, CostLedger
@@ -76,6 +76,7 @@ class PipelineConfig:
     spark: SparkMode = "uncertain"
     agent_every: timedelta | None = AGENT_EVERY
     agent_budget_usd: float = BUDGET_USD
+    alert_rules: Mapping[str, CameraRule] | None = None  # the alert cameras, for the bulletin's fountain check
 
 
 @dataclass
@@ -251,7 +252,7 @@ class Pipeline:
 
     def _run_agent(self, ctx: ToolContext, report: StepReport) -> None:
         written = self._write(ctx.client, ctx, self.config.volcano, self.config.bulletin_dir,
-                              budget_usd=self.config.agent_budget_usd)
+                              budget_usd=self.config.agent_budget_usd, alert_rules=self.config.alert_rules)
         report.agent_run_id = written.run.run_id
         if written.bulletin is not None:
             report.bulletin_id = written.bulletin.id
@@ -288,7 +289,8 @@ def main(argv: list[str] | None = None) -> None:
         # the alerts keep their reserve of the cap (vigil-alerts)
         client = MetaClient.from_env(CostLedger(conn, settings.pipeline_budget_usd))
         config = PipelineConfig(volcano=args.volcano, cameras=cameras, bulletin_dir=settings.data_dir / "bulletins",
-                                agent_every=timedelta(minutes=args.agent_every) if args.agent_every > 0 else None)
+                                agent_every=timedelta(minutes=args.agent_every) if args.agent_every > 0 else None,
+                                alert_rules=load_alert_config(settings.alerts_path).cameras)
         pipeline = Pipeline(context_from_settings(settings, conn, http, utcnow(), client, sources), config)
         while True:
             try:

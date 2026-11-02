@@ -13,6 +13,7 @@ from vigil import tracking
 from vigil.agent.bulletin import Written
 from vigil.agent.loop import AgentRun
 from vigil.calibration import CameraCalibration, Preset, Site
+from vigil.config import CameraRule
 from vigil.meta.ledger import BudgetExceeded
 from vigil.metrics import MeasureReport
 from vigil.pipeline import Pipeline, PipelineConfig, floor_time, main
@@ -37,6 +38,7 @@ class Fakes:
         self.stores_runs = True   # False: tracking returns without storing a run
         self.measure_error = None
         self.measure_data_dirs = []  # the data dir each measuring call was given
+        self.agent_options = []      # the keyword arguments each agent run was given
 
     def track(self, client, conn, data_dir, camera, prompts, start, end, targets=tracking.TARGETS, lead_in=0):
         if self.budget_spent:
@@ -63,6 +65,7 @@ class Fakes:
 
     def write(self, client, ctx, volcano_id, out_dir, **agent):
         self.agent_clocks.append(ctx.now)
+        self.agent_options.append(agent)
         self.events.append("write")
         with ctx.conn:
             run_id = ctx.conn.execute(
@@ -520,3 +523,44 @@ def test_cli_leaves_the_alerts_their_reserve_of_the_daily_cap(cli_env, tmp_path,
         main(["--volcano", "kilauea", "--once"])
 
     assert caps == [4.25]
+
+
+RULES = {"kilauea-v1": CameraRule(fountain_area=0.06, ambiguous_area=0.03)}
+
+
+def test_the_agent_gets_the_configs_alert_rules(conn, store, tmp_path, fakes):
+    frames(conn, store, "kilauea-kp", 0)
+
+    pipeline(conn, tmp_path, fakes, alert_rules=RULES).step(START + H + 5 * M)
+
+    assert fakes.agent_options == [{"budget_usd": 0.30, "alert_rules": RULES}]
+
+
+def test_the_cli_gives_the_pipeline_the_alert_cameras_rules(cli_env, monkeypatch, tmp_path):
+    (tmp_path / "sources.yaml").write_text(SOURCES_YAML.replace(
+        "cameras: []",
+        "cameras:\n  - {id: kilauea-k2, name: K2cam, volcano: kilauea, url: 'https://example.org/k2.jpg',\n"
+        "     license: Public Domain, attribution: USGS, enabled: true}"), encoding="utf-8")
+    (tmp_path / "alerts.yaml").write_text("cameras:\n  kilauea-k2: {fountain_area: 0.5, ambiguous_area: 0.1}\n",
+                                          encoding="utf-8")
+    monkeypatch.setenv("ALERTS_PATH", str(tmp_path / "alerts.yaml"))
+    monkeypatch.setattr("vigil.settings.load_dotenv", lambda: None)
+    monkeypatch.setattr("vigil.pipeline.MetaClient.from_env", lambda ledger: "a Meta client")
+    configs = []
+
+    class Stop(Exception):
+        pass
+
+    class Capture:
+        def __init__(self, ctx, config):
+            configs.append(config)
+
+        def step(self, now):
+            raise Stop
+
+    monkeypatch.setattr("vigil.pipeline.Pipeline", Capture)
+
+    with pytest.raises(Stop):
+        main(["--volcano", "kilauea", "--once"])
+
+    assert configs[0].alert_rules == {"kilauea-k2": CameraRule(fountain_area=0.5, ambiguous_area=0.1)}

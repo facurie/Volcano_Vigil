@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -39,9 +39,10 @@ import openai
 
 from vigil import db
 from vigil.agent.bulletin import Bulletin
-from vigil.alerts import Alert, AlertWatcher, load_alert_config
+from vigil.alerts import Alert, AlertWatcher
 from vigil.agent.loop import context_from_settings
 from vigil.agent.tools import ToolContext, ToolError
+from vigil.config import CameraRule, load_alert_config
 from vigil.episodes import (DRIFT_HEADER, END_HEADER, EPISODES, HEIGHT_HEADER, QUIET_WINDOWS, Episode, QuietWindow,
                             drift_rows, end_rows, height_row, local_time, table)
 from vigil.meta.client import MetaClient
@@ -127,6 +128,7 @@ def replay_alerts(source: sqlite3.Connection, watcher: AlertWatcher, start: date
 def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, out_dir: Path, *,
                step: timedelta = STEP, agent_every: timedelta | None = AGENT_EVERY, speed: float = 0.0,
                spark_video: bool = True, pipeline: Pipeline | None = None, alerts: AlertWatcher | None = None,
+               alert_rules: Mapping[str, CameraRule] | None = None,
                sleep: Callable[[float], None] = time.sleep,
                monotonic: Callable[[], float] = time.monotonic) -> dict[str, Any]:
     """Replay the episode into base.conn, the replay's own database, and write timeline.json and report.md to
@@ -141,7 +143,7 @@ def run_replay(source: sqlite3.Connection, base: ToolContext, episode: Episode, 
                          "start over, or run it with the step it used")
     if pipeline is None:
         config = PipelineConfig(volcano=episode.volcano, cameras=episode.cameras, bulletin_dir=out_dir / "bulletins",
-                                settle=timedelta(0), agent_every=agent_every)
+                                settle=timedelta(0), agent_every=agent_every, alert_rules=alert_rules)
         pipeline = Pipeline(dataclasses.replace(base, now=episode.start), config)
     done = {row[0] for row in conn.execute("SELECT clock FROM replay_ticks")}
     origin: tuple[datetime, float] | None = None
@@ -419,12 +421,12 @@ def main(argv: list[str] | None = None) -> None:
                 httpx.Client(headers={"User-Agent": settings.user_agent}, timeout=30) as http:
             client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
             base = context_from_settings(settings, conn, http, episode.start, client)
+            alert_config = load_alert_config(settings.alerts_path)
             watcher = None if args.no_alerts else AlertWatcher(
-                base, episode.volcano, load_alert_config(settings.alerts_path), out_dir / "alerts",
-                budget_usd=settings.alert_reserve_usd)
+                base, episode.volcano, alert_config, out_dir / "alerts", budget_usd=settings.alert_reserve_usd)
             try:
                 run_replay(source, base, episode, out_dir, step=timedelta(minutes=args.step), speed=args.speed,
-                           spark_video=not args.no_video, alerts=watcher,
+                           spark_video=not args.no_video, alerts=watcher, alert_rules=alert_config.cameras,
                            agent_every=None if args.no_agent else timedelta(minutes=args.agent_every))
             except OffGridError as exc:
                 parser.error(str(exc))

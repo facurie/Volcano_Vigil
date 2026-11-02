@@ -5,7 +5,9 @@ descriptive activity level (what the cameras show, never an alert level), a head
 measurements the body quotes and the frames that show them. The code adds what must never depend
 on the model: the volcano's official agency and link, the disclaimer, the wind check as the get_wind tool
 returned it, an overlay of each evidence frame with its masks, and a check of every quoted number against the
-stored measurements up to the agent's clock (a number nothing stored supports is marked unverified). Bulletins
+stored measurements up to the agent's clock (a number nothing stored supports is marked unverified), and of the
+`fountaining` level: it needs a lava fountain that the alerts or SAM's tracks confirm in the last hour, or the
+draft is sent back once and then stored as `incandescence`. Bulletins
 are stored in the `bulletins` table; vigil.agent.render turns them into Markdown and HTML. Evidence overlays are
 JPEGs at most 1,280 pixels wide, in the bulletin's folder.
 """
@@ -18,10 +20,10 @@ import logging
 import re
 import sqlite3
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, get_args
 
@@ -35,7 +37,7 @@ from vigil.agent.loop import (BUDGET_USD, DEFAULT_TASK, MAX_TURNS, AgentRun, con
                               trace)
 from vigil.agent.render import local_time, publish, to_markdown
 from vigil.agent.tools import Metric, ToolContext
-from vigil.config import load_sources
+from vigil.config import CameraRule, load_alert_config, load_sources
 from vigil.meta.client import MetaClient
 from vigil.meta.ledger import CostLedger
 from vigil.overlay import Layer, draw_layers
@@ -48,6 +50,7 @@ ActivityLevel = Literal["no_view", "quiet", "degassing", "incandescence", "fount
 Unit = Literal["m", "m2", "deg"]
 EVIDENCE_MAX = 3
 OVERLAY_WIDTH = 1280  # evidence overlays are scaled down to this width
+FOUNTAIN_WITHIN = timedelta(hours=1)  # an alert look or a SAM track this recent confirms a fountain
 COLORS = {"plume": (80, 200, 255), "fountain": (255, 90, 30), "incandescence": (255, 210, 0)}
 TOLERANCE = {"m": 1.0, "m2": 1.0, "deg": 0.1}  # what rounding can change in a quoted number
 DISCLAIMER = ("Automated, experimental reading of public webcams by Volcano Vigil. It does not replace official "
@@ -57,8 +60,8 @@ BULLETIN_FINISH = """\
 Finish with a bulletin for the public, in English, as the JSON your answer format describes:
 - activity_level: what the cameras show now. It describes, it never sets an alert level: no_view (no camera can see \
 the vent: cloud, fog, darkness or no fresh frames), quiet (a clear view with no plume, glow or fountain), degassing \
-(a gas or steam plume and no glowing lava), incandescence (glowing lava but no fountain), fountaining (a lava \
-fountain).
+(a gas or steam plume and no glowing lava), incandescence (glowing lava but no fountain: spatter, bursts at the \
+vent and glowing gas are this), fountaining (a sustained lava fountain, only when the task says one is confirmed).
 - headline: one sentence. body: three to six sentences on what each useful camera shows, the measurements with \
 ± sigma, units and local times, the drift against the wind, and what could not be measured and why. Write the \
 body's numbers as people read them, rounded to what the sigma supports: 6,951 ± 429 m, an area of about 20.6 km², \
@@ -70,6 +73,12 @@ body's numbers as people read them, rounded to what the sigma supports: 6,951 ±
 short caption.
 - drift_bearing is the side of the camera's line of sight the plume sits on, not the direction it travels.
 Do not write a disclaimer or the official source: every bulletin gets them."""
+FOUNTAIN_CONFIRMED = "a lava fountain is confirmed ({}). Report fountaining only if the frames show it."
+FOUNTAIN_UNCONFIRMED = ("nothing stored confirms a lava fountain in the last hour, so do not report fountaining: "
+                        "spatter, bursts at the vent and glowing gas are incandescence.")
+FOUNTAIN_PROBLEM = ("Your draft says fountaining, but nothing stored confirms a lava fountain in the last hour. "
+                    "Spatter, bursts at the vent and glowing gas are incandescence. Answer again with the "
+                    "corrected bulletin.")
 
 
 class EvidenceError(Exception):
@@ -138,10 +147,11 @@ class Bulletin(_Strict):
     disclaimer: str
     notes: list[str] = []  # what the code left out or could not support
     text_checked: bool = True  # every length and area in the headline and body matches a verified measurement
+    level_checked: bool = True  # False: the draft said fountaining with nothing to confirm it; stored as incandescence
 
     @property
     def verified(self) -> bool:
-        return self.text_checked and all(m.verified for m in self.measurements)
+        return self.text_checked and self.level_checked and all(m.verified for m in self.measurements)
 
 
 def _object(properties: dict[str, Any]) -> dict[str, Any]:
@@ -292,10 +302,46 @@ def draw_evidence(conn: sqlite3.Connection, data_dir: Path, folder: Path, item: 
                     overlay=overlay)
 
 
+def fountain_evidence(conn: sqlite3.Connection, volcano_id: str, rules: Mapping[str, CameraRule],
+                      now: datetime) -> str | None:
+    """What confirms a lava fountain at `now`, from rows that exist by then; None if nothing does. Either the
+    volcano's latest alert is an onset, or an episode-size alert look was captured in the last hour, or a SAM
+    fountain track on a frame of that hour covers at least its camera's fountain_area (a camera with no rule
+    never confirms one). A database without the alerts tables has no alerts."""
+    until, since = to_iso(now), to_iso(now - FOUNTAIN_WITHIN)
+    try:
+        alert = conn.execute("SELECT kind, clock FROM alerts WHERE volcano = ? AND clock <= ? "
+                             "ORDER BY clock DESC, id DESC LIMIT 1", (volcano_id, until)).fetchone()
+        look = conn.execute("SELECT camera_id, captured_at FROM alert_checks WHERE episode = 1 AND clock <= ? "
+                            "AND captured_at > ? AND captured_at <= ? ORDER BY captured_at DESC LIMIT 1",
+                            (until, since, until)).fetchone()
+    except sqlite3.OperationalError:
+        alert = look = None
+    if alert is not None and alert["kind"] == "onset":
+        return f"the alert watcher reported fountaining at {alert['clock']} and has not reported its end"
+    if look is not None:
+        return (f"the alert watcher's look at {look['camera_id']} found an episode-size lava fountain on the frame "
+                f"captured at {look['captured_at']}")
+    for row in conn.execute(
+            """SELECT f.camera_id, f.captured_at, d.area_px, f.width, f.height FROM detections d
+               JOIN tracks t ON t.id = d.track_id JOIN tracking_runs r ON r.id = t.run_id
+               JOIN frames f ON f.id = d.frame_id
+               WHERE r.target = 'fountain' AND r.window_end <= ? AND f.captured_at > ? AND f.captured_at <= ?
+               ORDER BY f.captured_at DESC""", (until, since, until)):
+        share = row["area_px"] / (row["width"] * row["height"])
+        rule = rules.get(row["camera_id"])
+        if rule is not None and share >= rule.fountain_area:
+            return (f"SAM tracked a lava fountain on {row['camera_id']} covering {share:.1%} of the frame "
+                    f"captured at {row['captured_at']}")
+    return None
+
+
 def build_bulletin(ctx: ToolContext, volcano_id: str, run_id: int, draft: BulletinDraft, out_dir: Path, *,
+                   alert_rules: Mapping[str, CameraRule] | None = None,
                    wall_clock: Callable[[], datetime] = utcnow) -> Bulletin:
     """Check the draft against what was stored by the agent's clock and add what never depends on the model.
-    Evidence overlays go to out_dir/run<run_id>, which must be inside the data dir."""
+    A draft at fountaining that fountain_evidence (with the alert cameras' `alert_rules`) does not confirm is
+    stored at incandescence. Evidence overlays go to out_dir/run<run_id>, which must be inside the data dir."""
     volcano = ctx.sources.volcanoes[volcano_id]
     measurements = [verify(ctx.conn, m, ctx.now) for m in draft.measurements]
     evidence, notes = [], []
@@ -318,14 +364,21 @@ def build_bulletin(ctx: ToolContext, volcano_id: str, run_id: int, draft: Bullet
     unsupported = [q for q in quoted_numbers(f"{draft.headline}\n{draft.body}") if not supports(q, checked)]
     notes += [f"the text quotes {written}, which no checked measurement supports"
               for written in dict.fromkeys(q.written for q in unsupported)]
+    fields = draft.model_dump(exclude={"measurements", "evidence"})
+    level_checked = True
+    if draft.activity_level == "fountaining" and fountain_evidence(ctx.conn, volcano_id, alert_rules or {},
+                                                                    ctx.now) is None:
+        fields["activity_level"], level_checked = "incandescence", False
+        notes.append(f"Muse Spark called this fountaining, but nothing stored by {to_iso(ctx.now)} confirms a lava "
+                     "fountain: the level shows glowing lava")
     names = {"name": volcano.name, "agency": volcano.official_agency, "url": volcano.official_url}
     return Bulletin(
         run_id=run_id, volcano=volcano_id, volcano_name=volcano.name, utc_offset_hours=volcano.utc_offset_hours,
         clock=to_iso(ctx.now), created_at=to_iso(wall_clock()),
-        **draft.model_dump(exclude={"measurements", "evidence"}), measurements=measurements, evidence=evidence,
+        **fields, measurements=measurements, evidence=evidence,
         wind=run_wind(ctx.conn, run_id), official_agency=volcano.official_agency, official_url=volcano.official_url,
         disclaimer=DISCLAIMER.format(**names), notes=notes,
-        text_checked=not unsupported)
+        text_checked=not unsupported, level_checked=level_checked)
 
 
 def store_bulletin(conn: sqlite3.Connection, bulletin: Bulletin) -> Bulletin:
@@ -356,20 +409,34 @@ class Written:
 
 
 def write_bulletin(client: MetaClient, ctx: ToolContext, volcano_id: str, out_dir: Path, *, task: str | None = None,
+                   alert_rules: Mapping[str, CameraRule] | None = None,
                    wall_clock: Callable[[], datetime] = utcnow, **agent: Any) -> Written:
     """Run the agent at the context's clock with a bulletin as its final answer, then check, store and publish it
-    in out_dir (inside the data dir). The task recalls the last bulletin before the clock, so the agent can say
-    what changed. Other keyword arguments go to run_agent."""
+    in out_dir (inside the data dir). The task says whether a lava fountain is confirmed (fountain_evidence with
+    the alert cameras' `alert_rules`; a draft at fountaining with none goes back once) and recalls the last
+    bulletin before the clock, so the agent can say what changed. Other keyword arguments go to run_agent."""
     volcano = ctx.sources.volcanoes[volcano_id]
+    rules = alert_rules or {}
     task = task or DEFAULT_TASK.format(name=volcano.name)
+    confirmed = fountain_evidence(ctx.conn, volcano_id, rules, ctx.now)
+    task += "\nFountain check by the code: " + (FOUNTAIN_CONFIRMED.format(confirmed) if confirmed
+                                                  else FOUNTAIN_UNCONFIRMED)
     previous = ctx.conn.execute(
         "SELECT clock, activity_level, headline FROM bulletins WHERE volcano = ? AND clock < ? "
         "ORDER BY clock DESC, id DESC LIMIT 1", (volcano_id, to_iso(ctx.now))).fetchone()
     if previous is not None:
         task += (f"\nYour previous bulletin, at {local_time(previous['clock'], volcano.utc_offset_hours)}, reported "
                  f"{previous['activity_level']}: {previous['headline']}")
+    def level_problem(text: str) -> str | None:
+        try:
+            draft = BulletinDraft.model_validate_json(text)
+        except ValidationError:
+            return None
+        unconfirmed = fountain_evidence(ctx.conn, volcano_id, rules, ctx.now) is None
+        return FOUNTAIN_PROBLEM if draft.activity_level == "fountaining" and unconfirmed else None
+
     run = run_agent(client, ctx, volcano_id, task, finish=BULLETIN_FINISH, text_format=DRAFT_FORMAT,
-                    wall_clock=wall_clock, **agent)
+                    check=level_problem, wall_clock=wall_clock, **agent)
     if run.status not in ("done", "max_turns"):
         return Written(run, None, f"the agent run ended with {run.status}: {run.error}")
     try:
@@ -377,7 +444,7 @@ def write_bulletin(client: MetaClient, ctx: ToolContext, volcano_id: str, out_di
     except ValidationError as exc:
         return Written(run, None, f"the final answer is not a bulletin: {exc.errors()[0]['msg']}")
     bulletin = store_bulletin(ctx.conn, build_bulletin(ctx, volcano_id, run.run_id, draft, out_dir,
-                                                       wall_clock=wall_clock))
+                                                       alert_rules=rules, wall_clock=wall_clock))
     publish(bulletin, ctx.data_dir, out_dir)
     return Written(run, bulletin)
 
@@ -408,7 +475,8 @@ def main(argv: list[str] | None = None) -> None:
         ctx = context_from_settings(settings, conn, http, args.at or utcnow(), sources=sources)
         client = MetaClient.from_env(CostLedger(conn, settings.daily_budget_usd))
         written = write_bulletin(client, ctx, args.volcano, out_dir, max_turns=args.max_turns,
-                                 budget_usd=args.budget, effort=args.effort)
+                                 budget_usd=args.budget, effort=args.effort,
+                                 alert_rules=load_alert_config(settings.alerts_path).cameras)
         print(trace(conn, written.run.run_id))
     if written.bulletin is None:
         print(f"no bulletin: {written.problem}")
