@@ -84,7 +84,8 @@ cameras:
         Estimated. On the Uēkahuna bluff, about 70 m north of the overlook platform in its
         foreground (OSM node 582340071): ground 1,243 m (USGS EPQS) plus 2 m.
     presets:
-      - name: ep55
+      - &k2_ep55
+        name: ep55
         valid_from: "2026-10-17T00:00:00Z"
         valid_until: "2026-10-18T00:00:00Z"
         image_size: [3840, 2160]
@@ -120,3 +121,24 @@ cameras:
         note: >-
           PTZ without a readout; the framing held through episode 55 (frames register within 4 px). The vent is a
           check, not a reference: its bearing depends on the camera's estimated position (+/-75 m at 1,678 m).
+      - <<: *k2_ep55   # the same references and priors: the framing has not changed since episode 55
+        name: live
+        valid_from: "2026-10-18T00:00:00Z"
+        valid_until: null
+        framing:
+          references:
+            - path: frames/kilauea-k2/2026-10-17/20261017T192802Z_75366d46.jpg
+              sha256: 75366d46129bcc0aa85aebba24ca9cb4fa2c17a6c68b2e516732d3ca3a214f72
+              note: Daylight, 09:28 HST after episode 55; matches daylight frames.
+            - path: frames/kilauea-k2/2026-10-17/20261017T123001Z_7ffa63d8.jpg
+              sha256: 7ffa63d848f01209c13def7b90cb2288a680d50167dc192fcd5f7f3e6bcd0551
+              note: Night, 02:30 HST before episode 55, lit by the path lamps; matches dark frames.
+          rows_from: 0.80
+          skip_columns: [0.40, 0.62]
+          source: >-
+            Both frames ship in the episode 55 mirror (frames/**). The compared rows hold the overlook in the
+            foreground; the left-out columns 1,536-2,381 hold the vent (projected at column 1,670), its fountain,
+            glow and plume. Calibrated on K2cam's frames of Oct 16 to Nov 2 (docs/research/calibration_ep55.md).
+        note: >-
+          Live use from Oct 18. A frame is measured only while it shows ep55's framing (vigil.framing); K2cam's
+          frame of Nov 2 20:58Z registers within 4 px of Oct 17.

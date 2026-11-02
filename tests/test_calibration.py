@@ -39,6 +39,22 @@ def test_the_committed_calibration_loads_and_places_kp_and_k2():
     assert {"kilauea-kp", "kilauea-k2"} <= set(calibration.cameras)
     assert calibration.vents["kilauea"].elev_m == 1080
 
+def test_k2cams_live_preset_reuses_ep55s_view_and_checks_its_framing():
+    calibration = load_calibration(REPO / "config" / "calibration.yaml")
+    ep55 = calibration.preset_for("kilauea-k2", datetime(2026, 10, 17, 15, tzinfo=timezone.utc))
+    live = calibration.preset_for("kilauea-k2", datetime(2026, 11, 3, 15, tzinfo=timezone.utc))
+
+    assert (ep55.name, ep55.framing) == ("ep55", None)
+    assert (live.name, live.valid_from, live.valid_until) == (
+        "live", datetime(2026, 10, 18, tzinfo=timezone.utc), None)
+    assert (live.fov, live.roll, live.distortion, live.landmarks, live.image_size) == (
+        ep55.fov, ep55.roll, ep55.distortion, ep55.landmarks, ep55.image_size)
+    assert [r.path for r in live.framing.references] == [
+        "frames/kilauea-k2/2026-10-17/20261017T192802Z_75366d46.jpg",
+        "frames/kilauea-k2/2026-10-17/20261017T123001Z_7ffa63d8.jpg"]
+    assert (live.framing.rows_from, live.framing.skip_columns) == (0.80, (0.40, 0.62))
+
+
 
 def test_preset_for_picks_the_view_in_force(tmp_path):
     calibration = load_calibration(write(tmp_path, TWO_PRESETS))
