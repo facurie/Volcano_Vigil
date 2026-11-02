@@ -2891,4 +2891,50 @@ git commit -m "Show the fountaining alert as a banner under the notice, bounded 
 
 ## Execution notes
 
-(Appended during execution.)
+### Execution notes (2026-11-01, session 12)
+
+**Commits.**
+
+| Task | Commits |
+|---|---|
+| Plan | 7b0f3f8 |
+| 1 | 024067e |
+| 2 | f1fd708 |
+| 3 | efb8fae |
+| 4 | 76ba520, and c86a345 for the review |
+| 5 | 51fac8e |
+| 6–7 | af184d8, 4bdc101, and 8ba2d13 for the review |
+| 8 | 8947ef7, plus e4e758c |
+| 9 | 7d733ff, and dd94617 for the review |
+| 10 | 541384e, and 29942ef for the review |
+| 11 | no code: the bot and the channel (the user), `vigil-telegram check` and `test`, the Space secret (the user) and variable |
+| 12 | the deploy of 5fef62c, which already held Tasks 13–14 |
+| 13 | 8716666, and 5fef62c for the review |
+| 14 | 15aa2b8, and 7901493 and 5e81fa5 for the review |
+| 15 | 0a21bc5 (the write-up); the mirror push |
+| Relay | 8148e82 (the code); the Cloudflare Worker is pending |
+
+The suite went from 597 to 717 tests.
+
+**Deviations from the plan.**
+- **Two plan tests contradicted the plan's code** and were fixed: `(0.0329, "small")` is "ambiguous" with `ambiguous_area` 0.03 (it became `0.0299`, plus `(0.0329, "ambiguous")`), and the Telegram test message says "No es una alerta" with a capital N.
+- **Review of Tasks 6–7** (the watcher; no logic bug, but):
+  - most clock bounds were unpinned: deleting any of them left the tests green. Tests now insert looks and frames after the clock, as a resumed replay leaves them; the implementer killed 17 mutants, the reviewer 20;
+  - **the plan's end text was false for a blind camera:** "No lava fountain on K2cam and V1cam since …" while K2 had last looked 30 min earlier and seen the fountain. The end alert now names only the cameras that missed it twice;
+  - a quiet ambiguous look is stored before Muse Spark is asked, so a failed call never pays SAM twice;
+  - `step()` works in UTC (the budget tag and the alert folder took the clock's own zone) and refuses a naive clock;
+  - SAM and Muse Spark failures, `PAIR_WITHIN`, `SLACK` and the `_seen` cursor got tests.
+- **Review of Task 9:** `send_pending` posts oldest first (pinned: after an outage an end must never come before its onset) and counts a refused caption or a bad stored body as an attempt instead of failing every step.
+- **Review of Task 13:** the alerts replay is tested over a database that already holds every frame (the real case inside `run_replay`) and after an interrupted tick; `_minutes` rounds before printing, so it never prints `-0 min`.
+- **Task 10 before Task 9** left `test_the_entry_point_runs_the_existing_clis_with_the_projects_arguments` red for one commit (541384e), until Task 9 added the `vigil-alerts` script.
+- **`vigil-telegram check` crashed on the Windows console** printing "Kīlauea" (cp1252); it reconfigures stdout like the other CLIs (e4e758c).
+- **Hugging Face blocks `api.telegram.org` from Spaces.** The first start logged `Telegram check failed … getMe: ConnectTimeout … handshake operation timed out`; forum threads from 2026 say the block is intended. The user chose a Cloudflare Worker relay on their free account: the code reads it from `TELEGRAM_API_URL` (8148e82), and the Worker's code, its limits and the steps are in `docs/DEPLOY.md`. **The Worker is pending (the user deferred it at the end of the session), so the Space stores and shows the alerts but cannot post them yet;** acceptance point 4's "the Space's log shows `Telegram: … may post: yes`" is open. The local test message did arrive.
+- **The overflows were closer to the threshold than the probes said:** one V1 dome at 02:19 HST Oct 17 covered 0.054 of the frame (probes: ≤ 0.033), against the 0.06 threshold. Muse Spark called it `overflow_or_dome`. The thresholds were not changed.
+- **The end alert came at 09:11**, the late edge of the simulated 09:07–09:11: V1 missed at 09:03 and 09:05, but K2's last look with a sighting (09:02, 0.0007 of the frame) held the end back until K2's misses at 09:08 and 09:10.
+
+**Numbers.**
+- Replays: overflows 0 alerts, 259 SAM looks, 1 Muse Spark call, $0.65; episode 55 onset seen 03:07 and raised 03:10, end last seen 09:02 and raised 09:11, 134 looks, 1 Muse Spark call, $0.34.
+- The live Space's first alerts step (23:41Z) looked at K2's 23:32Z frame: no fountain. The V1 catch-up at the first start took about 10 minutes, as the plan expected.
+- The mirror now holds 542 files (the alerts tables, 30 warm-up frames and the two alert frames).
+- Task 15 Step 7: the two replayed episode 55 alerts were posted from this machine to the channel as messages 3 and 4, each headed "REPLAY of episode 55 (2026-10-17): not a live alert" (message 2 is the test message).
+- Dashboard screenshots (1440 and 500 px) of the episode 55 replay: no banner at 03:05, "Fountaining seen 03:07" at 03:30, "Fountaining stopped 09:02" at 09:20; the banner's frame link serves the alert's image and `/media/frames/…` stays refused.

@@ -19,7 +19,7 @@
    - `py -3.12 -m venv .venv`
    - `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
    - add `MODEL_API_KEY` to `.env`
-3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (597 passing at the end of Phase 7, session 10; they include the dashboard's JS helper tests, run with node).
+3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (717 passing at the end of Phase 8, session 12; they include the dashboard's JS helper tests, run with node).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
    - English code, comments and docs; bulletins in ES and EN.
@@ -167,8 +167,11 @@ vigil/
   phases.py               episode phases: SAM vs Muse Spark video (exists, phase 5)
   web/views.py            the dashboard's queries, one DB at one clock (exists, phase 6)
   web/app.py web/static/  FastAPI + dashboard; vigil-web          (exist, phase 6)
+  alerts.py               fountaining onset/end alerts; vigil-alerts (exists, phase 8)
+  telegram.py             Telegram Bot API client; vigil-telegram (exists, phase 8)
 config/prompts.yaml       SAM phrases per target/camera kind     (exists, phase 1)
 config/calibration.yaml   per camera and PTZ preset              (exists, phase 3)
+config/alerts.yaml        alert cameras and their size thresholds (exists, phase 8)
 ```
 
 ---
@@ -320,22 +323,25 @@ Decided on 2026-11-01: a Hugging Face Docker Space (PRO), after Oracle Cloud tur
 
 Bulletins come once an hour, so the episode 55 replay first reported fountaining at 04:00 HST, 41 min after the 03:19 onset, and stopped reporting it 27 min after the 09:03 end ([replay_ep55.md](research/replay_ep55.md)). SAM already sees the fountain on V1cam at 03:25 ([tracking_ep55.md](research/tracking_ep55.md)), and HVO's public onset notice came at 03:43 ([episode55.md](research/episode55.md)).
 
-- [ ] **Onset and end detection:**
-  - Every new frame goes through the local checks. A change near the vent triggers a SAM confirmation on that frame, and Muse Spark is asked only when SAM leaves it ambiguous.
-  - One state per volcano (quiet → fountaining → ended), with the frame that shows each change.
-  - It must tell a fountain from the overflows that came before episode 55 (south and west vents).
-- [ ] **False-alarm test set:** backfill the Oct 16–17 overflow frames from AshCam (they expire around Nov 16). No alert may fire on them, nor on the episode 55 frames before 03:19 HST.
-- [ ] **The alert:** ES and EN text, the frame with its mask, the detection time, the disclaimer and the link to HVO.
-  - It is stored in the database and shown as a banner on the dashboard, live and in replay, bounded by the clock.
-  - It is sent to a public Telegram channel.
-- [ ] **Telegram bot and channel**, set up together in the Phase 8 session:
-  - Claude guides the BotFather steps, which need the user's own Telegram account, and the creation of the public channel with the bot as its admin.
-  - The user puts the token into `.env` and the Space secrets.
-  - A check confirms the token and finds the channel's chat id without printing the token.
-- [ ] **Replay:** the episode 55 replay emits the alerts at their simulated times, and its report compares them with the onset (03:19), HVO's onset notice (03:43) and the end (09:03).
-- [ ] Deploy the alerts to the Space before Nov 2, when the episode 56 window opens.
+Plan and execution notes: [2026-11-01-phase-8-alerts.md](superpowers/plans/2026-11-01-phase-8-alerts.md). Calibration and replay results: [alerts_calibration.md](research/alerts_calibration.md).
 
-**Acceptance:** on the episode 55 replay, the onset alert fires between 03:19 and 03:43 HST, and the end alert after 09:03 with a latency the phase plan sets from the stored frames. No alert fires on the overflow frames. A test alert arrives on the Telegram channel.
+- [x] **Onset and end detection** (`vigil/alerts.py`, `vigil-alerts`, every minute next to ingest and the pipeline):
+  - Free local checks skip dark, foggy and stale frames and say whether lava is visible. SAM 3.1 image mode (`lava fountain`) looks at V1cam and K2cam every 8 min while lava is visible, every 30 min otherwise, every 6 min while fountaining, and at once on the next frame after an episode-size sighting or a miss.
+  - A sighting is episode-size by its mask's share of the frame (`config/alerts.yaml`: V1 0.06, K2 0.01, set before any replay). Muse Spark compares the frame with the camera's frame 30 min earlier for ambiguous sizes and confirms **every** onset.
+  - One state per volcano (quiet → fountaining → quiet), held in the `alerts` table, so a restart keeps it. Onset: two consecutive episode-size sightings plus Muse Spark's "sustained fountain". End: every camera that saw the fountain missed it twice or went blind.
+  - V1cam is ingested live for the alerts only (`track: false`): the pipeline gives it free local verdicts and never tracks it hourly.
+- [x] **False-alarm test set:** the Oct 16–17 overflow frames were backfilled (V1 863, K2 863, KP 345, F1 116). No alert fired on their 29 h.
+- [x] **The alert:** ES and EN text written by the code from stored times, the frame with its mask, the times seen and raised, the disclaimer and the link to HVO. It says "lava fountaining seen", never "episode declared".
+  - It is stored in the database and shown as a banner under the notice on the dashboard (`/api/alerts`), live and in replay, bounded by the clock; the replay's results add an alerts table.
+  - It is posted to the public Telegram channel [Volcano Vigil · Kīlauea](https://t.me/volcano_vigil_kilauea) by `@volcano_vigil_bot` (`vigil/telegram.py`, `vigil-telegram check|test`). Locally it posts; Hugging Face blocks `api.telegram.org` from Spaces, so the Space needs the relay below.
+- [ ] **The Telegram relay for the Space** (pending, with the user): a Cloudflare Worker that forwards only this bot's calls, set in the Space variable `TELEGRAM_API_URL`. The code supports it (8148e82); the Worker's code and the steps are in [DEPLOY.md](DEPLOY.md). Until then the Space stores and shows the alerts but cannot post them.
+- [x] **Telegram bot and channel:** set up by the user; the token is in `.env` and the Space secrets and is never printed or logged (httpx at WARNING, errors redacted). The test message arrived on the channel.
+- [x] **Replay:** `vigil-replay --episode 55` runs the alerts on a one-minute clock, and `vigil-replay --quiet overflows` runs them alone over the overflow window. The report compares them with the onset (03:19), HVO's notices (03:43, 09:11) and the end (09:03).
+- [x] Deployed to the Space on 2026-11-01 (23:30Z), before the episode 56 window.
+
+**Acceptance** (changed with the user on 2026-11-01: it follows the fountain V1cam shows from 03:03 HST, not HVO's 03:19 onset, which is defined by tremor, tilt and the fountain doubling; see [alerts_calibration.md](research/alerts_calibration.md)): the onset alert's first sighting falls between 03:03 and 03:43 HST and the alert comes no later than HVO's notice (03:43); the end alert's last sighting is 09:01–09:03 and the alert comes between 09:03 and 09:15; no alert fires on the overflow frames; a test message arrives on the Telegram channel.
+
+**Result:** onset seen 03:07 (V1cam), alert 03:10, 33 min before HVO's notice; end last seen 09:02 (K2cam), alert 09:11, the minute of HVO's end notice; 0 alerts on the overflows. The largest overflow dome covered 0.054 of V1's frame, just under the 0.06 threshold, and Muse Spark called it "overflow or dome".
 
 ## Phase 9: Tue Nov 3. Validation report, README, polish
 
@@ -363,7 +369,7 @@ None left: the Telegram notifications became part of Phase 8.
 
 ## Budget
 
-Spent so far: $3.35 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger; Phase 6 made no Meta API call; Phase 7 $0 for the mirror, the bucket and the Space, plus $0.16 for the live pipeline's first hour on 2026-11-01). From Phase 7 on, the live Space spends every day under its own cap; its ledger is the bucket's copy of the database ([DEPLOY.md](DEPLOY.md)). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
+Spent so far: $5.09 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality gate $0.33 and episode 55 tracking $0.28; Phase 3 made no Meta API call; Phase 4 $0.10: tool-calling probes $0.01, two agent replays $0.09; Phase 5 $2.28: probes $0.15, a smoke bulletin $0.05, replay run 1 $1.05 and run 2 $1.03, each in its own database's ledger; Phase 6 made no Meta API call; Phase 7 $0 for the mirror, the bucket and the Space, plus $0.16 for the live pipeline's first hour on 2026-11-01; Phase 8 $1.74: calibration probes $0.75, the overflows replay $0.65 and the episode 55 alerts replay $0.34, each in its own database's ledger). From Phase 8 on, the live alerts may spend $0.75 a day inside the Space's $5 cap, and the pipeline stops at $4.25. From Phase 7 on, the live Space spends every day under its own cap; its ledger is the bucket's copy of the database ([DEPLOY.md](DEPLOY.md)). Estimate: about $3–5/day with the live agent, about $40 in total out of the $150 credit. `DAILY_BUDGET_USD` caps every day.
 
 ## Risks and mitigations
 
@@ -375,6 +381,7 @@ Spent so far: $3.35 (smoke test $0.05, SAM prompt tuning $0.15, Phase 2 quality 
 | AshCam keeps about 31 days, and its API is undocumented | Live: automatic fallback to `M.jpg` per camera (done in Phase 1). Replay: local copies plus the required HF dataset mirror, loaded at startup (Phase 7) |
 | Volcano quiet during judging | The replay is the centerpiece; live mode shows the quality gate and camera status |
 | Episode 56 (HVO forecast of Oct 30: Nov 2–9) erupts during the hackathon or the judging | Keep `vigil-ingest` running locally from Oct 31. On restart it catches up gaps of up to 1 h by itself; `vigil-backfill` fills longer ones while AshCam keeps them (about 31 days). Phase 8's alerts run on the Space before Nov 2 |
-| The overflows before an episode glow like a fountain and fire a false onset alert | Phase 8's test set of Oct 16–17 overflow frames: no alert may fire on them |
+| The overflows before an episode glow like a fountain and fire a false onset alert | Phase 8's test set of Oct 16–17 overflow frames: no alert fired on them. The largest dome covered 0.054 of V1's frame against a 0.06 threshold, so Muse Spark confirms every onset; episode 56 is the first out-of-sample test |
+| Hugging Face blocks `api.telegram.org` from Spaces (seen on 2026-11-01), and could block the relay too | The code posts through a relay set in `TELEGRAM_API_URL` (a Cloudflare Worker, pending); without one, or if the relay is blocked too, the alerts are still stored and shown on the dashboard, and the log says `not posted` ([DEPLOY.md](DEPLOY.md)) |
 | Session quota runs out mid-task | This file plus the memory notes; commit often |
 | The free Space sleeps after 48 h without visitors, or the Hub restarts it | The owner opens the URL every 24 h; the state is saved every 5 minutes and restored at start ([DEPLOY.md](DEPLOY.md)) |
