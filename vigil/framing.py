@@ -15,13 +15,20 @@ it stands within FOOT_PX px of the vent's projection, which a zoom or a turn lar
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from vigil.calibration import Framing
+from vigil import masks
+from vigil.calibration import Framing, Preset
+from vigil.timeutil import parse_utc, to_iso
 
 ANALYSIS_WIDTH = 960          # px; one analysis pixel is 4 px of a 3840 px frame
 MAX_SHIFT = 2                 # analysis px: 8 px of a 4K frame, about 4 m at K2cam's fountain
@@ -74,3 +81,64 @@ def foot(mask: np.ndarray, left: int, top: int) -> np.ndarray | None:
     bottom = rows.max()
     base = cols[rows >= bottom - max(2, int(0.02 * (bottom - rows.min())))]
     return np.array([left + base.mean(), top + bottom], dtype=float)
+
+
+class FramingGuard:
+    """Decides frame by frame whether one camera kept a preset's framing, caching every comparison."""
+
+    def __init__(self, conn: sqlite3.Connection, data_dir: str | Path, camera_id: str):
+        self._conn, self._data_dir, self._camera_id = conn, Path(data_dir), camera_id
+        self._references: dict[str, list[np.ndarray]] = {}       # per preset name
+        self._compared: dict[int, tuple[bool, float]] = {}        # per frame id: confirmed, mean brightness
+
+    def keeps(self, preset: Preset, frame: sqlite3.Row, vent_pixel: np.ndarray) -> bool:
+        """Whether the frame (a `frames` row) still shows the preset's framing; `vent_pixel` is the vent's
+        projection in the preset's view. Raises ValueError when a reference frame is missing or another file."""
+        confirmed, bright = self._compare(preset, frame["id"], frame["path"])
+        if confirmed:
+            return True
+        if bright >= DARK:
+            return False
+        feet = [foot(masks.decode(json.loads(row["mask_rle"])), row["box_left"], row["box_top"])
+                for row in self._conn.execute(
+                    """SELECT d.mask_rle, d.box_left, d.box_top FROM detections d
+                       JOIN tracks t ON t.id = d.track_id JOIN tracking_runs r ON r.id = t.run_id
+                       WHERE d.frame_id = ? AND r.target = 'fountain'""", (frame["id"],))]
+        if not any(f is not None and np.hypot(*(f - vent_pixel)) <= FOOT_PX for f in feet):
+            return False
+        earlier = self._conn.execute(
+            "SELECT id, path FROM frames WHERE camera_id = ? AND captured_at >= ? AND captured_at < ? "
+            "ORDER BY captured_at DESC",
+            (self._camera_id, to_iso(parse_utc(frame["captured_at"]) - INHERIT), frame["captured_at"])).fetchall()
+        return any(self._compare(preset, row["id"], row["path"])[0] for row in earlier)
+
+    def _compare(self, preset: Preset, frame_id: int, path: str) -> tuple[bool, float]:
+        if frame_id not in self._compared:
+            references = self._signatures(preset)
+            try:
+                with Image.open(self._data_dir / path) as image:
+                    frame, bright = signature(image, preset.framing)
+            except OSError:
+                self._compared[frame_id] = (False, 255.0)  # a frame that cannot be read confirms nothing
+            else:
+                self._compared[frame_id] = (any(match(r, frame).same for r in references), bright)
+        return self._compared[frame_id]
+
+    def _signatures(self, preset: Preset) -> list[np.ndarray]:
+        if preset.name not in self._references:
+            signatures = []
+            for reference in preset.framing.references:
+                try:
+                    data = (self._data_dir / reference.path).read_bytes()
+                except OSError:
+                    raise ValueError(f"preset {preset.name}: reference frame {reference.path} is missing "
+                                     f"from {self._data_dir}") from None
+                if hashlib.sha256(data).hexdigest() != reference.sha256:
+                    raise ValueError(f"preset {preset.name}: {reference.path} is not the reference frame it names")
+                with Image.open(io.BytesIO(data)) as image:
+                    if image.size != tuple(preset.image_size):
+                        raise ValueError(f"preset {preset.name}: reference frame {reference.path} is "
+                                         f"{image.size[0]}x{image.size[1]}, not the preset's size")
+                    signatures.append(signature(image, preset.framing)[0])
+            self._references[preset.name] = signatures
+        return self._references[preset.name]
