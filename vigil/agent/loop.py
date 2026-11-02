@@ -9,10 +9,12 @@ run. The input tokens cost the same either way. The instructions, tools and
 reasoning effort go with every turn. Muse Spark may call several tools in one
 turn; they run one after another, in order. A run ends when Muse Spark
 answers without calling a tool (done), when it still calls tools on its last
-turn (max_turns; it is told to answer on that turn), when a call would push
-the run's Meta spend (its own turns plus the SAM and Muse Spark calls its
+turn (max_turns; it is told to answer on that turn), when a model turn would
+push the run's Meta spend (its own turns plus the SAM and Muse Spark calls its
 tools make) past `budget_usd` or the day past the daily cap (budget), or when
-the API fails (error). Every turn and tool call is a row of `agent_steps`
+the API fails (error). A tool call that would exceed the budget does not end
+the run: the model gets it as a tool error, and the run ends at the next
+turn's check. Every turn and tool call is a row of `agent_steps`
 under one `agent_runs` row: the trace the dashboard shows.
 
     vigil-agent --volcano kilauea --at 2026-10-17T05:00-10:00
