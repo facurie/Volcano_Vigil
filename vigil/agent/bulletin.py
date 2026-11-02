@@ -178,7 +178,7 @@ class Quote(NamedTuple):
     """A length or an area written in a text, in metres or square metres."""
 
     value: float
-    half_step: float  # half a unit of its last written digit
+    half_step: float  # half a unit of its last significant digit: the zeros ending a whole number do not count
     dimension: Literal["length", "area"]
     written: str
 
@@ -191,9 +191,13 @@ _QUOTE = re.compile(rf"(?<![\w.,])(?P<value>{_NUMBER})(?:\s*(?:±|\+/-)\s*(?P<si
 
 
 def _quote(number: str, unit: str, kilo: bool, dimension: str) -> Quote:
-    decimals = len(number.split(".")[1]) if "." in number else 0
+    if "." in number:
+        step_digits = -len(number.split(".")[1])  # a written decimal zero counts: 7.0 is good to 0.05
+    else:
+        digits = number.replace(",", "")  # trailing zeros of a whole number are rounding: 7,000 is good to 500
+        step_digits = len(digits) - len(digits.rstrip("0")) if digits.strip("0") else 0
     factor = (1000 if kilo else 1) ** (2 if dimension == "area" else 1)
-    return Quote(round(float(number.replace(",", "")) * factor, 6), round(0.5 * 10 ** -decimals * factor, 6),
+    return Quote(round(float(number.replace(",", "")) * factor, 6), round(0.5 * 10 ** step_digits * factor, 6),
                  dimension, f"{number} {unit}")  # type: ignore[arg-type]
 
 

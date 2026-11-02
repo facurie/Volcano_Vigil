@@ -159,13 +159,17 @@ def test_a_quoted_number_is_verified_within_the_rounding_of_the_tools(
     ("rose 241 m", [(241, 0.5, "length", "241 m")]),
     ("a 1.2 km column", [(1200, 50, "length", "1.2 km")]),
     ("6.951 ± 0.429 km", [(6951, 0.5, "length", "6.951 km"), (429, 0.5, "length", "0.429 km")]),
-    ("an area of 1,200 m2 and 3 square kilometres", [(1200, 0.5, "area", "1,200 m2"),
+    ("an area of 1,200 m2 and 3 square kilometres", [(1200, 50, "area", "1,200 m2"),
                                                       (3_000_000, 500_000, "area", "3 square kilometres")]),
-    ("1.5 km2 and 80 m²", [(1_500_000, 50_000, "area", "1.5 km2"), (80, 0.5, "area", "80 m²")]),
-    ("300 metres and 2 kilometers and 5 meters", [(300, 0.5, "length", "300 metres"),
+    ("1.5 km2 and 80 m²", [(1_500_000, 50_000, "area", "1.5 km2"), (80, 5, "area", "80 m²")]),
+    ("300 metres and 2 kilometers and 5 meters", [(300, 50, "length", "300 metres"),
                                                    (2000, 500, "length", "2 kilometers"),
                                                    (5, 0.5, "length", "5 meters")]),
     ("(6,951 m).", [(6951, 0.5, "length", "6,951 m")]),
+    ("about 7,000 ± 400 m", [(7000, 500, "length", "7,000 m"), (400, 50, "length", "400 m")]),  # zeros are rounding
+    ("6,950 m", [(6950, 5, "length", "6,950 m")]),
+    ("7.0 km and 0.50 km", [(7000, 50, "length", "7.0 km"), (500, 5, "length", "0.50 km")]),  # a written decimal counts
+    ("0 m", [(0, 0.5, "length", "0 m")]),
     ("winds of 3.3 m/s", []),
     ("at 04:55 local time", []),
     ("a bearing of 224° and 12 minutes", []),
@@ -208,6 +212,24 @@ def test_a_body_number_nothing_checked_supports_makes_the_bulletin_unverified_wi
 
     assert bulletin.measurements[0].verified and not bulletin.text_checked and not bulletin.verified
     assert bulletin.notes == ["the text quotes 6,000 m, which no checked measurement supports"]
+
+
+@pytest.mark.parametrize("body, text_checked", [
+    ("The plume top reached about 7,000 ± 400 m.", True),    # 7,000 is good to 500 m, 400 to 50 m
+    ("The plume top reached 6,950 ± 430 m.", True),
+    ("The plume top reached 6,000 m.", False),               # 951 m off, and 6,000 is good to 500 m only
+    ("The plume top reached 7.0 ± 0.4 km.", True),
+    ("The plume top reached 7.5 ± 0.4 km.", False),          # 7.5 km is good to 50 m
+    ("The plume top reached 7,000 ± 500 m.", False),         # 500 is good to 50 m: 429 is 71 off
+])
+def test_a_round_numbers_trailing_zeros_are_rounding_not_precision(conn, store, tmp_path, body, text_checked):
+    frame_id = plume_frame(conn, store)
+    draft = BulletinDraft.model_validate({**DRAFT, "body": body, "measurements": [quoted(frame_id).model_dump()],
+                                          "evidence": []})
+
+    bulletin = build_bulletin(context(conn, tmp_path), "kilauea", 3, draft, tmp_path / "bulletins")
+
+    assert bulletin.text_checked is text_checked
 
 
 def test_a_body_whose_numbers_are_all_supported_stays_verified(conn, store, tmp_path):
