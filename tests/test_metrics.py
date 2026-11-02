@@ -7,7 +7,7 @@ import pytest
 from conftest import make_jpeg
 from vigil import db, masks
 from vigil.calibration import Calibration, CameraCalibration, Geometry, HorizonPixel, Preset, Site, VentPixel
-from vigil.geometry import View, direction, horizon_dip, local_en, sight
+from vigil.geometry import View, direction, horizon_dip, local_en, on_vent_plane, sight
 from vigil.ingest.store import FrameStore
 from vigil.metrics import main, measure_mask, measure_window
 from vigil.timeutil import to_iso
@@ -61,12 +61,50 @@ def test_a_mask_cut_off_by_the_top_of_the_frame_has_no_top():
     assert "area" in results
 
 
-def test_area_counts_pixels_at_the_vents_distance():
+def test_area_counts_pixels_on_the_vent_plane():
     results = by_metric(measure_mask(geometry(), block(10, 20), 950, 400, "fountain", np.random.default_rng(0)))
 
-    # 200 pixels of (1005 m / 1000 px) squared
-    assert results["area"].value == pytest.approx(200 * (np.linalg.norm(sight(0.0, 1000.0, -100.0)) / 1000) ** 2)
+    # a level camera looks square at the plane 1000 m away: 200 pixels of (1000 m / 1000 px) squared
+    assert results["area"].value == pytest.approx(200, rel=1e-3)
     assert results["area"].unit == "m2"
+
+
+def test_the_tops_and_the_rng_do_not_depend_on_the_area():
+    # recorded before the area was measured band by band: the top heights stay bit-identical
+    rng = np.random.default_rng(7)
+
+    results = by_metric(measure_mask(geometry(), block(60, 20), 950, 340, "plume", rng))
+
+    assert results["top_height"].value == 300.0682780580605
+    assert results["top_height"].sigma == 10.94611354788139
+    assert results["top_altitude"].value == 1400.0682780580605
+    assert results["top_altitude"].sigma == 10.94611354788139
+    assert rng.random() == 0.4481984561802025  # the area drew no random numbers
+
+
+def test_area_of_a_square_high_above_the_vent_is_its_true_size():
+    # a camera 1 km from the vent tilted 47 degrees up; a 300 m x 400 m rectangle on the vent plane, 1.0 to 1.4 km
+    # above the vent, seen at 42 to 52 degrees, where a pixel covers about 4 m2 against 1 m2 at the vent's distance
+    n = 100
+    view = View(np.zeros(n), np.full(n, 47.0), np.zeros(n), np.full(n, 1000.0), 960.0, 540.0)
+    vent = np.repeat(sight(0.0, 1000.0, -100.0)[None], n, axis=0)
+    tilted = Geometry("test-cam", "test", view, np.full(n, 1200.0), vent, np.full(n, 1100.0), np.full(n, 0.13),
+                      np.zeros(n))
+    cols, rows = np.meshgrid(np.arange(600, 1320), np.arange(240, 840))
+    pixels = np.stack([cols.ravel(), rows.ravel()], -1)[None].astype(float)
+    one = View(view.yaw[:1], view.pitch[:1], view.roll[:1], view.focal[:1], view.cx, view.cy)
+    _, across, rise = on_vent_plane(one, pixels, vent[:1])
+    height = rise[0] + 100.0  # above the vent
+    inside = (np.abs(across[0]) <= 150) & (height >= 1000) & (height <= 1400)
+    mask = np.zeros(cols.shape, dtype=bool)
+    mask[rows.ravel()[inside] - 240, cols.ravel()[inside] - 600] = True
+    assert mask.sum() > 5000
+
+    area = by_metric(measure_mask(tilted, mask, 600, 240, "plume", np.random.default_rng(0)))["area"].value
+
+    assert area == pytest.approx(300 * 400, rel=0.02)
+    old = mask.sum() * (np.linalg.norm(sight(0.0, 1000.0, -100.0)) / 1000) ** 2
+    assert abs(old - 300 * 400) > 0.5 * 300 * 400  # one scale for the whole mask is far off
 
 
 @pytest.mark.parametrize("left, offset_sign, bearing", [(1060, 1, 90.0), (821, -1, 270.0)],

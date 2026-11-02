@@ -6,8 +6,9 @@ of sight (vigil.geometry.on_vent_plane):
 - top_height: metres above the vent, and top_altitude: metres above sea
   level, of the mask's highest pixel. A mask that reaches the frame's top
   edge is cut off, so it gets neither.
-- area: the mask's pixels times the square of the metres per pixel at the
-  vent's distance (m2).
+- area: the mask's pixels times the area one pixel covers on that plane
+  (m2), summed over up to 32 bands of rows because the pixel's footprint
+  grows with elevation and off-axis angle.
 - drift_offset and drift_bearing, plumes only: how far the mask's centroid
   sits across the line of sight from the vent (metres, positive to the
   right) and the bearing of that side. One camera sees only the part of the
@@ -42,7 +43,8 @@ from vigil.timeutil import parse_utc, to_iso, utcnow
 SAMPLES = 1000
 MASK_EDGE_PX = 3.0  # uncertainty of a SAM mask's edge, in frame pixels
 LEAN_SIGMA_DEG = {"plume": 10.0, "fountain": 5.0, "incandescence": 5.0}  # tilt along the line of sight
-CUT_OFF_ROWS = 2    # a mask whose top lies in the frame's first rows runs off the frame
+AREA_BANDS = 32     # the most bands of rows an area is summed over
+CUT_OFF_ROWS = 2   # a mask whose top lies in the frame's first rows runs off the frame
 
 
 @dataclass(frozen=True)
@@ -73,8 +75,7 @@ def measure_mask(geometry: Geometry, mask: np.ndarray, left: int, top: int, targ
         altitude = geometry.camera_elev + rise[:, 0]
         results += [_summary("top_height", altitude - geometry.vent_elev, "m"),
                     _summary("top_altitude", altitude, "m")]
-    metres_per_px = np.linalg.norm(geometry.vent, axis=-1) / geometry.view.focal
-    results.append(_summary("area", rows.size * metres_per_px ** 2, "m2"))
+    results.append(_summary("area", _plane_area(geometry, left + cols, top + rows, k), "m2"))
     if target == "plume":
         centroid = np.zeros((samples, 1, 2))
         centroid[..., 0], centroid[..., 1] = left + cols.mean(), top + rows.mean()
@@ -85,6 +86,31 @@ def measure_mask(geometry: Geometry, mask: np.ndarray, left: int, top: int, targ
         results += [_summary("drift_offset", across[:, 0], "m"),
                     Measurement("drift_bearing", float(bearing[0]), float(turn[1:].std()), "deg")]
     return results
+
+
+def _plane_area(geometry: Geometry, cols: np.ndarray, rows: np.ndarray, k: np.ndarray) -> np.ndarray:
+    """Area on the vent plane of the pixels at these columns and rows, per sample (m2).
+
+    What a pixel covers there changes with elevation and angle off the axis,
+    so the mask's rows are cut into bands: each band's pixel count times the
+    area of one pixel at the band's mean column and row, from the plane
+    points half a pixel to either side of it.
+    """
+    first = rows.min()
+    bands = min(AREA_BANDS, rows.max() - first + 1)
+    band = (rows - first) * bands // (rows.max() - first + 1)
+    count = np.bincount(band, minlength=bands)
+    used = count > 0
+    column = np.bincount(band, weights=cols, minlength=bands)[used] / count[used]
+    row = np.bincount(band, weights=rows, minlength=bands)[used] / count[used]
+    samples = len(geometry.view.focal)
+    pixel = np.zeros((samples, 4 * used.sum(), 2))
+    pixel[..., 0] = np.tile(np.concatenate([column + 0.5, column - 0.5, column, column]), (samples, 1))
+    pixel[..., 1] = np.tile(np.concatenate([row, row, row + 0.5, row - 0.5]), (samples, 1))
+    _, across, rise = on_vent_plane(geometry.view, pixel, geometry.vent, k=k)
+    n = used.sum()
+    local = np.abs(across[:, :n] - across[:, n:2 * n]) * np.abs(rise[:, 2 * n:3 * n] - rise[:, 3 * n:])
+    return (count[used] * local).sum(axis=1)
 
 
 def _noise(rng: np.random.Generator, sigma: float, samples: int) -> np.ndarray:
