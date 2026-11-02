@@ -13,8 +13,8 @@ At every step (every minute live, every simulated minute in a replay), for each 
    apart, and Muse Spark's word that the fountain is sustained and larger than before (asked once, unless it
    already confirmed one of the two). End, while fountaining: every camera that saw this episode's fountain has
    missed it on its last two looks or has not looked for BLIND_AFTER, and at least one has missed it twice.
-Each look is a row of alert_checks, and each change an alert (the alerts table) with its texts in English and
-Spanish, the frame with its mask, the disclaimer and the link to the official agency. The state lives in the alerts
+Each look is a row of alert_checks, and each change an alert (the alerts table) with its text, the frame with its
+mask, the disclaimer and the link to the official agency. The state lives in the alerts
 table, so a restart or a resumed replay keeps it. Nothing in a step looks past `now`. The live loop also posts new
 alerts to Telegram (vigil.telegram); a replay never does.
 
@@ -45,7 +45,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from vigil import db, masks
-from vigil.agent.bulletin import COLORS, DISCLAIMER, DISCLAIMER_ES, OVERLAY_WIDTH
+from vigil.agent.bulletin import COLORS, DISCLAIMER, OVERLAY_WIDTH
 from vigil.agent.loop import context_from_settings
 from vigil.agent.tools import ToolContext
 from vigil.config import Camera, ConfigError, Volcano, load_sources
@@ -130,26 +130,18 @@ def size_of(sighting: Sighting | None, rule: CameraRule) -> Size:
 
 
 HEADLINES = {
-    "onset": ("Lava fountaining seen at the summit of {name}", "Fuente de lava visible en la cumbre del {name}"),
-    "end": ("Lava fountaining has stopped at the summit of {name}",
-            "Terminaron las fuentes de lava en la cumbre del {name}"),
+    "onset": "Lava fountaining seen at the summit of {name}",
+    "end": "Lava fountaining has stopped at the summit of {name}",
 }
 TEXTS = {
     "onset": (
         "{camera} shows a lava fountain far larger than the overflows before it: at {seen} and again at {when} "
-        "local time ({utc} UTC, {date}). Only {agency} declares an eruptive episode.",
-        "{camera} muestra una fuente de lava mucho mayor que los desbordes previos: a las {seen} y de nuevo a las "
-        "{when}, hora local ({utc} UTC, {date}). Solo {agency} declara un episodio eruptivo."),
+        "local time ({utc} UTC, {date}). Only {agency} declares an eruptive episode."),
     "end": (
         "No lava fountain on {cameras} since {seen} local time, when {seen_by} last showed one; confirmed at {when} "
-        "({utc} UTC, {date}). It had lasted {duration} since it was first seen at {onset}.",
-        "Ninguna fuente de lava en {cameras} desde las {seen}, hora local, cuando {seen_by} mostró una por última "
-        "vez; confirmado a las {when} ({utc} UTC, {date}). Duró {duration} desde que se vio por primera vez a las "
-        "{onset}."),
+        "({utc} UTC, {date}). It had lasted {duration} since it was first seen at {onset}."),
 }
-NOTE_EN = "Automated, experimental reading of public webcams by Volcano Vigil. It does not replace official alerts."
-NOTE_ES = ("Lectura automática y experimental de cámaras públicas hecha por Volcano Vigil. No reemplaza las alertas "
-           "oficiales.")
+NOTE = "Automated, experimental reading of public webcams by Volcano Vigil. It does not replace official alerts."
 
 
 class Alert(BaseModel):
@@ -168,15 +160,12 @@ class Alert(BaseModel):
     captured_at: str     # UTC capture time of that frame
     seen_at: str         # onset: the first episode-size sighting; end: the fountain's last sighting
     seen_by: str         # the camera of that sighting
-    headline_en: str
-    headline_es: str
-    text_en: str
-    text_es: str
+    headline: str
+    text: str
     overlay: str         # the frame with its mask, relative to the data dir
     official_agency: str
     official_url: str
-    disclaimer_en: str
-    disclaimer_es: str
+    disclaimer: str
 
 
 def _local(utc: str, offset_hours: float | None) -> str:
@@ -188,32 +177,28 @@ def duration_text(span: timedelta) -> str:
     return f"{minutes // 60} h {minutes % 60:02d} min" if minutes >= 60 else f"{minutes} min"
 
 
-def _names(names: tuple[str, ...], lang: str) -> str:
+def _names(names: tuple[str, ...]) -> str:
     if len(names) < 2:
         return "".join(names)
-    return f"{', '.join(names[:-1])} {'and' if lang == 'en' else 'y'} {names[-1]}"
+    return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def alert_texts(kind: Kind, volcano: Volcano, *, camera: str, captured_at: str, seen_at: str, seen_by: str,
                 onset_at: str | None = None, cameras: tuple[str, ...] = ()) -> dict[str, str]:
-    """The headline and text in English and Spanish, written by the code from stored times only."""
+    """The headline and text, written by the code from stored times only."""
     offset = volcano.utc_offset_hours
     words = {"name": volcano.name, "camera": camera, "seen": _local(seen_at, offset),
              "when": _local(captured_at, offset), "utc": captured_at[11:16], "date": captured_at[:10],
              "agency": volcano.official_agency, "seen_by": seen_by,
              "onset": _local(onset_at, offset) if onset_at else "",
              "duration": duration_text(parse_utc(seen_at) - parse_utc(onset_at)) if onset_at else ""}
-    (head_en, head_es), (text_en, text_es) = HEADLINES[kind], TEXTS[kind]
-    return {"headline_en": head_en.format(**words), "headline_es": head_es.format(**words),
-            "text_en": text_en.format(**words, cameras=_names(cameras, "en")),
-            "text_es": text_es.format(**words, cameras=_names(cameras, "es"))}
+    return {"headline": HEADLINES[kind].format(**words), "text": TEXTS[kind].format(**words, cameras=_names(cameras))}
 
 
 def caption(alert: Alert, prefix: str = "") -> str:
-    """The Telegram caption: both languages, the notes and the official link (at most CAPTION_MAX characters)."""
+    """The Telegram caption: the text, the note and the official link (at most CAPTION_MAX characters)."""
     lines = [prefix, ""] if prefix else []
-    lines += [alert.headline_en, alert.text_en, NOTE_EN, "", alert.headline_es, alert.text_es, NOTE_ES, "",
-              f"{alert.official_agency}: {alert.official_url}"]
+    lines += [alert.headline, alert.text, NOTE, "", f"{alert.official_agency}: {alert.official_url}"]
     return "\n".join(lines)
 
 
@@ -547,8 +532,8 @@ class AlertWatcher:
             clock=to_iso(ctx.now), created_at=to_iso(self._wall_clock()), camera_id=camera.id,
             camera_name=short_name(camera), frame_id=frame["id"], captured_at=frame["captured_at"],
             seen_at=seen_at, seen_by=seen_by, overlay=overlay, official_agency=volcano.official_agency,
-            official_url=volcano.official_url, disclaimer_en=DISCLAIMER.format(**names),
-            disclaimer_es=DISCLAIMER_ES.format(**names), **texts))
+            official_url=volcano.official_url, disclaimer=DISCLAIMER.format(**names),
+            **texts))
         report.alerts.append({"id": alert.id, "kind": kind, "camera_id": camera.id,
                               "captured_at": frame["captured_at"]})
         log.info("alert %s: %s on %s at %s", alert.id, kind, camera.id, frame["captured_at"])
@@ -569,7 +554,7 @@ class AlertWatcher:
 
 SEND_WITHIN = timedelta(hours=2)  # an alert older than this is never posted (after a long outage, say)
 MAX_SEND_ATTEMPTS = 5
-REPLAY_NOTE = "REPLAY of episode {key} ({date}): not a live alert. / REPETICIÓN del episodio {key}: no es una alerta en vivo."
+REPLAY_NOTE = "REPLAY of episode {key} ({date}): not a live alert."
 
 
 def send_pending(conn: sqlite3.Connection, telegram: Telegram, data_dir: Path, now: datetime) -> list[str]:

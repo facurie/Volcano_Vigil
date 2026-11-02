@@ -13,7 +13,7 @@ from PIL import Image
 from test_agent_tools import context, store  # store: fixture
 from test_meta_client import FakeApi, make_client
 from vigil import db, masks
-from vigil.alerts import (CAPTION_MAX, LAVA_GLOW, MAX_SEND_ATTEMPTS, NOTE_EN, NOTE_ES, Alert, AlertConfig,
+from vigil.alerts import (CAPTION_MAX, LAVA_GLOW, MAX_SEND_ATTEMPTS, NOTE, REPLAY_NOTE, Alert, AlertConfig,
                           AlertWatcher, CameraRule, Sighting, alert_texts, best_sighting, caption, draw_alert_frame,
                           duration_text, load_alert, load_alert_config, main, post_replay, send_pending, size_of,
                           store_alert)
@@ -88,15 +88,14 @@ def test_no_sighting_is_size_none():
     assert size_of(None, RULE) == "none"
 
 
-def test_onset_texts_give_both_sightings_in_local_time_and_utc_in_both_languages():
+def test_onset_texts_give_both_sightings_in_local_time_and_utc():
     texts = alert_texts("onset", KILAUEA, camera="V1cam", captured_at="2026-10-17T13:07:02Z",
                         seen_at="2026-10-17T13:05:02Z", seen_by="V1cam")
 
-    assert texts["headline_en"] == "Lava fountaining seen at the summit of Kīlauea"
-    assert texts["headline_es"] == "Fuente de lava visible en la cumbre del Kīlauea"
-    assert "at 03:05 and again at 03:07 local time (13:07 UTC, 2026-10-17)" in texts["text_en"]
-    assert "a las 03:05 y de nuevo a las 03:07, hora local (13:07 UTC, 2026-10-17)" in texts["text_es"]
-    assert "Only USGS Hawaiian Volcano Observatory (HVO) declares" in texts["text_en"]
+    assert set(texts) == {"headline", "text"}
+    assert texts["headline"] == "Lava fountaining seen at the summit of Kīlauea"
+    assert "at 03:05 and again at 03:07 local time (13:07 UTC, 2026-10-17)" in texts["text"]
+    assert "Only USGS Hawaiian Volcano Observatory (HVO) declares" in texts["text"]
 
 
 def test_end_texts_name_the_cameras_the_last_sighting_and_how_long_it_lasted():
@@ -104,9 +103,8 @@ def test_end_texts_name_the_cameras_the_last_sighting_and_how_long_it_lasted():
                         seen_at="2026-10-17T19:02:01Z", seen_by="K2cam", onset_at="2026-10-17T13:05:02Z",
                         cameras=("V1cam", "K2cam"))
 
-    assert "No lava fountain on V1cam and K2cam since 09:02 local time, when K2cam last showed one" in texts["text_en"]
-    assert "Ninguna fuente de lava en V1cam y K2cam desde las 09:02" in texts["text_es"]
-    assert "5 h 57 min" in texts["text_en"] and "5 h 57 min" in texts["text_es"]
+    assert "No lava fountain on V1cam and K2cam since 09:02 local time, when K2cam last showed one" in texts["text"]
+    assert "5 h 57 min" in texts["text"]
 
 
 @pytest.mark.parametrize("minutes, text", [(7, "7 min"), (60, "1 h 00 min"), (357, "5 h 57 min")])
@@ -124,22 +122,19 @@ def make_alert(kind="onset", **fields):
               "camera_name": "V1cam", "frame_id": 1, "captured_at": "2026-10-17T13:07:02Z",
               "seen_at": "2026-10-17T13:05:02Z", "seen_by": "V1cam", "overlay": "alerts/x/frame1.jpg",
               "official_agency": KILAUEA.official_agency, "official_url": KILAUEA.official_url,
-              "disclaimer_en": "Automated … does not replace official alerts …",
-              "disclaimer_es": "Lectura automática … No reemplaza las alertas …", **texts}
+              "disclaimer": "Automated … does not replace official alerts …", **texts}
     return Alert(**{**values, **fields})
 
 
 @pytest.mark.parametrize("kind", ["onset", "end"])
-def test_the_caption_has_both_languages_the_notes_and_the_official_link_within_telegrams_limit(kind):
+def test_the_caption_has_the_text_the_note_and_the_official_link_within_telegrams_limit(kind):
     alert = make_alert(kind)
+    text = caption(alert, prefix="REPLAY of episode 55 (2026-10-17): not a live alert.")
 
-    text = caption(alert, prefix="REPLAY of episode 55 (2026-10-17): not a live alert. / REPETICIÓN del episodio 55: "
-                                 "no es una alerta en vivo.")
-
-    assert len(text) <= CAPTION_MAX
-    for part in (alert.headline_en, alert.text_en, NOTE_EN, alert.headline_es, alert.text_es, NOTE_ES,
-                 "https://www.usgs.gov/volcanoes/kilauea"):
+    for part in (alert.headline, alert.text, NOTE, f"{alert.official_agency}: {alert.official_url}"):
         assert part in text
+    assert "REPETICIÓN" not in text and "Lectura" not in text
+    assert len(text) <= CAPTION_MAX
 
 
 def test_an_alert_is_stored_with_its_id_and_read_back(conn):
@@ -397,7 +392,7 @@ def test_two_consecutive_episode_size_sightings_confirmed_by_muse_spark_raise_th
     assert fakes.asked == [30]
     alert = load_alert(conn, 1)
     assert alert.seen_by == "kilauea-v1" and (tmp_path / alert.overlay).is_file()
-    assert alert.disclaimer_en.startswith("Automated, experimental reading") and "usgs.gov" in alert.disclaimer_en
+    assert alert.disclaimer.startswith("Automated, experimental reading") and "usgs.gov" in alert.disclaimer
 
 
 def test_overflow_size_sightings_all_night_raise_nothing_and_never_ask_muse_spark(conn, store, tmp_path, fakes):
@@ -445,7 +440,7 @@ def test_two_misses_in_a_row_on_the_camera_that_saw_it_end_the_episode(conn, sto
     assert rows[1] == ("end", "kilauea-v1", "2026-10-17T13:36:00Z", "2026-10-17T13:28:00Z", "2026-10-17T13:36:00Z")
     end = load_alert(conn, 2)
     # the test volcano has no UTC offset, so "local time" is UTC here
-    assert "since 13:28 local time" in end.text_en and "It had lasted 20 min" in end.text_en
+    assert "since 13:28 local time" in end.text and "It had lasted 20 min" in end.text
 
 
 def test_a_single_miss_during_the_episode_does_not_end_it(conn, store, tmp_path, fakes):
@@ -490,7 +485,7 @@ def test_a_camera_that_has_gone_blind_does_not_hold_the_end_back(conn, store, tm
     end = conn.execute("SELECT * FROM alerts WHERE kind = 'end'").fetchone()
     assert end["camera_id"] == "kilauea-v1" and end["seen_at"] >= "2026-10-17T13:40:00Z"
     # K2 was blind: it is not named as having no fountain, since its last look (13:20) saw one
-    text = load_alert(conn, 2).text_en
+    text = load_alert(conn, 2).text
     assert "No lava fountain on kilauea-v1 since" in text and "kilauea-k2" not in text
 
 
@@ -630,8 +625,7 @@ def test_two_cameras_that_both_missed_it_twice_are_both_named_in_the_end(conn, s
 
     alert = load_alert(conn, 2)
     assert alert.kind == "end"
-    assert "No lava fountain on kilauea-k2 and kilauea-v1 since 12:48 local time" in alert.text_en
-    assert "Ninguna fuente de lava en kilauea-k2 y kilauea-v1 desde las 12:48" in alert.text_es
+    assert "No lava fountain on kilauea-k2 and kilauea-v1 since 12:48 local time" in alert.text
 
 
 def test_a_failed_sam_call_is_reported_stores_no_look_and_is_not_retried_by_the_next_step(conn, store, tmp_path,
@@ -856,8 +850,10 @@ def test_a_replays_alerts_are_posted_oldest_first_each_marked_as_a_replay(tmp_pa
 
     assert ids == [1, 2]
     assert [text.splitlines()[2] for _, text in telegram.posts] == [
-        make_alert("onset").headline_en, make_alert("end").headline_en]
-    assert all(text.startswith("REPLAY of episode 55 (2026-10-17): not a live alert.") for _, text in telegram.posts)
+        make_alert("onset").headline, make_alert("end").headline]
+    note = REPLAY_NOTE.format(key="55", date="2026-10-17")
+    assert all(text.startswith(note) for _, text in telegram.posts)
+    assert all("REPETICIÓN" not in text for _, text in telegram.posts)
 
 
 def test_cli_refuses_an_alert_camera_that_is_not_enabled(monkeypatch, tmp_path, capsys):

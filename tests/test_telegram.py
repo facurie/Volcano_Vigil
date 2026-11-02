@@ -6,7 +6,7 @@ import sys
 import httpx
 import pytest
 
-from vigil.telegram import CAPTION_MAX, Telegram, TelegramError, main
+from vigil.telegram import CAPTION_MAX, TEST_MESSAGE, Telegram, TelegramError, main
 
 TOKEN = "123456:SECRET-token"
 
@@ -129,7 +129,9 @@ def test_cli_test_posts_a_message_that_says_it_is_not_an_alert(env, monkeypatch,
 
     main(["test"])
 
-    assert "not an alert" in sent[0] and "No es una alerta" in sent[0]
+    assert "not an alert" in sent[0]
+    assert "Mensaje" not in TEST_MESSAGE and "Estado oficial" not in TEST_MESSAGE
+    assert "Official status" in sent[0] and "USGS" in sent[0]
     assert "https://www.usgs.gov/volcanoes/kilauea" in sent[0]
     assert "message 9" in capsys.readouterr().out
 

@@ -22,9 +22,8 @@ from vigil.settings import Settings
 
 API = "https://api.telegram.org"
 CAPTION_MAX = 1024  # characters in a photo's caption (Bot API, sendPhoto)
-TEST_MESSAGE = ("Volcano Vigil test message: the alert channel works. It is not an alert.\n"
-                "Mensaje de prueba de Volcano Vigil: el canal de alertas funciona. No es una alerta.\n\n"
-                "Official status / Estado oficial: {agency}: {url}")
+TEST_MESSAGE = ("Volcano Vigil test message: the alert channel works. It is not an alert.\n\n"
+                "Official status: {agency}: {url}")
 
 
 class TelegramError(RuntimeError):

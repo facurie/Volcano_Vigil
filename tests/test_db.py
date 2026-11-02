@@ -3,7 +3,9 @@ import sqlite3
 
 import pytest
 
+from test_alerts import make_alert
 from vigil import db
+from vigil.alerts import Alert
 
 
 def test_a_read_only_connection_reads_rows_but_cannot_write(tmp_path):
@@ -89,3 +91,35 @@ def test_the_agents_stored_drafts_lose_their_spanish_but_other_text_is_untouched
 def test_a_new_database_starts_at_the_current_schema_version(conn):
     assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     assert "headline_es" not in {row[1] for row in conn.execute("PRAGMA table_info(bulletins)")}
+
+
+def insert_alert(conn, body):
+    with conn:
+        conn.execute("INSERT INTO frames (id, camera_id, captured_at, timestamp_source, fetched_at, sha256, path, "
+                     "bytes, width, height) VALUES (1, 'kilauea-v1', 'x', 'ashcam', 'x', 'h', 'p', 1, 1, 1)")
+        conn.execute("INSERT INTO alerts (id, volcano, kind, clock, created_at, camera_id, frame_id, captured_at, "
+                     "seen_at, body) VALUES (1, 'kilauea', 'onset', 'x', 'x', 'kilauea-v1', 1, 'x', 'x', ?)",
+                     (json.dumps(body),))
+        conn.execute("PRAGMA user_version = 0")
+
+
+def test_a_stored_alert_loses_its_spanish_in_the_migration(conn):
+    body = {"id": 1, "headline_en": "Seen", "headline_es": "Visto", "text_en": "At 03:07.", "text_es": "A las 03:07.",
+            "disclaimer_en": "Not official.", "disclaimer_es": "No oficial."}
+    insert_alert(conn, body)
+    db._migrate(conn)
+
+    assert json.loads(conn.execute("SELECT body FROM alerts").fetchone()[0]) == {
+        "id": 1, "headline": "Seen", "text": "At 03:07.", "disclaimer": "Not official."}
+
+
+def test_a_legacy_alert_body_validates_as_the_alert_model_once_migrated(conn):
+    alert = make_alert("end", id=1)
+    legacy = alert.model_dump()
+    for name in ("headline", "text", "disclaimer"):
+        legacy[f"{name}_en"] = legacy.pop(name)
+        legacy[f"{name}_es"] = f"{legacy[f'{name}_en']} (en espanol)"
+    insert_alert(conn, legacy)
+    db._migrate(conn)
+
+    assert Alert.model_validate_json(conn.execute("SELECT body FROM alerts").fetchone()[0]) == alert

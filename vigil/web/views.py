@@ -277,8 +277,7 @@ def alerts(scene: Scene, limit: int = 10) -> dict[str, Any]:
         out.append({"id": a.id, "kind": a.kind, "clock": a.clock, "captured_at": a.captured_at, "seen_at": a.seen_at,
                     "seen_by": a.seen_by, "camera_id": a.camera_id, "frame_id": a.frame_id, "overlay": a.overlay,
                     "official_agency": a.official_agency, "official_url": a.official_url,
-                    "en": {"headline": a.headline_en, "text": a.text_en, "disclaimer": a.disclaimer_en},
-                    "es": {"headline": a.headline_es, "text": a.text_es, "disclaimer": a.disclaimer_es}})
+                    "headline": a.headline, "text": a.text, "disclaimer": a.disclaimer})
     return {"state": "fountaining" if out and out[0]["kind"] == "onset" else "quiet", "alerts": out}
 
 

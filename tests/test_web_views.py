@@ -348,8 +348,8 @@ def test_alerts_show_only_those_raised_by_the_clock_and_the_state_they_leave(con
     assert after["state"] == "quiet" and [a["kind"] for a in after["alerts"]] == ["end", "onset"]
     shown = during["alerts"][0]
     assert set(shown) >= {"id", "kind", "clock", "captured_at", "seen_at", "seen_by", "camera_id", "overlay",
-                          "official_agency", "official_url", "en", "es"}
-    assert set(shown["en"]) == {"headline", "text", "disclaimer"}
+                          "official_agency", "official_url", "headline", "text", "disclaimer"}
+    assert "en" not in shown and "es" not in shown
 
 
 def test_a_database_from_before_the_alerts_has_none(tmp_path):
