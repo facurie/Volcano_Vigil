@@ -186,5 +186,5 @@ def drift_rows(conn: sqlite3.Connection, episode: Episode) -> list[list[str]]:
         off = (main_side - episode.drift_deg + 180) % 360 - 180
         share = ", ".join(f"{side}°: {count}" for side, count in zip(sides, counts))
         rows.append([camera_id, str(bearings.size), share, f"{main_side}° ({off:+.0f}° from {episode.drift_name})",
-                     "yes" if abs(off) <= 90 else "no"])
+                     "yes" if abs(off) < 90 else "no"])
     return rows

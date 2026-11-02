@@ -65,6 +65,13 @@ def test_drift_rows_count_the_frames_on_each_side(conn, store):
     assert drift_rows(conn, EP55) == [["kilauea-kp", "3", "224°: 2, 230°: 1", "224° (-1° from SW)", "yes"]]
 
 
+@pytest.mark.parametrize("side, consistent", [(314.0, "yes"), (315.0, "no"), (135.0, "no"), (136.0, "yes")])
+def test_a_drift_exactly_90_degrees_from_the_official_one_is_not_consistent(conn, store, side, consistent):
+    measured(conn, store, "kilauea-kp", 0, "plume", "drift_bearing", side, 2.1, unit="deg")
+
+    assert drift_rows(conn, EP55)[0][-1] == consistent  # as vigil.wind.compare_drift: under 90 degrees
+
+
 def test_table_writes_a_markdown_table():
     assert table(["A", "B"], [["1", "2"]]) == "| A | B |\n|---|---|\n| 1 | 2 |"
 
