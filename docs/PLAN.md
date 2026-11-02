@@ -22,7 +22,7 @@
 3. Run the tests: `.venv\Scripts\python.exe -m pytest -o addopts=""` (717 passing at the end of Phase 8, session 12; they include the dashboard's JS helper tests, run with node).
 4. Conventions:
    - TDD; small commits with no `Co-Authored-By` trailer (author's request).
-   - English code, comments and docs; bulletins in ES and EN.
+   - English code, comments and docs. Everything published is in English: UI, bulletins, alerts, Telegram (decided 2026-11-02; the Spanish goes in Phase 9).
    - No images in git: everything lives in git-ignored `data/`.
    - Every Meta call goes through `vigil/meta/client.py`.
    - Subagents live in `.claude/agents/`:
@@ -348,7 +348,11 @@ Plan and execution notes: [2026-11-01-phase-8-alerts.md](superpowers/plans/2026-
 - [ ] **Calibrate a fountain camera** so the validation's fountain rows get measured. Options:
   - K2cam needs a vertical reference: a clear sea horizon on a frame with the episode 55 framing, or a post-2018 DEM of the crater rim.
   - V1cam: the Moon for its view, plus a resection on the vent for its ±150 m position.
-- [ ] Name the Spanish vocabulary in the bulletin prompt ("columna", "boca", "fuente de lava"). In the replay Muse Spark wrote "pluma" and "ventín" ([replay_ep55.md](research/replay_ep55.md)).
+- [ ] **English only** (the user's decision of 2026-11-02, instead of naming the Spanish vocabulary in the prompt: in the replay Muse Spark wrote "pluma" and "ventín", [replay_ep55.md](research/replay_ep55.md)). Kīlauea's audience reads English, and Muse Spark then writes half the text.
+  - Bulletins: the prompt, the strict schema, the number checks and the rendering in English only.
+  - Alerts and Telegram: the English text and caption only.
+  - Dashboard: no EN/ES toggle.
+  - The plan decides what happens to the Spanish already stored (the episode 55 replay, the live database).
 - [ ] Final `docs/VALIDATION.md`: errors, σ, limitations.
 - [ ] Final README: updated diagram, live URL, how to run, the "Built during the hackathon" section, disclaimer, credits, cost report.
 - [ ] Code review pass (`superpowers:requesting-code-review`) and fixes.
@@ -358,7 +362,7 @@ Plan and execution notes: [2026-11-01-phase-8-alerts.md](superpowers/plans/2026-
 - [ ] **3-minute video:**
   1. The problem: observatory webcams publish a frame every few minutes, and nobody can watch them all day.
   2. Live dashboard: camera status and the quality gate at work.
-  3. Episode-55 replay: the onset alert arriving on Telegram, SAM tracking overlay, agent trace, bilingual bulletins.
+  3. Episode-55 replay: the onset alert arriving on Telegram, SAM tracking overlay, agent trace, checked bulletins.
   4. Validation numbers against USGS.
   5. The disclaimer.
 - [ ] Make the repository public and submit before 21:00 ET (23:00 Argentina).

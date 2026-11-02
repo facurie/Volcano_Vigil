@@ -1,6 +1,6 @@
 # Volcano Vigil
 
-An agent that watches public volcano webcams (USGS Kīlauea) and turns frames into measurements and bilingual ES/EN bulletins, using Meta's Muse Spark and SAM 3.1. Solo entry for the Meta Global AI Developer Hackathon; the deadline is 2026-11-04 21:00 ET, so working code beats elegant code.
+An agent that watches public volcano webcams (USGS Kīlauea) and turns frames into measurements and English bulletins, using Meta's Muse Spark and SAM 3.1. Solo entry for the Meta Global AI Developer Hackathon; the deadline is 2026-11-04 21:00 ET, so working code beats elegant code.
 
 ## Where things are
 
@@ -31,7 +31,7 @@ An agent that watches public volcano webcams (USGS Kīlauea) and turns frames in
 - **Bulletins and UI.**
   - Every bulletin and every page carries the disclaimer and a link to the official agency.
   - Escape all model text before it reaches HTML.
-  - UI text is English; bulletins come in ES and EN.
+  - Everything the project publishes is in English: the UI, the bulletins, the alerts and the Telegram posts (the user's decision of 2026-11-02; Phase 9 removes the Spanish the code still writes).
 - The scope is Kīlauea only; don't build anything for other volcanoes.
 - Never read, print or edit `.env`. Never add images, videos, masks or databases to git.
 
