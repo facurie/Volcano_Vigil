@@ -364,7 +364,7 @@ Plan and execution notes: [2026-11-02-phase-9-validation-english-readme.md](supe
 
 ## Phase 10: Wed Nov 4. Video and submission (afternoon, not last minute)
 
-- [ ] **3-minute video:**
+- [x] **3-minute video** (2:37, https://youtu.be/XbelBKboLoo):
   1. The problem: observatory webcams publish a frame every few minutes, and nobody can watch them all day.
   2. Live dashboard: camera status and the quality gate at work.
   3. Episode-55 replay: the onset alert arriving on Telegram, SAM tracking overlay, agent trace, checked bulletins.

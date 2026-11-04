@@ -4,6 +4,7 @@
 
 Volcano observatories publish webcam frames every few minutes, but nobody can look at every frame all day. Volcano Vigil does, for Kīlauea (Hawaiʻi). It segments plumes and lava fountains with **SAM 3.1**, measures them with camera geometry (heights in metres with an uncertainty, the side the plume drifts to), checks the drift against forecast winds, follows each object through time, raises an alert within minutes when lava fountaining starts or stops, and lets a **Muse Spark** agent decide what to inspect and write a bulletin in which every height and area is checked against what was measured.
 
+- **Demo video (2:37):** https://youtu.be/XbelBKboLoo
 - **Live dashboard:** https://facurie-volcano-vigil.hf.space (live mode, and the episode 55 replay under "Replay")
 - **Alerts on Telegram:** [Volcano Vigil · Kīlauea](https://t.me/volcano_vigil_kilauea)
 - **Episode 55 replay data:** [facurie/volcano-vigil-ep55](https://huggingface.co/datasets/facurie/volcano-vigil-ep55) on Hugging Face
